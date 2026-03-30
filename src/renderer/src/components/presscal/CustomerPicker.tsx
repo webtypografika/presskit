@@ -41,7 +41,7 @@ export function CustomerPicker() {
   }, [selectedFile, preflight])
 
   return (
-    <div className="p-4 space-y-4">
+    <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div className="relative">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
         <input

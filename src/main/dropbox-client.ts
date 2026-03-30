@@ -101,11 +101,26 @@ export function registerDropboxHandlers(ipcMain: IpcMain): void {
         }
       })
 
+      server.on('error', (err: any) => {
+        if (err.code === 'EADDRINUSE') {
+          // Kill the old server and retry
+          const net = require('net')
+          const killer = new net.Socket()
+          killer.on('error', () => {})
+          killer.connect(17823, '127.0.0.1', () => { killer.destroy() })
+          setTimeout(() => {
+            server.listen(17823)
+          }, 500)
+        } else {
+          resolve(false)
+        }
+      })
+
       server.listen(17823)
 
       // Timeout after 5 minutes
       setTimeout(() => {
-        server.close()
+        try { server.close() } catch {}
         resolve(false)
       }, 300000)
     })

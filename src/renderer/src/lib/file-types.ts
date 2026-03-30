@@ -13,6 +13,7 @@ export interface FileEntry {
   created: string
   extension: string
   type: FileType
+  cloudStatus?: 'local' | 'cloud' | 'syncing'
 }
 
 export interface FileMetadata {

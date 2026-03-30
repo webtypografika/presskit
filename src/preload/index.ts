@@ -18,7 +18,8 @@ const api = {
   // Shell
   shell: {
     openPath: (path: string) => ipcRenderer.invoke('shell:openPath', path),
-    showInFolder: (path: string) => ipcRenderer.invoke('shell:showInFolder', path)
+    showInFolder: (path: string) => ipcRenderer.invoke('shell:showInFolder', path),
+    openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url)
   },
 
   // File System
@@ -27,7 +28,8 @@ const api = {
     getMetadata: (path: string) => ipcRenderer.invoke('fs:getMetadata', path),
     readFile: (path: string) => ipcRenderer.invoke('fs:readFile', path),
     exists: (path: string) => ipcRenderer.invoke('fs:exists', path),
-    getDrives: () => ipcRenderer.invoke('fs:getDrives')
+    getDrives: () => ipcRenderer.invoke('fs:getDrives'),
+    search: (rootPath: string, query: string, maxResults?: number) => ipcRenderer.invoke('fs:search', rootPath, query, maxResults)
   },
 
   // Preview
@@ -67,7 +69,12 @@ const api = {
     unlinkFile: (id: string) => ipcRenderer.invoke('presscal:unlinkFile', id),
     getFileLinks: (filters?: any) => ipcRenderer.invoke('presscal:getFileLinks', filters),
     sendEmail: (data: any) => ipcRenderer.invoke('presscal:sendEmail', data),
-    getEmailThreads: (quoteId: string) => ipcRenderer.invoke('presscal:getEmailThreads', quoteId)
+    linkFileToItem: (quoteId: string, itemId: string, filePath: string) => ipcRenderer.invoke('presscal:linkFileToItem', quoteId, itemId, filePath),
+    sendEmailWithFiles: (data: any) => ipcRenderer.invoke('presscal:sendEmailWithFiles', data),
+    getEmailThreads: (quoteId: string) => ipcRenderer.invoke('presscal:getEmailThreads', quoteId),
+    saveToCustomerFolder: (sourcePath: string, targetFolder: string, filename: string) => ipcRenderer.invoke('presscal:saveToCustomerFolder', sourcePath, targetFolder, filename),
+    getQuoteEmailMessages: (quoteId: string) => ipcRenderer.invoke('presscal:getQuoteEmailMessages', quoteId),
+    downloadAttachment: (messageId: string, attId: string, mime: string, filename: string) => ipcRenderer.invoke('presscal:downloadAttachment', messageId, attId, mime, filename)
   },
 
   // Settings
@@ -106,6 +113,28 @@ const api = {
     file: (inputPath: string, options: any) => ipcRenderer.invoke('convert:file', inputPath, options),
     batch: (filePaths: string[], options: any) => ipcRenderer.invoke('convert:batch', filePaths, options),
     saveDialog: (defaultName: string) => ipcRenderer.invoke('convert:saveDialog', defaultName)
+  },
+
+  // Font management
+  font: {
+    install: (fontPath: string) => ipcRenderer.invoke('font:install', fontPath),
+    isInstalled: (fontPath: string) => ipcRenderer.invoke('font:isInstalled', fontPath),
+  },
+
+  // Deep link events (from PressCal "Open in FileHelper")
+  deepLink: {
+    onOpenAttachment: (callback: (data: { tempPath: string; filename: string; mime: string }) => void) => {
+      ipcRenderer.on('open-attachment', (_e, data) => callback(data))
+      return () => ipcRenderer.removeAllListeners('open-attachment')
+    },
+    onPickFileMode: (callback: (data: { quoteId: string; itemId: string }) => void) => {
+      ipcRenderer.on('pick-file-mode', (_e, data) => callback(data))
+      return () => ipcRenderer.removeAllListeners('pick-file-mode')
+    },
+    onNavigateToFolder: (callback: (data: { path: string; email?: string }) => void) => {
+      ipcRenderer.on('navigate-to-folder', (_e, data) => callback(data))
+      return () => ipcRenderer.removeAllListeners('navigate-to-folder')
+    }
   },
 
   // Color tools

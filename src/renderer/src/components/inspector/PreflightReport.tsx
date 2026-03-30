@@ -65,7 +65,7 @@ export function PreflightReport() {
   const status = statusConfig[preflight.overallStatus]
 
   return (
-    <div className="p-4 space-y-3">
+    <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Overall status */}
       <div className={`flex items-center justify-between p-2.5 rounded-lg border ${status.bg} ${status.border}`}>
         <div>

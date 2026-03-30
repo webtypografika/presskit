@@ -56,7 +56,7 @@ export function JobFiles() {
   }, [selectedFile, preflight])
 
   return (
-    <div className="p-4 space-y-4">
+    <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Stage filter */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
         <button

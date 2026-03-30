@@ -75,7 +75,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
   return (
     <div className="h-full flex flex-col bg-bg-secondary">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border">
+      <div className="flex items-center justify-between border-b border-border" style={{ padding: '14px 20px' }}>
         <div className="flex items-center gap-2">
           <RefreshCw size={16} className="text-accent" />
           <span className="text-sm font-medium">Convert File</span>
@@ -84,7 +84,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
       </div>
 
       {/* Source file */}
-      <div className="px-4 py-3 border-b border-border">
+      <div className="border-b border-border" style={{ padding: '14px 20px' }}>
         <div className="text-sm text-text-muted mb-1">Source</div>
         <div className="flex items-center gap-2">
           <FileImage size={14} className="text-text-secondary" />
@@ -94,7 +94,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
       </div>
 
       {/* Options */}
-      <div className="px-4 py-3 space-y-3 border-b border-border">
+      <div className="border-b border-border" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* Format */}
         <div>
           <label className="text-sm text-text-muted block mb-1">
@@ -200,7 +200,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
       </div>
 
       {/* Convert button */}
-      <div className="px-4 py-3">
+      <div style={{ padding: '16px 20px' }}>
         <button
           onClick={handleConvert}
           disabled={converting}
@@ -216,7 +216,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
 
       {/* Result */}
       {result && (
-        <div className={`mx-4 mb-3 p-3 rounded ${result.success ? 'bg-success/10' : 'bg-error/10'}`}>
+        <div className={`rounded ${result.success ? 'bg-success/10' : 'bg-error/10'}`} style={{ margin: '0 20px 16px', padding: 16 }}>
           <div className="flex items-center gap-2 mb-1">
             {result.success ? (
               <CheckCircle size={14} className="text-success" />

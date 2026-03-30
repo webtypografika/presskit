@@ -14,33 +14,44 @@ const TABS: { id: InspectorTab; label: string; icon: React.ReactNode }[] = [
 export function InspectorPanel() {
   const { inspectorTab, setInspectorTab, selectedFile } = useAppStore()
 
-  if (!selectedFile || selectedFile.isDirectory) return null
+  const hasFile = selectedFile && !selectedFile.isDirectory
 
   return (
     <div className="h-full flex flex-col bg-bg-secondary">
       {/* Tab bar */}
       <div className="flex items-center border-b border-border flex-shrink-0">
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            className={`flex items-center gap-2 px-4 py-3 text-sm transition-colors border-b-2 ${
-              inspectorTab === tab.id
-                ? 'text-accent border-accent'
-                : 'text-text-secondary border-transparent hover:text-text-primary hover:bg-bg-hover'
-            }`}
-            onClick={() => setInspectorTab(tab.id)}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
+        {TABS.map(tab => {
+          const disabled = !hasFile && tab.id !== 'presscal'
+          return (
+            <button
+              key={tab.id}
+              className={`flex items-center gap-2 text-sm transition-colors border-b-2 ${
+                inspectorTab === tab.id
+                  ? 'text-accent border-accent'
+                  : disabled
+                    ? 'text-text-muted border-transparent cursor-default'
+                    : 'text-text-secondary border-transparent hover:text-text-primary hover:bg-bg-hover'
+              }`}
+              style={{ padding: '12px 14px', opacity: disabled ? 0.4 : 1 }}
+              onClick={() => !disabled && setInspectorTab(tab.id)}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          )
+        })}
       </div>
 
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto">
-        {inspectorTab === 'metadata' && <FileMetadata />}
-        {inspectorTab === 'preflight' && <PreflightReport />}
+        {inspectorTab === 'metadata' && hasFile && <FileMetadata />}
+        {inspectorTab === 'preflight' && hasFile && <PreflightReport />}
         {inspectorTab === 'presscal' && <PresscalPanel />}
+        {!hasFile && inspectorTab !== 'presscal' && (
+          <div className="flex items-center justify-center h-full" style={{ color: '#475569', fontSize: 13 }}>
+            Επιλέξτε αρχείο
+          </div>
+        )}
       </div>
     </div>
   )

@@ -1,19 +1,32 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAppStore } from '@/stores/app-store'
 import {
-  Search, Link2, FileText,
-  Loader2, CheckCircle
+  Search, Link2, FileText, Paperclip, Image, File,
+  Loader2, CheckCircle, ChevronDown, ChevronRight, Download
 } from 'lucide-react'
 import type { PresscalQuote, FileLink } from '@/lib/ipc'
 import { formatFileSize } from '@/lib/file-types'
 
+interface EmailMessage {
+  id: string
+  threadId: string
+  from: string
+  subject: string
+  date: string
+  attachments: { id: string; filename: string; mimeType: string; size: number }[]
+}
+
 export function QuoteLinker() {
-  const { selectedFile, preflight } = useAppStore()
+  const { selectedFile, preflight, selectFile } = useAppStore()
   const [quotes, setQuotes] = useState<PresscalQuote[]>([])
   const [fileLinks, setFileLinks] = useState<FileLink[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [linkingTo, setLinkingTo] = useState<string | null>(null)
+  const [expandedQuote, setExpandedQuote] = useState<string | null>(null)
+  const [emailMessages, setEmailMessages] = useState<EmailMessage[]>([])
+  const [loadingEmails, setLoadingEmails] = useState(false)
+  const [downloadingAtt, setDownloadingAtt] = useState<string | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -57,6 +70,53 @@ export function QuoteLinker() {
     )
   }, [fileLinks, selectedFile])
 
+  const toggleExpand = useCallback(async (quoteId: string) => {
+    if (expandedQuote === quoteId) {
+      setExpandedQuote(null)
+      setEmailMessages([])
+      return
+    }
+
+    setExpandedQuote(quoteId)
+    setLoadingEmails(true)
+    setEmailMessages([])
+
+    try {
+      const result = await window.api.presscal.getQuoteEmailMessages(quoteId)
+      setEmailMessages(result.messages || [])
+    } catch {
+      setEmailMessages([])
+    } finally {
+      setLoadingEmails(false)
+    }
+  }, [expandedQuote])
+
+  const previewAttachment = useCallback(async (msg: EmailMessage, att: EmailMessage['attachments'][0]) => {
+    setDownloadingAtt(`${msg.id}_${att.id}`)
+    try {
+      const tempPath = await window.api.presscal.downloadAttachment(msg.id, att.id, att.mimeType, att.filename)
+      // Navigate to the temp file — triggers preview
+      await window.api.fs.getMetadata(tempPath).then(meta => {
+        selectFile({
+          name: att.filename,
+          path: tempPath,
+          size: att.size,
+          isDirectory: false,
+          type: getTypeFromMime(att.mimeType),
+          extension: '.' + att.filename.split('.').pop(),
+          modified: new Date().toISOString()
+        })
+      }).catch(() => {
+        // Fallback: open externally
+        window.api.shell.openPath(tempPath)
+      })
+    } catch (e) {
+      console.error('Download attachment failed:', e)
+    } finally {
+      setDownloadingAtt(null)
+    }
+  }, [selectFile])
+
   const statusColors: Record<string, string> = {
     draft: 'text-text-muted',
     sent: 'text-info',
@@ -66,8 +126,10 @@ export function QuoteLinker() {
     completed: 'text-text-muted'
   }
 
+  const isImage = (mime: string) => mime.startsWith('image/')
+
   return (
-    <div className="p-4 space-y-4">
+    <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Search */}
       <div className="relative">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
@@ -82,7 +144,7 @@ export function QuoteLinker() {
 
       {/* Current file */}
       {selectedFile && !selectedFile.isDirectory && (
-        <div className="px-3 py-2.5 bg-bg-primary rounded-lg text-sm text-text-secondary leading-relaxed">
+        <div style={{ padding: '10px 12px' }} className="bg-bg-primary rounded-lg text-sm text-text-secondary leading-relaxed">
           Linking: <span className="text-text-primary font-medium">{selectedFile.name}</span>
           <span className="text-text-muted ml-1.5">({formatFileSize(selectedFile.size)})</span>
         </div>
@@ -94,40 +156,110 @@ export function QuoteLinker() {
           <Loader2 size={20} className="animate-spin text-text-muted" />
         </div>
       ) : (
-        <div className="space-y-1.5">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {quotes.map(quote => {
             const linked = isLinked(quote.id)
+            const expanded = expandedQuote === quote.id
             return (
-              <div
-                key={quote.id}
-                className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-bg-hover group cursor-pointer"
-                onClick={() => !linked && linkToQuote(quote.id)}
-              >
-                <FileText size={18} className={statusColors[quote.status] || 'text-text-muted'} />
+              <div key={quote.id} className="rounded-lg overflow-hidden">
+                {/* Quote row */}
+                <div
+                  className="flex items-center gap-3 rounded-lg hover:bg-bg-hover group cursor-pointer"
+                  style={{ padding: '12px 12px' }}
+                >
+                  {/* Expand toggle */}
+                  <button
+                    className="flex-shrink-0 text-text-muted hover:text-text-primary"
+                    onClick={(e) => { e.stopPropagation(); toggleExpand(quote.id) }}
+                  >
+                    {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  </button>
 
-                <div className="flex-1 min-w-0 space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-accent">{quote.number}</span>
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${statusColors[quote.status]} bg-bg-primary`}>
-                      {quote.status}
-                    </span>
-                  </div>
-                  <div className="text-sm text-text-secondary truncate leading-relaxed">
-                    {quote.title || quote.customerName || 'Untitled'}
-                  </div>
-                  {quote.grandTotal > 0 && (
-                    <div className="text-sm text-text-muted">
-                      {quote.grandTotal.toFixed(2)} EUR
+                  <FileText size={18} className={statusColors[quote.status] || 'text-text-muted'} />
+
+                  <div className="flex-1 min-w-0" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-accent">{quote.number}</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${statusColors[quote.status]} bg-bg-primary`}>
+                        {quote.status}
+                      </span>
                     </div>
-                  )}
+                    <div className="text-sm text-text-secondary truncate leading-relaxed">
+                      {quote.title || quote.customerName || 'Untitled'}
+                    </div>
+                    {quote.grandTotal > 0 && (
+                      <div className="text-sm text-text-muted">
+                        {quote.grandTotal.toFixed(2)} EUR
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0" onClick={() => !linked && linkToQuote(quote.id)}>
+                    {linkingTo === quote.id ? (
+                      <Loader2 size={16} className="animate-spin text-accent" />
+                    ) : linked ? (
+                      <CheckCircle size={16} className="text-success" />
+                    ) : (
+                      <Link2 size={16} className="text-text-muted opacity-0 group-hover:opacity-100" />
+                    )}
+                  </div>
                 </div>
 
-                {linkingTo === quote.id ? (
-                  <Loader2 size={16} className="animate-spin text-accent flex-shrink-0" />
-                ) : linked ? (
-                  <CheckCircle size={16} className="text-success flex-shrink-0" />
-                ) : (
-                  <Link2 size={16} className="text-text-muted opacity-0 group-hover:opacity-100 flex-shrink-0" />
+                {/* Expanded: email attachments */}
+                {expanded && (
+                  <div style={{ padding: '8px 12px 16px 40px' }} className="bg-bg-primary/50">
+                    {loadingEmails ? (
+                      <div className="flex items-center gap-2 py-4">
+                        <Loader2 size={14} className="animate-spin text-text-muted" />
+                        <span className="text-xs text-text-muted">Loading emails...</span>
+                      </div>
+                    ) : emailMessages.length === 0 ? (
+                      <div className="text-xs text-text-muted py-3">No linked emails</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {emailMessages.map(msg => (
+                          <div key={msg.id}>
+                            {/* Email header */}
+                            <div style={{ marginBottom: 8 }}>
+                              <div className="text-xs text-text-secondary font-medium truncate">{msg.subject || '(no subject)'}</div>
+                              <div className="text-xs text-text-muted">{msg.from?.split('<')[0]?.trim()}</div>
+                            </div>
+
+                            {/* Attachments */}
+                            {msg.attachments.length > 0 ? (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                {msg.attachments.map(att => {
+                                  const attKey = `${msg.id}_${att.id}`
+                                  const downloading = downloadingAtt === attKey
+                                  return (
+                                    <button
+                                      key={attKey}
+                                      className="flex items-center gap-2 bg-bg-primary border border-border rounded-lg hover:border-accent/50 hover:bg-bg-hover transition-colors"
+                                      style={{ padding: '8px 12px', maxWidth: 200 }}
+                                      onClick={() => previewAttachment(msg, att)}
+                                      disabled={downloading}
+                                      title={`${att.filename} (${formatFileSize(att.size)})`}
+                                    >
+                                      {downloading ? (
+                                        <Loader2 size={14} className="animate-spin text-accent flex-shrink-0" />
+                                      ) : isImage(att.mimeType) ? (
+                                        <Image size={14} className="text-accent flex-shrink-0" />
+                                      ) : (
+                                        <Paperclip size={14} className="text-text-muted flex-shrink-0" />
+                                      )}
+                                      <span className="text-xs text-text-secondary truncate">{att.filename}</span>
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-text-muted">No attachments</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )
@@ -142,4 +274,14 @@ export function QuoteLinker() {
       )}
     </div>
   )
+}
+
+function getTypeFromMime(mime: string): any {
+  if (mime.startsWith('image/jpeg') || mime.startsWith('image/jpg')) return 'jpg'
+  if (mime.startsWith('image/png')) return 'png'
+  if (mime.startsWith('image/tiff')) return 'tiff'
+  if (mime.startsWith('image/svg')) return 'svg'
+  if (mime === 'application/pdf') return 'pdf'
+  if (mime.startsWith('image/')) return 'jpg'
+  return 'other'
 }

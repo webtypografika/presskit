@@ -13,7 +13,7 @@ export function StatusBar() {
   const folderCount = files.filter(f => f.isDirectory).length
 
   return (
-    <div className="h-8 flex items-center justify-between px-4 bg-bg-secondary border-t border-border text-sm text-text-muted flex-shrink-0">
+    <div className="flex items-center justify-between bg-bg-secondary border-t border-border text-sm text-text-muted flex-shrink-0" style={{ height: 40, padding: '0 24px' }}>
       <div className="flex items-center gap-4">
         {/* Source indicator */}
         <span className="flex items-center gap-1">

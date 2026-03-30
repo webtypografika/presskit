@@ -60,7 +60,7 @@ export function EmailAttach() {
   const inputCls = "w-full px-3 py-2.5 bg-bg-primary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
 
   return (
-    <div className="p-4 space-y-4">
+    <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
       {selectedFile && !selectedFile.isDirectory && (
         <div className="flex items-center gap-3 p-3 bg-bg-primary rounded-lg">
           <Paperclip size={16} className="text-accent flex-shrink-0" />

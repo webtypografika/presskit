@@ -12,6 +12,7 @@ export interface FileEntry {
   created: string
   extension: string
   type: FileType
+  cloudStatus?: 'local' | 'cloud' | 'syncing'
 }
 
 export type FileType =
@@ -62,6 +63,36 @@ function getFileType(ext: string): FileType {
   return EXTENSION_MAP[ext.toLowerCase()] || 'unknown'
 }
 
+// Detect Dropbox cloud status on Windows
+// Online-only files have FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS (0x00400000)
+// or FILE_ATTRIBUTE_OFFLINE (0x1000)
+function getCloudStatus(filePath: string, stats: any): 'local' | 'cloud' | undefined {
+  // Check if file is inside a Dropbox folder
+  const lowerPath = filePath.toLowerCase()
+  const isDropboxPath = lowerPath.includes('dropbox')
+  if (!isDropboxPath) return undefined
+
+  if (process.platform === 'win32') {
+    try {
+      // On Windows, check the file attributes using the native mode bits
+      // Placeholder/cloud-only files typically have blocks = 0 while having a size > 0
+      // Also check for reparse points (bit 10 of mode on NTFS)
+      const mode = (stats as any).mode || 0
+      const isReparsePoint = (mode & 0o20000000000) !== 0
+
+      // Simple heuristic: if file has size but blocks suggest no local data
+      if (!stats.isDirectory() && stats.size > 0 && stats.blocks === 0) {
+        return 'cloud'
+      }
+      if (isReparsePoint) {
+        return 'cloud'
+      }
+    } catch {}
+  }
+
+  return 'local'
+}
+
 export function registerFileSystemHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('fs:listDirectory', async (_e, dirPath: string): Promise<FileEntry[]> => {
     if (!existsSync(dirPath)) return []
@@ -79,6 +110,7 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
       try {
         const stats = await stat(fullPath)
         const ext = entry.isDirectory() ? '' : extname(entry.name)
+        const cloudStatus = getCloudStatus(fullPath, stats)
 
         results.push({
           name: entry.name,
@@ -88,12 +120,70 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
           modified: stats.mtime.toISOString(),
           created: stats.birthtime.toISOString(),
           extension: ext.toLowerCase(),
-          type: entry.isDirectory() ? 'folder' : getFileType(ext)
+          type: entry.isDirectory() ? 'folder' : getFileType(ext),
+          cloudStatus
         })
       } catch {
         // Skip files we can't access
       }
     }
+
+    // Sort: folders first, then by name
+    results.sort((a, b) => {
+      if (a.isDirectory && !b.isDirectory) return -1
+      if (!a.isDirectory && b.isDirectory) return 1
+      return a.name.localeCompare(b.name)
+    })
+
+    return results
+  })
+
+  // Recursive search within a path
+  ipcMain.handle('fs:search', async (_e, rootPath: string, query: string, maxResults = 30): Promise<FileEntry[]> => {
+    if (!existsSync(rootPath) || !query.trim()) return []
+
+    const q = query.toLowerCase()
+    const results: FileEntry[] = []
+    const maxDepth = 4
+
+    async function walk(dir: string, depth: number) {
+      if (depth > maxDepth || results.length >= maxResults) return
+      try {
+        const names = await readdir(dir)
+        for (const name of names) {
+          if (results.length >= maxResults) return
+          if (name.startsWith('.') || name === 'node_modules' || name === 'Thumbs.db' || name === 'desktop.ini') continue
+
+          const fullPath = join(dir, name)
+          let stats
+          try {
+            stats = await stat(fullPath)
+          } catch { continue }
+
+          const isDir = stats.isDirectory()
+
+          if (name.toLowerCase().includes(q)) {
+            const ext = isDir ? '' : extname(name)
+            results.push({
+              name,
+              path: fullPath,
+              isDirectory: isDir,
+              size: stats.size,
+              modified: stats.mtime.toISOString(),
+              created: stats.birthtime.toISOString(),
+              extension: ext.toLowerCase(),
+              type: isDir ? 'folder' : getFileType(ext)
+            })
+          }
+
+          if (isDir) {
+            await walk(fullPath, depth + 1)
+          }
+        }
+      } catch {}
+    }
+
+    await walk(rootPath, 0)
 
     // Sort: folders first, then by name
     results.sort((a, b) => {

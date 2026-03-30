@@ -15,6 +15,7 @@ interface AppState {
   // File browser
   files: FileEntry[]
   selectedFile: FileEntry | null
+  selectedFiles: FileEntry[]
   viewMode: ViewMode
   thumbnailSize: number
   loading: boolean
@@ -37,6 +38,8 @@ interface AppState {
   // PressCal connection
   presscalConnected: boolean
   presscalOrgName: string
+  lastCustomerEmail: string  // Auto-fill for send email
+  pickFileMode: { quoteId: string; itemId: string } | null  // Pick file for quote item
 
   // Dropbox connection
   dropboxConnected: boolean
@@ -49,6 +52,8 @@ interface AppState {
   navigateForward: () => void
   navigateUp: () => void
   selectFile: (file: FileEntry | null) => void
+  toggleFileSelection: (file: FileEntry) => void
+  clearSelection: () => void
   setViewMode: (mode: ViewMode) => void
   setThumbnailSize: (size: number) => void
   setSource: (source: Source) => void
@@ -67,6 +72,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   source: 'local',
   files: [],
   selectedFile: null,
+  selectedFiles: [],
   viewMode: 'grid',
   thumbnailSize: 128,
   loading: false,
@@ -81,6 +87,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   inspectorWidth: 320,
   presscalConnected: false,
   presscalOrgName: '',
+  lastCustomerEmail: '',
+  pickFileMode: null,
   dropboxConnected: false,
   dropboxName: '',
 
@@ -126,7 +134,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   navigateTo: async (path: string) => {
     const { source, currentPath, pathHistory, historyIndex } = get()
-    set({ loading: true, selectedFile: null, preview: null, metadata: null, preflight: null })
+    set({ loading: true, selectedFile: null, selectedFiles: [], preview: null, metadata: null, preflight: null })
 
     try {
       let files: FileEntry[]
@@ -216,6 +224,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       .then(metadata => set({ metadata, metadataLoading: false }))
       .catch(() => set({ metadataLoading: false }))
   },
+
+  toggleFileSelection: (file) => {
+    const { selectedFiles } = get()
+    const exists = selectedFiles.some(f => f.path === file.path)
+    if (exists) {
+      set({ selectedFiles: selectedFiles.filter(f => f.path !== file.path) })
+    } else {
+      set({ selectedFiles: [...selectedFiles, file] })
+    }
+  },
+
+  clearSelection: () => set({ selectedFiles: [] }),
 
   setViewMode: (mode) => {
     set({ viewMode: mode })

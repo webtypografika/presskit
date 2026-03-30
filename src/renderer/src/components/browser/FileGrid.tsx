@@ -70,7 +70,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   onOpen: (file: FileEntry) => void
 }) {
   const thumbnailSize = useAppStore(s => s.thumbnailSize)
-  const { runPreflight, setInspectorTab } = useAppStore()
+  const { runPreflight, setInspectorTab, toggleFileSelection, selectedFiles } = useAppStore()
   const [ctxMenu, setCtxMenu] = useState<{ file: FileEntry; x: number; y: number } | null>(null)
 
   const handleContextMenu = useCallback((e: React.MouseEvent, file: FileEntry) => {
@@ -121,7 +121,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     return (
       <div className="h-full overflow-y-auto">
         {/* List header */}
-        <div className="sticky top-0 z-10 flex items-center gap-2 px-3 py-1 bg-bg-tertiary border-b border-border text-sm text-text-muted font-medium uppercase tracking-wider">
+        <div className="sticky top-0 z-10 flex items-center gap-2 bg-bg-tertiary border-b border-border text-sm text-text-muted font-medium uppercase tracking-wider" style={{ padding: '10px 20px' }}>
           <span className="w-6" />
           <span className="flex-1">Name</span>
           <span className="w-20 text-right">Size</span>
@@ -134,19 +134,40 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
           <div
             key={file.path}
             className={clsx(
-              'flex items-center gap-2 px-3 py-1 cursor-pointer transition-colors',
-              selectedFile?.path === file.path
-                ? 'bg-bg-active text-text-primary'
+              'flex items-center gap-2 cursor-pointer transition-colors',
+              (selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path))
+                ? 'text-text-primary'
                 : 'hover:bg-bg-hover text-text-secondary'
             )}
-            onClick={() => onSelect(file)}
+            style={{
+              padding: '8px 20px',
+              borderLeft: (selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path))
+                ? '2px solid #f58220' : '2px solid transparent',
+              background: selectedFiles.some(f => f.path === file.path)
+                ? 'rgba(245,130,32,0.08)' : undefined,
+            }}
+            onClick={(e) => {
+              if (e.ctrlKey || e.metaKey) {
+                toggleFileSelection(file)
+              } else {
+                onSelect(file)
+              }
+            }}
             onDoubleClick={() => onOpen(file)}
             onContextMenu={(e) => handleContextMenu(e, file)}
           >
-            <span className="w-6 flex-shrink-0 flex justify-center">
+            <span className="w-6 flex-shrink-0 flex justify-center" style={{ position: 'relative' }}>
               <FileTypeIcon type={file.type} size={16} />
+              {file.cloudStatus === 'cloud' && (
+                <span style={{ position: 'absolute', bottom: -2, right: -2, fontSize: 7, color: '#3b82f6' }}>☁</span>
+              )}
             </span>
-            <span className="flex-1 truncate text-xs">{file.name}</span>
+            <span className="flex-1 truncate text-xs">
+              {file.name}
+              {file.cloudStatus === 'cloud' && (
+                <span style={{ marginLeft: 6, fontSize: 10, color: '#3b82f6', fontWeight: 500 }}>cloud</span>
+              )}
+            </span>
             <span className="w-20 text-right text-sm text-text-muted">
               {file.isDirectory ? '' : formatFileSize(file.size)}
             </span>
@@ -180,10 +201,11 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   const cellSize = thumbnailSize + 40
 
   return (
-    <div className="h-full overflow-y-auto p-3">
+    <div className="h-full overflow-y-auto" style={{ padding: 20 }}>
       <div
-        className="grid gap-2"
+        className="grid"
         style={{
+          gap: 12,
           gridTemplateColumns: `repeat(auto-fill, minmax(${cellSize}px, 1fr))`
         }}
       >
@@ -191,21 +213,35 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
           <div
             key={file.path}
             className={clsx(
-              'flex flex-col items-center rounded-lg cursor-pointer transition-colors p-2',
-              selectedFile?.path === file.path
-                ? 'bg-bg-active ring-1 ring-accent/40'
-                : 'hover:bg-bg-hover'
+              'flex flex-col items-center rounded-lg cursor-pointer transition-colors'
             )}
-            onClick={() => onSelect(file)}
+            style={{
+              padding: 8,
+              border: (selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path))
+                ? '1px solid #f58220' : '1px solid transparent',
+              background: selectedFiles.some(f => f.path === file.path)
+                ? 'rgba(245,130,32,0.08)' : 'transparent',
+              borderRadius: 10,
+            }}
+            onClick={(e) => {
+              if (e.ctrlKey || e.metaKey) {
+                toggleFileSelection(file)
+              } else {
+                onSelect(file)
+              }
+            }}
             onDoubleClick={() => onOpen(file)}
             onContextMenu={(e) => handleContextMenu(e, file)}
           >
             {/* Thumbnail */}
             <div
               className="rounded bg-bg-primary flex items-center justify-center overflow-hidden"
-              style={{ width: thumbnailSize, height: thumbnailSize }}
+              style={{ width: thumbnailSize, height: thumbnailSize, position: 'relative' }}
             >
               <FileThumbnail file={file} size={thumbnailSize} />
+              {file.cloudStatus && (
+                <CloudBadge status={file.cloudStatus} />
+              )}
             </div>
 
             {/* File name */}
@@ -235,4 +271,34 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
       )}
     </div>
   )
+}
+
+function CloudBadge({ status }: { status: 'local' | 'cloud' | 'syncing' }) {
+  if (status === 'local') {
+    return (
+      <span style={{
+        position: 'absolute', bottom: 4, right: 4,
+        width: 16, height: 16, borderRadius: '50%',
+        background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 9, color: '#22c55e',
+      }} title="Local (synced)">
+        ✓
+      </span>
+    )
+  }
+  if (status === 'cloud') {
+    return (
+      <span style={{
+        position: 'absolute', bottom: 4, right: 4,
+        width: 16, height: 16, borderRadius: '50%',
+        background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 9, color: '#3b82f6',
+      }} title="Cloud only">
+        ☁
+      </span>
+    )
+  }
+  return null
 }

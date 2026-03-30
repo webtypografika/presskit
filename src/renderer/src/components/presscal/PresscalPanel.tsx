@@ -19,7 +19,7 @@ export function PresscalPanel() {
   return (
     <div className="h-full flex flex-col">
       {/* Connection indicator */}
-      <div className="px-4 py-2.5 border-b border-border flex items-center gap-2">
+      <div className="border-b border-border flex items-center gap-2" style={{ padding: '12px 20px' }}>
         <div className="w-2 h-2 rounded-full bg-success" />
         <span className="text-sm text-text-primary font-medium">{presscalOrgName || 'PressCal'}</span>
       </div>
@@ -34,11 +34,12 @@ export function PresscalPanel() {
         ] as const).map(tab => (
           <button
             key={tab.id}
-            className={`flex items-center gap-1.5 px-3 py-2.5 text-sm whitespace-nowrap border-b-2 ${
+            className={`flex items-center gap-1.5 text-sm whitespace-nowrap border-b-2 ${
               subTab === tab.id
                 ? 'text-accent border-accent'
                 : 'text-text-muted border-transparent hover:text-text-secondary'
             }`}
+            style={{ padding: '12px 16px' }}
             onClick={() => setSubTab(tab.id)}
           >
             {tab.icon}
@@ -88,7 +89,7 @@ function PresscalSetup() {
   }
 
   return (
-    <div className="p-5 space-y-5">
+    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div className="flex flex-col items-center gap-3 py-6">
         <Link2 size={36} className="text-text-muted" />
         <div className="text-base text-text-secondary font-medium">Connect to PressCal</div>

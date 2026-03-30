@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useAppStore } from '@/stores/app-store'
 import {
@@ -8,6 +8,24 @@ import {
 
 type SettingsTab = 'presscal' | 'dropbox' | 'preflight' | 'ui'
 
+/* Reusable field wrapper — gives each setting a card-like row */
+function Field({ label, description, children, noPad }: { label?: string; description?: string; children: ReactNode; noPad?: boolean }) {
+  const row: CSSProperties = {
+    padding: noPad ? '16px 0' : '20px 24px',
+    borderBottom: '1px solid rgba(255,255,255,0.04)',
+    background: noPad ? 'transparent' : 'rgba(255,255,255,0.015)',
+    borderRadius: noPad ? 0 : 10,
+    marginBottom: 4,
+  }
+  return (
+    <div style={row}>
+      {label && <div style={{ fontSize: 13, color: '#94a3b8', fontWeight: 500, marginBottom: 10 }}>{label}</div>}
+      {children}
+      {description && <div style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}>{description}</div>}
+    </div>
+  )
+}
+
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<SettingsTab>('presscal')
 
@@ -16,18 +34,18 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       <div style={{ width: '100%', maxWidth: 800, maxHeight: '100%', background: '#0f1525', borderRadius: 16, border: '1px solid #1e293b', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-10 py-6 border-b border-border">
+        <div className="flex items-center justify-between border-b border-border" style={{ padding: '24px 40px' }}>
           <div className="flex items-center gap-3">
             <Settings size={22} className="text-accent" />
             <span className="text-lg font-semibold">Settings</span>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-bg-hover rounded-lg">
+          <button onClick={onClose} className="hover:bg-bg-hover rounded-lg" style={{ padding: 8 }}>
             <X size={20} className="text-text-muted" />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-border px-6">
+        <div className="flex border-b border-border" style={{ padding: '0 24px' }}>
           {([
             { id: 'presscal', label: 'PressCal', icon: <Link2 size={16} /> },
             { id: 'dropbox', label: 'Dropbox', icon: <Cloud size={16} /> },
@@ -36,11 +54,12 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           ] as const).map(t => (
             <button
               key={t.id}
-              className={`flex items-center gap-2 px-5 py-4 text-sm border-b-2 transition-colors ${
+              className={`flex items-center gap-2 text-sm border-b-2 transition-colors ${
                 tab === t.id
                   ? 'text-accent border-accent'
                   : 'text-text-secondary border-transparent hover:text-text-primary'
               }`}
+              style={{ padding: '16px 20px' }}
               onClick={() => setTab(t.id)}
             >
               {t.icon} {t.label}
@@ -49,7 +68,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-10 py-10">
+        <div className="flex-1 overflow-y-auto" style={{ padding: '28px 32px' }}>
           {tab === 'presscal' && <PresscalSettings />}
           {tab === 'dropbox' && <DropboxSettings />}
           {tab === 'preflight' && <PreflightSettings />}
@@ -82,10 +101,7 @@ function PresscalSettings() {
       const status = await window.api.presscal.status()
       if (status.connected) {
         setTestResult('ok')
-        useAppStore.setState({
-          presscalConnected: true,
-          presscalOrgName: (status as any).orgName || ''
-        })
+        useAppStore.setState({ presscalConnected: true, presscalOrgName: (status as any).orgName || '' })
       } else {
         setTestResult('fail')
       }
@@ -97,30 +113,31 @@ function PresscalSettings() {
   }
 
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       {/* Status */}
-      <div className="flex items-center gap-3 mb-8">
-        <div className={`w-3 h-3 rounded-full ${presscalConnected ? 'bg-success' : 'bg-text-muted'}`} />
-        <span className="text-sm text-text-secondary">
-          {presscalConnected ? `Connected to ${presscalOrgName}` : 'Not connected'}
-        </span>
-      </div>
+      <Field>
+        <div className="flex items-center" style={{ gap: 12 }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: presscalConnected ? '#22c55e' : '#64748b' }} />
+          <span style={{ fontSize: 14, color: presscalConnected ? '#e2e8f0' : '#94a3b8', fontWeight: 500 }}>
+            {presscalConnected ? `Connected to ${presscalOrgName}` : 'Not connected'}
+          </span>
+        </div>
+      </Field>
 
       {/* URL */}
-      <div className="mb-8">
-        <label className="text-sm text-text-muted font-medium block mb-3">PressCal URL</label>
+      <Field label="PressCal URL">
         <input
           type="url"
           value={url}
           onChange={e => setUrl(e.target.value)}
           placeholder="http://localhost:3000"
+          style={{ width: '100%' }}
         />
-      </div>
+      </Field>
 
       {/* API Key */}
-      <div className="mb-8">
-        <label className="text-sm text-text-muted font-medium block mb-3">API Key</label>
-        <div className="flex items-center gap-3">
+      <Field label="API Key">
+        <div className="flex items-center" style={{ gap: 12 }}>
           <input
             type={showKey ? 'text' : 'password'}
             value={apiKey}
@@ -130,24 +147,28 @@ function PresscalSettings() {
           />
           <button
             onClick={() => setShowKey(!showKey)}
-            className="p-3 bg-bg-primary border border-border rounded-lg hover:bg-bg-hover"
+            style={{ padding: 12, background: '#0a0e1a', border: '1px solid #1e293b', borderRadius: 8, cursor: 'pointer' }}
           >
-            {showKey ? <EyeOff size={18} className="text-text-muted" /> : <Eye size={18} className="text-text-muted" />}
+            {showKey ? <EyeOff size={18} style={{ color: '#64748b' }} /> : <Eye size={18} style={{ color: '#64748b' }} />}
           </button>
         </div>
-      </div>
+      </Field>
 
       {/* Test button */}
-      <div className="flex items-center gap-4">
+      <div style={{ paddingTop: 16, display: 'flex', alignItems: 'center', gap: 16 }}>
         <button
           onClick={testConnection}
           disabled={testing || !url || !apiKey}
-          className="px-8 py-3 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover disabled:opacity-50"
+          style={{
+            padding: '12px 32px', borderRadius: 8, border: 'none', cursor: 'pointer',
+            background: '#f58220', color: '#fff', fontSize: 14, fontWeight: 600,
+            opacity: (testing || !url || !apiKey) ? 0.5 : 1,
+          }}
         >
           {testing ? 'Testing...' : 'Test Connection'}
         </button>
-        {testResult === 'ok' && <span className="flex items-center gap-2 text-success"><CheckCircle size={18} /> Connected</span>}
-        {testResult === 'fail' && <span className="flex items-center gap-2 text-error"><XCircle size={18} /> Failed</span>}
+        {testResult === 'ok' && <span className="flex items-center gap-2" style={{ color: '#22c55e', fontSize: 14 }}><CheckCircle size={18} /> Connected</span>}
+        {testResult === 'fail' && <span className="flex items-center gap-2" style={{ color: '#ef4444', fontSize: 14 }}><XCircle size={18} /> Failed</span>}
       </div>
     </div>
   )
@@ -180,29 +201,36 @@ function DropboxSettings() {
   }
 
   return (
-    <div>
-      <div className="flex items-center gap-3 mb-8">
-        <div className={`w-3 h-3 rounded-full ${dropboxConnected ? 'bg-success' : 'bg-text-muted'}`} />
-        <span className="text-sm text-text-secondary">
-          {dropboxConnected ? `Connected as ${dropboxName}` : 'Not connected'}
-        </span>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <Field>
+        <div className="flex items-center" style={{ gap: 12 }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: dropboxConnected ? '#22c55e' : '#64748b' }} />
+          <span style={{ fontSize: 14, color: dropboxConnected ? '#e2e8f0' : '#94a3b8', fontWeight: 500 }}>
+            {dropboxConnected ? `Connected as ${dropboxName}` : 'Not connected'}
+          </span>
+        </div>
+      </Field>
 
-      <div className="mb-8">
-        <label className="text-sm text-text-muted font-medium block mb-3">Dropbox App Client ID</label>
-        <input type="text" value={clientId} onChange={e => setClientId(e.target.value)} placeholder="Your Dropbox App client ID" className="font-mono" />
-        <p className="text-sm text-text-muted mt-3">Create an app at dropbox.com/developers/apps to get a client ID</p>
-      </div>
+      <Field label="Dropbox App Client ID" description="Create an app at dropbox.com/developers/apps to get a client ID">
+        <input type="text" value={clientId} onChange={e => setClientId(e.target.value)} placeholder="Your Dropbox App client ID" className="font-mono" style={{ width: '100%' }} />
+      </Field>
 
-      <div className="flex items-center gap-4">
+      <div style={{ paddingTop: 16, display: 'flex', alignItems: 'center', gap: 16 }}>
         {!dropboxConnected ? (
           <button onClick={connect} disabled={connecting || !clientId}
-            className="px-8 py-3 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover disabled:opacity-50">
+            style={{
+              padding: '12px 32px', borderRadius: 8, border: 'none', cursor: 'pointer',
+              background: '#f58220', color: '#fff', fontSize: 14, fontWeight: 600,
+              opacity: (connecting || !clientId) ? 0.5 : 1,
+            }}>
             {connecting ? 'Connecting...' : 'Connect Dropbox'}
           </button>
         ) : (
           <button onClick={disconnect}
-            className="px-8 py-3 bg-error/10 text-error rounded-lg text-sm font-medium hover:bg-error/20">
+            style={{
+              padding: '12px 32px', borderRadius: 8, border: 'none', cursor: 'pointer',
+              background: 'rgba(239,68,68,0.1)', color: '#ef4444', fontSize: 14, fontWeight: 600,
+            }}>
             Disconnect
           </button>
         )}
@@ -243,35 +271,32 @@ function PreflightSettings() {
   }
 
   return (
-    <div>
-      <div className="mb-8">
-        <label className="text-sm text-text-muted font-medium block mb-3">Minimum DPI</label>
-        <input type="number" value={minDpi} onChange={e => setMinDpi(Number(e.target.value))} onBlur={save} className="w-32" />
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <Field label="Minimum DPI">
+        <input type="number" value={minDpi} onChange={e => setMinDpi(Number(e.target.value))} onBlur={save} style={{ width: 120 }} />
+      </Field>
 
-      <div className="mb-8">
-        <label className="text-sm text-text-muted font-medium block mb-3">Max Total Area Coverage (TAC %)</label>
-        <input type="number" value={maxTac} onChange={e => setMaxTac(Number(e.target.value))} onBlur={save} className="w-32" />
-      </div>
+      <Field label="Max Total Area Coverage (TAC %)">
+        <input type="number" value={maxTac} onChange={e => setMaxTac(Number(e.target.value))} onBlur={save} style={{ width: 120 }} />
+      </Field>
 
-      <div className="mb-8">
-        <label className="text-sm text-text-muted font-medium block mb-3">Bleed (mm)</label>
-        <input type="number" value={bleedMm} onChange={e => setBleedMm(Number(e.target.value))} onBlur={save} className="w-32" />
-      </div>
+      <Field label="Bleed (mm)">
+        <input type="number" value={bleedMm} onChange={e => setBleedMm(Number(e.target.value))} onBlur={save} style={{ width: 120 }} />
+      </Field>
 
-      <div className="mb-6">
-        <label className="flex items-center gap-3 cursor-pointer" onClick={() => { setRequireCmyk(!requireCmyk); setTimeout(save, 0) }}>
-          <input type="checkbox" checked={requireCmyk} readOnly className="w-5 h-5 accent-accent" />
-          <span className="text-sm text-text-secondary">Require CMYK color space</span>
+      <Field>
+        <label className="flex items-center cursor-pointer" style={{ gap: 12 }} onClick={() => { setRequireCmyk(!requireCmyk); setTimeout(save, 0) }}>
+          <input type="checkbox" checked={requireCmyk} readOnly style={{ width: 18, height: 18 }} className="accent-accent" />
+          <span style={{ fontSize: 14, color: '#cbd5e1' }}>Require CMYK color space</span>
         </label>
-      </div>
+      </Field>
 
-      <div className="mb-6">
-        <label className="flex items-center gap-3 cursor-pointer" onClick={() => { setRequireBleed(!requireBleed); setTimeout(save, 0) }}>
-          <input type="checkbox" checked={requireBleed} readOnly className="w-5 h-5 accent-accent" />
-          <span className="text-sm text-text-secondary">Require bleed</span>
+      <Field>
+        <label className="flex items-center cursor-pointer" style={{ gap: 12 }} onClick={() => { setRequireBleed(!requireBleed); setTimeout(save, 0) }}>
+          <input type="checkbox" checked={requireBleed} readOnly style={{ width: 18, height: 18 }} className="accent-accent" />
+          <span style={{ fontSize: 14, color: '#cbd5e1' }}>Require bleed</span>
         </label>
-      </div>
+      </Field>
     </div>
   )
 }
@@ -280,19 +305,31 @@ function UiSettings() {
   const { viewMode, setViewMode, thumbnailSize, setThumbnailSize } = useAppStore()
 
   return (
-    <div>
-      <div className="mb-8">
-        <label className="text-sm text-text-muted font-medium block mb-3">Default View Mode</label>
-        <div className="flex gap-3">
-          <button className={`px-6 py-3 rounded-lg text-sm ${viewMode === 'grid' ? 'bg-accent/10 text-accent' : 'bg-bg-primary text-text-secondary hover:bg-bg-hover'}`} onClick={() => setViewMode('grid')}>Grid</button>
-          <button className={`px-6 py-3 rounded-lg text-sm ${viewMode === 'list' ? 'bg-accent/10 text-accent' : 'bg-bg-primary text-text-secondary hover:bg-bg-hover'}`} onClick={() => setViewMode('list')}>List</button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <Field label="Default View Mode">
+        <div className="flex" style={{ gap: 10 }}>
+          <button
+            style={{
+              padding: '10px 24px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14,
+              background: viewMode === 'grid' ? 'rgba(245,130,32,0.1)' : '#0a0e1a',
+              color: viewMode === 'grid' ? '#f58220' : '#94a3b8',
+            }}
+            onClick={() => setViewMode('grid')}
+          >Grid</button>
+          <button
+            style={{
+              padding: '10px 24px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14,
+              background: viewMode === 'list' ? 'rgba(245,130,32,0.1)' : '#0a0e1a',
+              color: viewMode === 'list' ? '#f58220' : '#94a3b8',
+            }}
+            onClick={() => setViewMode('list')}
+          >List</button>
         </div>
-      </div>
+      </Field>
 
-      <div className="mb-8">
-        <label className="text-sm text-text-muted font-medium block mb-3">Thumbnail Size: {thumbnailSize}px</label>
-        <input type="range" min={64} max={256} step={16} value={thumbnailSize} onChange={e => setThumbnailSize(Number(e.target.value))} className="w-full accent-accent" />
-      </div>
+      <Field label={`Thumbnail Size: ${thumbnailSize}px`}>
+        <input type="range" min={64} max={256} step={16} value={thumbnailSize} onChange={e => setThumbnailSize(Number(e.target.value))} className="accent-accent" style={{ width: '100%' }} />
+      </Field>
     </div>
   )
 }

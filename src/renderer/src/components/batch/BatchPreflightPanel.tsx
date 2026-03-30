@@ -102,7 +102,7 @@ export function BatchPreflightPanel({ onClose }: { onClose: () => void }) {
   return (
     <div className="h-full flex flex-col bg-bg-secondary">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border">
+      <div className="flex items-center justify-between border-b border-border" style={{ padding: '14px 20px' }}>
         <div className="flex items-center gap-2">
           <Scan size={16} className="text-accent" />
           <span className="text-sm font-medium">Batch Preflight</span>
@@ -111,7 +111,7 @@ export function BatchPreflightPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       {/* Folder selection */}
-      <div className="px-4 py-3 border-b border-border space-y-2">
+      <div className="border-b border-border" style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div className="flex items-center gap-2">
           <input
             type="text"
@@ -160,7 +160,7 @@ export function BatchPreflightPanel({ onClose }: { onClose: () => void }) {
 
       {/* Progress */}
       {running && progress && (
-        <div className="px-4 py-2 border-b border-border bg-bg-primary">
+        <div className="border-b border-border bg-bg-primary" style={{ padding: '10px 20px' }}>
           <div className="flex items-center justify-between text-sm text-text-secondary mb-1">
             <span>{progress.current} / {progress.total}</span>
             <span className="truncate ml-2 text-text-muted">{progress.file.split(/[/\\]/).pop()}</span>
@@ -176,7 +176,7 @@ export function BatchPreflightPanel({ onClose }: { onClose: () => void }) {
 
       {/* Results summary */}
       {reports.length > 0 && (
-        <div className="flex items-center gap-4 px-4 py-2 border-b border-border">
+        <div className="flex items-center gap-4 border-b border-border" style={{ padding: '10px 20px' }}>
           <span className="flex items-center gap-1 text-xs text-success">
             <CheckCircle size={13} /> {statusCounts.pass}
           </span>
@@ -211,9 +211,10 @@ export function BatchPreflightPanel({ onClose }: { onClose: () => void }) {
               return (
                 <div
                   key={i}
-                  className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs ${
+                  className={`flex items-center gap-2 cursor-pointer text-xs ${
                     selectedReport === report ? 'bg-bg-active' : 'hover:bg-bg-hover'
                   }`}
+                  style={{ padding: '10px 16px' }}
                   onClick={() => setSelectedReport(report)}
                 >
                   {statusIcon}
@@ -226,7 +227,7 @@ export function BatchPreflightPanel({ onClose }: { onClose: () => void }) {
             })
           ) : files.length > 0 ? (
             files.map((f, i) => (
-              <div key={i} className="flex items-center gap-2 px-3 py-1.5 text-xs text-text-muted">
+              <div key={i} className="flex items-center gap-2 text-xs text-text-muted" style={{ padding: '10px 16px' }}>
                 <FileText size={13} />
                 <span className="truncate">{f.split(/[/\\]/).pop()}</span>
               </div>
@@ -239,7 +240,7 @@ export function BatchPreflightPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Detail view */}
-        <div className="w-1/2 overflow-y-auto p-3">
+        <div className="w-1/2 overflow-y-auto" style={{ padding: 20 }}>
           {selectedReport ? (
             <div className="space-y-2">
               <div className="text-xs font-medium text-text-primary mb-2">{selectedReport.fileName}</div>

@@ -1,6 +1,7 @@
-import { IpcMain } from 'electron'
+import { IpcMain, BrowserWindow } from 'electron'
 import { readFile } from 'fs/promises'
 import { extname } from 'path'
+import { pathToFileURL } from 'url'
 
 export interface PreviewResult {
   type: 'image' | 'pdf-page' | 'svg' | 'font-sample' | 'none'
@@ -59,6 +60,48 @@ export function registerPreviewHandlers(ipcMain: IpcMain): void {
             return `data:image/png;base64,${buffer.toString('base64')}`
           }
         }
+      } catch {
+        return null
+      }
+    }
+
+    // PDF — render first page to thumbnail via hidden window
+    if (ext === '.pdf') {
+      try {
+        const fileUrl = pathToFileURL(filePath).href
+        const win = new BrowserWindow({
+          width: size * 2,
+          height: size * 2,
+          show: false,
+          webPreferences: { offscreen: true }
+        })
+
+        await win.loadURL(`${fileUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`)
+        // Wait for PDF to render
+        await new Promise(resolve => setTimeout(resolve, 1500))
+        const image = await win.webContents.capturePage()
+        win.close()
+
+        const sharp = (await import('sharp')).default
+        const buffer = await sharp(image.toPNG())
+          .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+          .png()
+          .toBuffer()
+        return `data:image/png;base64,${buffer.toString('base64')}`
+      } catch {
+        return null
+      }
+    }
+
+    // AI/EPS — try to read embedded preview via sharp
+    if (['.ai', '.eps'].includes(ext)) {
+      try {
+        const sharp = (await import('sharp')).default
+        const buffer = await sharp(filePath, { density: 72 })
+          .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+          .png()
+          .toBuffer()
+        return `data:image/png;base64,${buffer.toString('base64')}`
       } catch {
         return null
       }

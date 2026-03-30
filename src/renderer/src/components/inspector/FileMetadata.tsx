@@ -16,14 +16,14 @@ export function FileMetadata() {
 
   if (!metadata || !selectedFile) {
     return (
-      <div className="p-4 text-text-muted text-xs text-center">
+      <div className="text-text-muted text-xs text-center" style={{ padding: 20 }}>
         Select a file to view metadata
       </div>
     )
   }
 
   return (
-    <div className="p-3 space-y-4">
+    <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* Basic info */}
       <MetadataSection title="File">
         <MetadataRow label="Name" value={metadata.name} />

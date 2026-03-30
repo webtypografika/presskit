@@ -1,49 +1,55 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react'
+import { useState } from 'react'
+import { ZoomIn, ZoomOut, RotateCw } from 'lucide-react'
 
-// PDF.js will be loaded from the renderer bundle
-// For now, we render the PDF data as an embedded object with fallback to iframe
 export function PdfPreview({ data }: { data: string }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(0)
-  const [zoom, setZoom] = useState(1)
+  const [zoom, setZoom] = useState(100)
 
-  // Use iframe/embed approach for PDF rendering
-  // PDF.js integration can be added later for more control
+  // Append #toolbar=1&navpanes=0 to hide sidebar, show toolbar
+  const pdfUrl = data.includes('#') ? data : `${data}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`
+
   return (
     <div className="h-full flex flex-col">
-      {/* PDF controls */}
-      <div className="h-7 flex items-center justify-center gap-2 bg-bg-tertiary border-b border-border flex-shrink-0">
+      {/* Minimal controls */}
+      <div className="flex items-center justify-center flex-shrink-0" style={{
+        height: 36, gap: 8, background: '#151c2e', borderBottom: '1px solid #1e293b',
+      }}>
         <button
-          className="p-0.5 text-text-muted hover:text-text-primary disabled:opacity-30"
-          onClick={() => setZoom(z => Math.max(0.25, z - 0.25))}
+          onClick={() => setZoom(z => Math.max(25, z - 25))}
+          style={{ padding: '4px 8px', border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', borderRadius: 4 }}
           title="Zoom out"
         >
-          <ZoomOut size={14} />
+          <ZoomOut size={16} />
         </button>
-        <span className="text-sm text-text-secondary w-12 text-center">
-          {Math.round(zoom * 100)}%
-        </span>
+        <span style={{ fontSize: 13, color: '#e2e8f0', minWidth: 44, textAlign: 'center' }}>{zoom}%</span>
         <button
-          className="p-0.5 text-text-muted hover:text-text-primary disabled:opacity-30"
-          onClick={() => setZoom(z => Math.min(4, z + 0.25))}
+          onClick={() => setZoom(z => Math.min(400, z + 25))}
+          style={{ padding: '4px 8px', border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', borderRadius: 4 }}
           title="Zoom in"
         >
-          <ZoomIn size={14} />
+          <ZoomIn size={16} />
+        </button>
+        <div style={{ width: 1, height: 16, background: '#1e293b', margin: '0 4px' }} />
+        <button
+          onClick={() => setZoom(100)}
+          style={{ padding: '4px 8px', border: 'none', background: 'transparent', color: '#64748b', cursor: 'pointer', borderRadius: 4, fontSize: 12 }}
+        >
+          Reset
         </button>
       </div>
 
-      {/* PDF content */}
-      <div ref={containerRef} className="flex-1 overflow-auto flex items-start justify-center p-2">
-        <embed
-          src={data}
-          type="application/pdf"
-          className="bg-white shadow-lg"
+      {/* PDF display — iframe without sidebar */}
+      <div className="flex-1 overflow-hidden" style={{ background: '#525659' }}>
+        <iframe
+          src={pdfUrl}
+          title="PDF Preview"
           style={{
-            width: `${Math.round(595 * zoom)}px`,
-            height: `${Math.round(842 * zoom)}px`,
-            minHeight: '100%'
+            width: '100%',
+            height: '100%',
+            border: 'none',
+            transform: `scale(${zoom / 100})`,
+            transformOrigin: 'top left',
+            width: `${10000 / zoom}%`,
+            height: `${10000 / zoom}%`,
           }}
         />
       </div>
