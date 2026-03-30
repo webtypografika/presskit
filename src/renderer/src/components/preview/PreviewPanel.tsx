@@ -15,17 +15,22 @@ export function PreviewPanel() {
 
   const hasPreview = selectedFile && !selectedFile.isDirectory
 
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [isResizing, setIsResizing] = useState(false)
+
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    resizingRef.current = true
-    const startPos = layout === 'side' ? e.clientX : e.clientY
+    e.stopPropagation()
 
-    const container = (e.target as HTMLElement).parentElement!
+    const container = containerRef.current
+    if (!container) return
+
+    setIsResizing(true)
     const containerRect = container.getBoundingClientRect()
     const totalSize = layout === 'side' ? containerRect.width : containerRect.height
 
     const onMouseMove = (ev: MouseEvent) => {
-      if (!resizingRef.current) return
+      ev.preventDefault()
       const currentPos = layout === 'side' ? ev.clientX : ev.clientY
       const offset = currentPos - (layout === 'side' ? containerRect.left : containerRect.top)
       const pct = Math.max(20, Math.min(80, (offset / totalSize) * 100))
@@ -33,7 +38,7 @@ export function PreviewPanel() {
     }
 
     const onMouseUp = () => {
-      resizingRef.current = false
+      setIsResizing(false)
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
       document.body.style.cursor = ''
@@ -52,15 +57,26 @@ export function PreviewPanel() {
   }
 
   // File selected — split: files + preview
+  // Overlay prevents iframes from stealing mouse events during resize
+  const resizeOverlay = isResizing ? (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 50, cursor: layout === 'side' ? 'col-resize' : 'row-resize' }} />
+  ) : null
+
   if (layout === 'side') {
     return (
-      <div className="h-full flex">
+      <div className="h-full flex" ref={containerRef} style={{ position: 'relative' }}>
+        {resizeOverlay}
         <div className="overflow-hidden" style={{ flex: `0 0 ${100 - previewSize}%`, minWidth: 200 }}>
           <FileBrowser />
         </div>
         <div
-          className="resizer"
           onMouseDown={startResize}
+          style={{
+            width: 6, flexShrink: 0, cursor: 'col-resize',
+            background: 'transparent', transition: 'background 0.15s',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.background = '#f58220')}
+          onMouseLeave={e => { if (!resizingRef.current) e.currentTarget.style.background = 'transparent' }}
         />
         <div className="flex flex-col overflow-hidden" style={{ flex: `0 0 ${previewSize}%`, minWidth: 200 }}>
           <PreviewToolbar layout={layout} onToggleLayout={() => setLayout('bottom')} />
@@ -74,12 +90,13 @@ export function PreviewPanel() {
 
   // Bottom layout
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col" ref={containerRef} style={{ position: 'relative' }}>
+      {resizeOverlay}
       <div className="overflow-hidden" style={{ flex: `0 0 ${100 - previewSize}%`, minHeight: 100 }}>
         <FileBrowser />
       </div>
       <div
-        style={{ height: 3, cursor: 'row-resize', background: 'transparent', flexShrink: 0, transition: 'background 0.15s' }}
+        style={{ height: 6, cursor: 'row-resize', background: 'transparent', flexShrink: 0, transition: 'background 0.15s' }}
         onMouseDown={startResize}
         onMouseEnter={e => (e.currentTarget.style.background = '#f58220')}
         onMouseLeave={e => { if (!resizingRef.current) e.currentTarget.style.background = 'transparent' }}

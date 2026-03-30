@@ -10,6 +10,7 @@ import { registerSettingsHandlers } from './settings'
 import { registerBatchHandlers } from './batch-engine'
 import { registerConvertHandlers } from './convert-engine'
 import { registerColorHandlers } from './color-tools'
+import { registerSearchHandlers } from './search-engine'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -240,6 +241,7 @@ function registerHandlers(): void {
   registerBatchHandlers(ipcMain)
   registerConvertHandlers(ipcMain)
   registerColorHandlers(ipcMain)
+  registerSearchHandlers(ipcMain)
 
   // User directories
   ipcMain.handle('system:userPaths', async () => {

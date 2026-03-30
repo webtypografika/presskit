@@ -1,7 +1,7 @@
 import {
   ArrowLeft, ArrowRight, ArrowUp, RefreshCw,
   LayoutGrid, List, Scan, Settings,
-  HardDrive, Cloud, Layers, RefreshCcw, Search, Send
+  HardDrive, Cloud, Layers, RefreshCcw, Search, Send, Sun, Moon
 } from 'lucide-react'
 import { useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
@@ -134,6 +134,7 @@ export function Toolbar() {
           <ToolbarButton icon={<List size={18} />} onClick={() => setViewMode('list')} active={viewMode === 'list'} title="List" />
         </div>
 
+        <ThemeToggle />
         <ToolbarButton icon={<Settings size={18} />} onClick={() => setShowSettings(true)} title="Settings" />
       </div>
 
@@ -323,6 +324,27 @@ function formatSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+function ThemeToggle() {
+  const { theme, setTheme } = useAppStore()
+  const isDark = theme === 'dark'
+
+  return (
+    <button
+      onClick={() => setTheme(isDark ? 'light' : 'dark')}
+      title={isDark ? 'Light mode' : 'Dark mode'}
+      style={{
+        padding: '6px 8px', borderRadius: 8, border: 'none', cursor: 'pointer',
+        background: 'transparent',
+        color: isDark ? '#64748b' : '#f59e0b',
+        display: 'flex', alignItems: 'center',
+        minHeight: 'auto',
+      }}
+    >
+      {isDark ? <Sun size={18} /> : <Moon size={18} />}
+    </button>
+  )
+}
+
 function SearchBox() {
   const { selectFile, navigateTo, currentPath } = useAppStore()
   const [query, setQuery] = useState('')
@@ -337,19 +359,22 @@ function SearchBox() {
       setResults([])
       return
     }
-    let searchPath = currentPath
-    if (!searchPath) {
-      try {
-        const paths = await window.api.system.userPaths()
-        searchPath = paths.home
-      } catch {
-        searchPath = 'C:\\'
-      }
-    }
     setSearching(true)
     try {
-      const r = await window.api.fs.search(searchPath, q.trim(), 20)
-      setResults(r || [])
+      // Use indexed search (fast, fuzzy)
+      const r = await window.api.search.query(q.trim(), 20)
+      // Map DB results to FileEntry-like objects
+      const mapped = (r || []).map((item: any) => ({
+        name: item.name,
+        path: item.path,
+        isDirectory: item.is_dir === 1,
+        size: item.size || 0,
+        modified: item.modified ? new Date(item.modified).toISOString() : '',
+        extension: item.ext || '',
+        type: item.is_dir === 1 ? 'folder' : 'unknown',
+        _dir: item.dir, // parent directory for display
+      }))
+      setResults(mapped)
       setOpen(true)
     } catch (e) {
       console.error('[SEARCH] error:', e)
@@ -357,7 +382,7 @@ function SearchBox() {
     } finally {
       setSearching(false)
     }
-  }, [currentPath])
+  }, [])
 
   const handleChange = useCallback((val: string) => {
     setQuery(val)
@@ -405,31 +430,50 @@ function SearchBox() {
         <div style={{
           position: 'fixed',
           top: rect.bottom + 4,
-          left: rect.left,
-          width: Math.max(rect.width, 280),
-          background: '#141e37', border: '1px solid #1e293b', borderRadius: 8,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-          maxHeight: 280, overflowY: 'auto', zIndex: 9999,
+          left: Math.max(rect.left - 100, 10),
+          width: Math.max(rect.width + 200, 420),
+          background: '#141e37', border: '1px solid #1e293b', borderRadius: 10,
+          boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+          maxHeight: 360, overflowY: 'auto', zIndex: 9999,
         }}>
-          {results.map(f => (
-            <div
-              key={f.path}
-              onMouseDown={() => handleSelect(f)}
-              style={{
-                padding: '10px 14px', cursor: 'pointer', fontSize: 13, color: '#e2e8f0',
-                borderBottom: '1px solid rgba(255,255,255,0.03)',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 12, color: f.isDirectory ? '#f58220' : '#64748b' }}>
-                  {f.isDirectory ? '📁' : '📄'}
-                </span>
-                {f.name}
+          {searching && (
+            <div style={{ padding: '8px 14px', fontSize: 12, color: '#64748b' }}>Αναζήτηση...</div>
+          )}
+          {results.map(f => {
+            // Short parent path for context
+            const parentPath = (f._dir || f.path.replace(/[/\\][^/\\]+$/, '')).replace(/^C:\\Users\\[^\\]+\\/, '~\\')
+            return (
+              <div
+                key={f.path}
+                onMouseDown={() => handleSelect(f)}
+                style={{
+                  padding: '10px 14px', cursor: 'pointer',
+                  borderBottom: '1px solid rgba(255,255,255,0.03)',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14, flexShrink: 0 }}>
+                    {f.isDirectory ? '📁' : f.extension === '.pdf' ? '📕' : f.extension?.match(/\.(jpg|png|tif|psd|ai|svg)/) ? '🖼️' : '📄'}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: '#e2e8f0', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {f.name}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {parentPath}
+                    </div>
+                  </div>
+                  {f.size > 0 && (
+                    <span style={{ fontSize: 11, color: '#475569', flexShrink: 0 }}>
+                      {f.size < 1024 * 1024 ? Math.round(f.size / 1024) + 'K' : (f.size / (1024 * 1024)).toFixed(1) + 'M'}
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>,
         document.body
       )}

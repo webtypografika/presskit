@@ -3,6 +3,7 @@ import type { FileEntry, FileMetadata, PreviewResult, PreflightReport } from '..
 
 export type ViewMode = 'grid' | 'list'
 export type Source = 'local' | 'dropbox'
+export type Theme = 'dark' | 'light'
 export type InspectorTab = 'metadata' | 'preflight' | 'presscal'
 
 interface AppState {
@@ -11,6 +12,10 @@ interface AppState {
   pathHistory: string[]
   historyIndex: number
   source: Source
+
+  // Theme
+  theme: Theme
+  setTheme: (theme: Theme) => void
 
   // File browser
   files: FileEntry[]
@@ -66,6 +71,14 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set, get) => ({
   // Initial state
+  theme: 'dark' as Theme,
+  setTheme: (theme) => {
+    set({ theme })
+    document.documentElement.setAttribute('data-theme', theme)
+    document.body.style.background = theme === 'light' ? '#f8fafc' : '#0a0e1a'
+    document.body.style.color = theme === 'light' ? '#0f172a' : '#e2e8f0'
+    window.api.settings.set('ui.theme', theme)
+  },
   currentPath: '',
   pathHistory: [],
   historyIndex: -1,
@@ -104,7 +117,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         window.api.dropbox.status().catch(() => ({ connected: false }))
       ])
 
+      const savedTheme = (settings['ui.theme'] as Theme) || 'dark'
+      document.documentElement.setAttribute('data-theme', savedTheme)
+      document.body.style.background = savedTheme === 'light' ? '#f8fafc' : '#0a0e1a'
+      document.body.style.color = savedTheme === 'light' ? '#0f172a' : '#e2e8f0'
+
       set({
+        theme: savedTheme,
         viewMode: (settings['ui.viewMode'] as ViewMode) || 'grid',
         thumbnailSize: (settings['ui.thumbnailSize'] as number) || 128,
         sidebarWidth: (settings['ui.sidebarWidth'] as number) || 280,

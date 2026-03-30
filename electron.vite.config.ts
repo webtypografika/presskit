@@ -8,7 +8,7 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin({ exclude: ['electron-store'] })],
     build: {
       rollupOptions: {
-        external: ['sharp']
+        external: ['sharp', 'better-sqlite3', 'chokidar']
       }
     }
   },

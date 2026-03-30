@@ -32,6 +32,14 @@ const api = {
     search: (rootPath: string, query: string, maxResults?: number) => ipcRenderer.invoke('fs:search', rootPath, query, maxResults)
   },
 
+  // Indexed search
+  search: {
+    query: (q: string, limit?: number) => ipcRenderer.invoke('search:query', q, limit),
+    buildIndex: () => ipcRenderer.invoke('search:buildIndex'),
+    stats: () => ipcRenderer.invoke('search:stats'),
+    addPath: (path: string) => ipcRenderer.invoke('search:addPath', path)
+  },
+
   // Preview
   preview: {
     thumbnail: (path: string, size?: number) => ipcRenderer.invoke('preview:thumbnail', path, size),

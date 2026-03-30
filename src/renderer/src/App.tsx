@@ -9,6 +9,10 @@ export default function App() {
 
   useEffect(() => {
     loadSettings()
+    // Build search index in background on startup
+    window.api.search.buildIndex().then(r => {
+      if (r.count > 0) console.log(`Search index: ${r.count} files in ${r.ms}ms`)
+    }).catch(() => {})
   }, [loadSettings])
 
   // Listen for deep link attachments from PressCal
