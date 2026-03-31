@@ -298,6 +298,88 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
     return existsSync(filePath)
   })
 
+  // Move files/folders to a target directory
+  ipcMain.handle('fs:move', async (_e, sourcePaths: string[], targetDir: string) => {
+    const { rename, copyFile, mkdir, readdir, stat: fsStat } = await import('fs/promises')
+    const { join, basename } = await import('path')
+    const results: { source: string; dest: string; ok: boolean; error?: string }[] = []
+
+    for (const src of sourcePaths) {
+      const name = basename(src)
+      const dest = join(targetDir, name)
+      try {
+        // Avoid moving to same location
+        if (src === dest) continue
+        // Try rename first (fast, same filesystem)
+        try {
+          await rename(src, dest)
+        } catch {
+          // Cross-device: copy then delete
+          const srcStat = await fsStat(src)
+          if (srcStat.isDirectory()) {
+            // Recursive copy for directories
+            const copyDir = async (s: string, d: string) => {
+              await mkdir(d, { recursive: true })
+              const entries = await readdir(s, { withFileTypes: true })
+              for (const entry of entries) {
+                const sp = join(s, entry.name)
+                const dp = join(d, entry.name)
+                if (entry.isDirectory()) await copyDir(sp, dp)
+                else await copyFile(sp, dp)
+              }
+            }
+            await copyDir(src, dest)
+            const { rm } = await import('fs/promises')
+            await rm(src, { recursive: true })
+          } else {
+            await copyFile(src, dest)
+            const { unlink } = await import('fs/promises')
+            await unlink(src)
+          }
+        }
+        results.push({ source: src, dest, ok: true })
+      } catch (e: any) {
+        results.push({ source: src, dest, ok: false, error: e.message })
+      }
+    }
+    return results
+  })
+
+  // Copy files/folders to a target directory
+  ipcMain.handle('fs:copy', async (_e, sourcePaths: string[], targetDir: string) => {
+    const { copyFile, mkdir, readdir, stat: fsStat } = await import('fs/promises')
+    const { join, basename } = await import('path')
+    const results: { source: string; dest: string; ok: boolean; error?: string }[] = []
+
+    for (const src of sourcePaths) {
+      const name = basename(src)
+      const dest = join(targetDir, name)
+      try {
+        if (src === dest) continue
+        const srcStat = await fsStat(src)
+        if (srcStat.isDirectory()) {
+          const copyDir = async (s: string, d: string) => {
+            await mkdir(d, { recursive: true })
+            const entries = await readdir(s, { withFileTypes: true })
+            for (const entry of entries) {
+              const sp = join(s, entry.name)
+              const dp = join(d, entry.name)
+              if (entry.isDirectory()) await copyDir(sp, dp)
+              else await copyFile(sp, dp)
+            }
+          }
+          await copyDir(src, dest)
+        } else {
+          await copyFile(src, dest)
+        }
+        results.push({ source: src, dest, ok: true })
+      } catch (e: any) {
+        results.push({ source: src, dest, ok: false, error: e.message })
+      }
+    }
+    return results
+  })
+
   ipcMain.handle('fs:getDrives', async () => {
     if (process.platform === 'win32') {
       // List Windows drives

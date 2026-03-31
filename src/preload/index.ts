@@ -29,7 +29,9 @@ const api = {
     readFile: (path: string) => ipcRenderer.invoke('fs:readFile', path),
     exists: (path: string) => ipcRenderer.invoke('fs:exists', path),
     getDrives: () => ipcRenderer.invoke('fs:getDrives'),
-    search: (rootPath: string, query: string, maxResults?: number) => ipcRenderer.invoke('fs:search', rootPath, query, maxResults)
+    search: (rootPath: string, query: string, maxResults?: number) => ipcRenderer.invoke('fs:search', rootPath, query, maxResults),
+    move: (sourcePaths: string[], targetDir: string) => ipcRenderer.invoke('fs:move', sourcePaths, targetDir),
+    copy: (sourcePaths: string[], targetDir: string) => ipcRenderer.invoke('fs:copy', sourcePaths, targetDir)
   },
 
   // Indexed search
@@ -132,7 +134,7 @@ const api = {
 
   // Deep link events (from PressCal "Open in FileHelper")
   deepLink: {
-    onOpenAttachment: (callback: (data: { tempPath: string; filename: string; mime: string }) => void) => {
+    onOpenAttachment: (callback: (data: { tempPath: string; filename: string; mime: string; quoteId?: string }) => void) => {
       ipcRenderer.on('open-attachment', (_e, data) => callback(data))
       return () => ipcRenderer.removeAllListeners('open-attachment')
     },
@@ -144,6 +146,17 @@ const api = {
       ipcRenderer.on('navigate-to-folder', (_e, data) => callback(data))
       return () => ipcRenderer.removeAllListeners('navigate-to-folder')
     }
+  },
+
+  // Open with
+  apps: {
+    getOpenWith: (extension: string) => ipcRenderer.invoke('apps:getOpenWith', extension),
+    openWith: (appPath: string, filePath: string) => ipcRenderer.invoke('apps:openWith', appPath, filePath)
+  },
+
+  // Native drag
+  drag: {
+    start: (filePaths: string[]) => ipcRenderer.send('drag:start', filePaths)
   },
 
   // Color tools

@@ -17,11 +17,13 @@ export default function App() {
 
   // Listen for deep link attachments from PressCal
   useEffect(() => {
-    const cleanup = window.api.deepLink.onOpenAttachment(({ tempPath, filename, mime }) => {
+    const cleanup = window.api.deepLink.onOpenAttachment(({ tempPath, filename, mime, quoteId }) => {
       const ext = '.' + filename.split('.').pop()
       const type = mime.startsWith('image/') ? 'jpg'
         : mime === 'application/pdf' ? 'pdf'
         : 'other'
+
+      useAppStore.setState({ attachmentQuoteId: quoteId || '' })
 
       selectFile(null as any)
       setTimeout(() => {

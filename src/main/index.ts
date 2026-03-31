@@ -28,6 +28,15 @@ if (process.defaultApp) {
 async function handleProtocolUrl(url: string): Promise<void> {
   if (!url.startsWith(`${PROTOCOL}://`)) return
 
+  console.log('[DeepLink] Received:', url)
+
+  // Always focus the window first
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  }
+
   try {
     const parsed = new URL(url)
     if (parsed.hostname === 'attachment') {
@@ -35,10 +44,13 @@ async function handleProtocolUrl(url: string): Promise<void> {
       const attId = parsed.searchParams.get('attId')
       const mime = parsed.searchParams.get('mime') || 'application/octet-stream'
       const filename = parsed.searchParams.get('filename') || 'attachment'
+      const quoteId = parsed.searchParams.get('quoteId') || ''
 
-      if (!messageId || !attId) return
+      if (!messageId || !attId) {
+        console.error('[DeepLink] Missing messageId or attId')
+        return
+      }
 
-      // Import dynamically to avoid circular deps
       const { app: electronApp } = await import('electron')
       const { writeFile, mkdir } = await import('fs/promises')
       const { join } = await import('path')
@@ -48,14 +60,21 @@ async function handleProtocolUrl(url: string): Promise<void> {
       const presscalUrl = (store.get('presscal.url') as string)?.replace(/\/$/, '')
       const apiKey = store.get('presscal.apiKey') as string
 
-      if (!presscalUrl || !apiKey) return
+      if (!presscalUrl || !apiKey) {
+        console.error('[DeepLink] PressCal not configured')
+        return
+      }
 
+      console.log('[DeepLink] Downloading attachment:', filename)
       const fetchUrl = `${presscalUrl}/api/filehelper/emails/${messageId}/attachments/${attId}?mime=${encodeURIComponent(mime)}&filename=${encodeURIComponent(filename)}`
       const response = await fetch(fetchUrl, {
         headers: { 'Authorization': `Bearer ${apiKey}` }
       })
 
-      if (!response.ok) return
+      if (!response.ok) {
+        console.error('[DeepLink] Download failed:', response.status, response.statusText)
+        return
+      }
 
       const buffer = Buffer.from(await response.arrayBuffer())
       const tempDir = join(electronApp.getPath('temp'), 'presscal-filehelper')
@@ -63,9 +82,8 @@ async function handleProtocolUrl(url: string): Promise<void> {
       const tempPath = join(tempDir, `${Date.now()}_${filename}`)
       await writeFile(tempPath, buffer)
 
-      // Send to renderer to preview
-      mainWindow?.focus()
-      mainWindow?.webContents.send('open-attachment', { tempPath, filename, mime })
+      console.log('[DeepLink] Saved to:', tempPath)
+      mainWindow?.webContents.send('open-attachment', { tempPath, filename, mime, quoteId })
     }
 
     if (parsed.hostname === 'pick-folder') {
@@ -165,6 +183,11 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
+    mainWindow?.show()
+  })
+
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
+    console.error('Window failed to load:', code, desc)
     mainWindow?.show()
   })
 
@@ -333,6 +356,122 @@ function registerHandlers(): void {
   })
   ipcMain.handle('window:close', () => mainWindow?.close())
   ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized())
+
+  // "Open with" — find installed design apps
+  let cachedApps: { id: string; name: string; path: string; extensions: string[] }[] | null = null
+  ipcMain.handle('apps:getOpenWith', async (_e, extension: string) => {
+    if (!cachedApps) {
+      const { existsSync } = await import('fs')
+      const { readdirSync } = await import('fs')
+
+      const programFiles = process.env['ProgramFiles'] || 'C:\\Program Files'
+      const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)'
+
+      // Known design apps with their typical paths and supported extensions
+      const knownApps: { id: string; name: string; paths: string[]; extensions: string[] }[] = [
+        {
+          id: 'photoshop', name: 'Adobe Photoshop',
+          paths: [`${programFiles}\\Adobe`, `${programFilesX86}\\Adobe`],
+          extensions: ['.psd', '.psb', '.jpg', '.jpeg', '.png', '.tif', '.tiff', '.pdf', '.eps', '.ai', '.svg', '.bmp', '.gif', '.webp']
+        },
+        {
+          id: 'illustrator', name: 'Adobe Illustrator',
+          paths: [`${programFiles}\\Adobe`, `${programFilesX86}\\Adobe`],
+          extensions: ['.ai', '.eps', '.svg', '.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.psd']
+        },
+        {
+          id: 'indesign', name: 'Adobe InDesign',
+          paths: [`${programFiles}\\Adobe`, `${programFilesX86}\\Adobe`],
+          extensions: ['.indd', '.pdf', '.ai', '.eps', '.psd', '.jpg', '.jpeg', '.png', '.tif', '.tiff']
+        },
+        {
+          id: 'acrobat', name: 'Adobe Acrobat',
+          paths: [`${programFiles}\\Adobe`, `${programFilesX86}\\Adobe`],
+          extensions: ['.pdf']
+        },
+        {
+          id: 'coreldraw', name: 'CorelDRAW',
+          paths: [`${programFiles}\\Corel`, `${programFilesX86}\\Corel`],
+          extensions: ['.cdr', '.ai', '.eps', '.svg', '.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.psd']
+        },
+      ]
+
+      // Find actual executables
+      cachedApps = []
+      for (const app of knownApps) {
+        let exePath: string | null = null
+        for (const basePath of app.paths) {
+          if (!existsSync(basePath)) continue
+          try {
+            const findExe = (dir: string, target: string, depth = 0): string | null => {
+              if (depth > 3) return null
+              const entries = readdirSync(dir, { withFileTypes: true })
+              for (const entry of entries) {
+                const full = `${dir}\\${entry.name}`
+                if (entry.isFile() && entry.name.toLowerCase().includes(target) && entry.name.endsWith('.exe')) {
+                  return full
+                }
+                if (entry.isDirectory() && !entry.name.startsWith('.')) {
+                  const found = findExe(full, target, depth + 1)
+                  if (found) return found
+                }
+              }
+              return null
+            }
+
+            const targets: Record<string, string> = {
+              photoshop: 'photoshop',
+              illustrator: 'illustrator',
+              indesign: 'indesign',
+              acrobat: 'acrobat',
+              coreldraw: 'coreldraw',
+            }
+
+            exePath = findExe(basePath, targets[app.id] || app.id)
+            if (exePath) break
+          } catch {}
+        }
+
+        if (exePath) {
+          cachedApps.push({ id: app.id, name: app.name, path: exePath, extensions: app.extensions })
+        }
+      }
+
+      // Browser is always available
+      cachedApps.push({
+        id: 'browser', name: 'Browser',
+        path: '__browser__',
+        extensions: ['.pdf', '.svg', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.html', '.htm']
+      })
+    }
+
+    const ext = extension.toLowerCase()
+    return cachedApps.filter(app => app.extensions.includes(ext))
+  })
+
+  ipcMain.handle('apps:openWith', async (_e, appPath: string, filePath: string) => {
+    if (appPath === '__browser__') {
+      // Open in default browser via file:// URL
+      const { pathToFileURL } = await import('url')
+      return shell.openExternal(pathToFileURL(filePath).href)
+    }
+    const { spawn } = await import('child_process')
+    spawn(appPath, [filePath], { detached: true, stdio: 'ignore' }).unref()
+    return true
+  })
+
+  // Native file drag-out (like Windows Explorer)
+  ipcMain.on('drag:start', (event, filePaths: string[]) => {
+    if (!filePaths.length) return
+    const { nativeImage } = require('electron')
+    // Use a small transparent icon — the OS shows the file icon automatically
+    const icon = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
+    if (filePaths.length === 1) {
+      event.sender.startDrag({ file: filePaths[0], icon })
+    } else {
+      event.sender.startDrag({ files: filePaths, icon })
+    }
+  })
 
   // Dialogs
   ipcMain.handle('dialog:openDirectory', async () => {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Calculator, Search, User, FileText, Loader2, ExternalLink } from 'lucide-react'
+import { X, Calculator, Search, User, FileText, Loader2, ExternalLink, FolderOpen } from 'lucide-react'
+import { useAppStore } from '@/stores/app-store'
 import type { PresscalCustomer, PresscalQuote } from '@/lib/ipc'
 
 interface CostingDialogProps {
@@ -11,7 +12,177 @@ interface CostingDialogProps {
 
 type Target = 'customer' | 'quote'
 
+async function doUpload(filePath: string, fileName: string, target: Target, targetId: string, saveToFolder: boolean, quoteId?: string) {
+  const result = await window.api.presscal.uploadFileForCosting({
+    filePath,
+    fileName,
+    target,
+    targetId,
+    quoteId
+  })
+
+  // Copy to customer folder if requested
+  if (saveToFolder && result.customerFolderPath) {
+    try {
+      await window.api.presscal.saveToCustomerFolder(filePath, result.customerFolderPath, fileName)
+    } catch (e) {
+      console.error('Failed to copy to customer folder:', e)
+    }
+  }
+
+  if (result.calculatorUrl) {
+    let url = result.calculatorUrl
+    if (url.startsWith('/')) {
+      const presscalUrl = await window.api.settings.get('presscal.url') as string
+      if (presscalUrl) {
+        url = presscalUrl.replace(/\/$/, '') + url
+      }
+    }
+    await window.api.shell.openExternal(url)
+  }
+  return result
+}
+
 export function CostingDialog({ filePath, fileName, onClose }: CostingDialogProps) {
+  const attachmentQuoteId = useAppStore(s => s.attachmentQuoteId)
+  const pickFileMode = useAppStore(s => s.pickFileMode)
+  const knownQuoteId = attachmentQuoteId || pickFileMode?.quoteId || ''
+
+  if (knownQuoteId) {
+    return <CostingConfirm filePath={filePath} fileName={fileName} quoteId={knownQuoteId} onClose={onClose} />
+  }
+
+  return <CostingPicker filePath={filePath} fileName={fileName} onClose={onClose} />
+}
+
+// ─── Quick confirm when quote is known ───
+function CostingConfirm({ filePath, fileName, quoteId, onClose }: CostingDialogProps & { quoteId: string }) {
+  const [quote, setQuote] = useState<PresscalQuote | null>(null)
+  const [customerFolder, setCustomerFolder] = useState<string | null>(null)
+  const [saveToFolder, setSaveToFolder] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  // Fetch quote info + check if customer has folder
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const q = await window.api.presscal.getQuote(quoteId)
+        if (cancelled) return
+        setQuote(q)
+        // Check customer folder
+        if (q?.customerId) {
+          const customers = await window.api.presscal.getCustomers()
+          const customer = customers.find((c: any) => c.id === q.customerId)
+          if (customer?.folderPath && !cancelled) {
+            setCustomerFolder(customer.folderPath)
+          }
+        }
+      } catch {} finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [quoteId])
+
+  const handleUpload = async () => {
+    setUploading(true)
+    setError(null)
+    try {
+      await doUpload(filePath, fileName, 'quote', quoteId, saveToFolder && !!customerFolder)
+      onClose()
+    } catch (e: any) {
+      setError(e.message || 'Αποτυχία upload')
+      setUploading(false)
+    }
+  }
+
+  return createPortal(
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', padding: 40 }}>
+      <div style={{ width: '100%', maxWidth: 480, background: '#0f1525', borderRadius: 16, border: '1px solid #1e293b', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border" style={{ padding: '20px 24px' }}>
+          <div className="flex items-center gap-3">
+            <Calculator size={20} style={{ color: '#f58220' }} />
+            <span style={{ fontSize: 16, fontWeight: 600, color: '#e2e8f0' }}>Κοστολόγηση</span>
+          </div>
+          <button onClick={onClose} className="hover:bg-bg-hover rounded-lg" style={{ padding: 6 }}>
+            <X size={18} className="text-text-muted" />
+          </button>
+        </div>
+
+        <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* File */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <FileText size={14} style={{ color: '#64748b' }} />
+            <span className="truncate" style={{ fontSize: 13, color: '#94a3b8' }}>{fileName}</span>
+          </div>
+
+          {/* Quote info */}
+          {loading ? (
+            <div className="flex items-center gap-2" style={{ color: '#64748b' }}>
+              <Loader2 size={14} className="animate-spin" />
+              <span style={{ fontSize: 13 }}>Φόρτωση...</span>
+            </div>
+          ) : quote && (
+            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(245,130,32,0.06)', border: '1px solid rgba(245,130,32,0.15)' }}>
+              <div style={{ fontSize: 13, color: '#f58220', fontWeight: 600 }}>Προσφορά #{quote.number}</div>
+              {quote.customerName && <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{quote.customerName}</div>}
+            </div>
+          )}
+
+          {/* Customer folder checkbox */}
+          {customerFolder && (
+            <label
+              className="flex items-center cursor-pointer"
+              style={{ gap: 10, padding: '12px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.02)', border: '1px solid #1e293b' }}
+              onClick={() => setSaveToFolder(!saveToFolder)}
+            >
+              <input type="checkbox" checked={saveToFolder} readOnly style={{ width: 16, height: 16, accentColor: '#f58220' }} />
+              <FolderOpen size={14} style={{ color: saveToFolder ? '#f58220' : '#475569', flexShrink: 0 }} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: '#e2e8f0' }}>Αποθήκευση στον φάκελο πελάτη</div>
+                <div className="truncate" style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{customerFolder}</div>
+              </div>
+            </label>
+          )}
+
+          {error && <div style={{ fontSize: 13, color: '#ef4444' }}>{error}</div>}
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-border" style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button
+            onClick={onClose}
+            style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid #1e293b', background: 'transparent', color: '#94a3b8', fontSize: 13, cursor: 'pointer' }}
+          >
+            Ακύρωση
+          </button>
+          <button
+            onClick={handleUpload}
+            disabled={uploading || loading}
+            style={{
+              padding: '10px 24px', borderRadius: 8, border: 'none', cursor: 'pointer',
+              background: '#f58220', color: '#fff', fontSize: 13, fontWeight: 600,
+              opacity: (uploading || loading) ? 0.5 : 1,
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}
+          >
+            {uploading ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
+            {uploading ? 'Αποστολή...' : 'Κοστολόγηση'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// ─── Manual picker when no quote context ───
+function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
   const [target, setTarget] = useState<Target>('customer')
   const [search, setSearch] = useState('')
   const [customers, setCustomers] = useState<PresscalCustomer[]>([])
@@ -39,14 +210,12 @@ export function CostingDialog({ filePath, fileName, onClose }: CostingDialogProp
     }
   }, [target])
 
-  // Load on mount and when target changes
   useEffect(() => {
     setSelectedId(null)
     setSearch('')
     fetchItems('')
   }, [target, fetchItems])
 
-  // Debounced search
   useEffect(() => {
     const timer = setTimeout(() => fetchItems(search), 300)
     return () => clearTimeout(timer)
@@ -57,15 +226,7 @@ export function CostingDialog({ filePath, fileName, onClose }: CostingDialogProp
     setUploading(true)
     setError(null)
     try {
-      const result = await window.api.presscal.uploadFileForCosting({
-        filePath,
-        fileName,
-        target,
-        targetId: selectedId
-      })
-      if (result.calculatorUrl) {
-        await window.api.shell.openExternal(result.calculatorUrl)
-      }
+      await doUpload(filePath, fileName, target, selectedId, false)
       onClose()
     } catch (e: any) {
       setError(e.message || 'Αποτυχία upload')

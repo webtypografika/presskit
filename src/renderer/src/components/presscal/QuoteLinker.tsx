@@ -95,6 +95,10 @@ export function QuoteLinker() {
     setDownloadingAtt(`${msg.id}_${att.id}`)
     try {
       const tempPath = await window.api.presscal.downloadAttachment(msg.id, att.id, att.mimeType, att.filename)
+      // Store quote context so CostingDialog can use it
+      if (expandedQuote) {
+        useAppStore.setState({ attachmentQuoteId: expandedQuote })
+      }
       // Navigate to the temp file — triggers preview
       await window.api.fs.getMetadata(tempPath).then(meta => {
         selectFile({

@@ -29,6 +29,7 @@ export interface PresscalCustomer {
   email: string | null
   phone: string | null
   tags: string[]
+  folderPath: string | null
   quoteCount: number
 }
 

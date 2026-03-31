@@ -45,6 +45,7 @@ interface AppState {
   presscalOrgName: string
   lastCustomerEmail: string  // Auto-fill for send email
   pickFileMode: { quoteId: string; itemId: string } | null  // Pick file for quote item
+  attachmentQuoteId: string  // Quote context from deep link attachment
 
   // Dropbox connection
   dropboxConnected: boolean
@@ -102,6 +103,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   presscalOrgName: '',
   lastCustomerEmail: '',
   pickFileMode: null,
+  attachmentQuoteId: '',
   dropboxConnected: false,
   dropboxName: '',
 

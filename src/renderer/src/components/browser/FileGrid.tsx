@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Folder, FileText, Image, Type, FileSpreadsheet,
   Archive, File, Layers
@@ -79,6 +79,74 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     setCtxMenu({ file, x: e.clientX, y: e.clientY })
   }, [onSelect])
 
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const { refreshDirectory } = useAppStore()
+
+  const getDragPaths = useCallback((file: FileEntry) => {
+    return selectedFiles.length > 1 && selectedFiles.some(f => f.path === file.path)
+      ? selectedFiles.map(f => f.path)
+      : [file.path]
+  }, [selectedFiles])
+
+  const dragPathsRef = useRef<string[]>([])
+
+  const handleDragStart = useCallback((e: React.DragEvent, file: FileEntry) => {
+    const paths = getDragPaths(file)
+    dragPathsRef.current = paths
+    // HTML5 drag for internal drops
+    e.dataTransfer.setData('application/x-filehelper-paths', JSON.stringify(paths))
+    e.dataTransfer.effectAllowed = 'copyMove'
+  }, [getDragPaths])
+
+  // Native drag-out when mouse leaves the window
+  useEffect(() => {
+    const handleDragLeaveWindow = (e: DragEvent) => {
+      // Only fire native drag when leaving the app window entirely
+      if (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
+        if (dragPathsRef.current.length > 0) {
+          window.api.drag.start(dragPathsRef.current)
+        }
+      }
+    }
+    window.addEventListener('dragleave', handleDragLeaveWindow)
+    return () => window.removeEventListener('dragleave', handleDragLeaveWindow)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent, file: FileEntry) => {
+    if (!file.isDirectory) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move'
+    setDropTarget(file.path)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDropTarget(null)
+  }, [])
+
+  const handleDrop = useCallback(async (e: React.DragEvent, targetFolder: FileEntry) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDropTarget(null)
+    if (!targetFolder.isDirectory) return
+
+    const data = e.dataTransfer.getData('application/x-filehelper-paths')
+    if (!data) return
+
+    const paths: string[] = JSON.parse(data)
+    // Don't drop into itself
+    const validPaths = paths.filter(p => p !== targetFolder.path && !targetFolder.path.startsWith(p + '/') && !targetFolder.path.startsWith(p + '\\'))
+    if (!validPaths.length) return
+
+    if (e.ctrlKey) {
+      await window.api.fs.copy(validPaths, targetFolder.path)
+    } else {
+      await window.api.fs.move(validPaths, targetFolder.path)
+    }
+    refreshDirectory()
+  }, [refreshDirectory])
+
   const handleCtxAction = useCallback((action: string) => {
     const file = ctxMenu?.file
     setCtxMenu(null)
@@ -139,13 +207,11 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
                 ? 'text-text-primary'
                 : 'hover:bg-bg-hover text-text-secondary'
             )}
-            style={{
-              padding: '8px 20px',
-              borderLeft: (selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path))
-                ? '2px solid #f58220' : '2px solid transparent',
-              background: selectedFiles.some(f => f.path === file.path)
-                ? 'rgba(245,130,32,0.08)' : undefined,
-            }}
+            draggable
+            onDragStart={(e) => handleDragStart(e, file)}
+            onDragOver={(e) => handleDragOver(e, file)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, file)}
             onClick={(e) => {
               if (e.ctrlKey || e.metaKey) {
                 toggleFileSelection(file)
@@ -155,6 +221,17 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
             }}
             onDoubleClick={() => onOpen(file)}
             onContextMenu={(e) => handleContextMenu(e, file)}
+            style={{
+              padding: '8px 20px',
+              borderLeft: (selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path))
+                ? '2px solid #f58220' : '2px solid transparent',
+              background: dropTarget === file.path
+                ? 'rgba(245,130,32,0.15)'
+                : selectedFiles.some(f => f.path === file.path)
+                  ? 'rgba(245,130,32,0.08)' : undefined,
+              outline: dropTarget === file.path ? '2px dashed #f58220' : undefined,
+              outlineOffset: -2,
+            }}
           >
             <span className="w-6 flex-shrink-0 flex justify-center" style={{ position: 'relative' }}>
               <FileTypeIcon type={file.type} size={16} />
@@ -215,14 +292,11 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
             className={clsx(
               'flex flex-col items-center rounded-lg cursor-pointer transition-colors'
             )}
-            style={{
-              padding: 8,
-              border: (selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path))
-                ? '1px solid #f58220' : '1px solid transparent',
-              background: selectedFiles.some(f => f.path === file.path)
-                ? 'rgba(245,130,32,0.08)' : 'transparent',
-              borderRadius: 10,
-            }}
+            draggable
+            onDragStart={(e) => handleDragStart(e, file)}
+            onDragOver={(e) => handleDragOver(e, file)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, file)}
             onClick={(e) => {
               if (e.ctrlKey || e.metaKey) {
                 toggleFileSelection(file)
@@ -232,6 +306,18 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
             }}
             onDoubleClick={() => onOpen(file)}
             onContextMenu={(e) => handleContextMenu(e, file)}
+            style={{
+              padding: 8,
+              border: dropTarget === file.path
+                ? '2px dashed #f58220'
+                : (selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path))
+                  ? '1px solid #f58220' : '1px solid transparent',
+              background: dropTarget === file.path
+                ? 'rgba(245,130,32,0.15)'
+                : selectedFiles.some(f => f.path === file.path)
+                  ? 'rgba(245,130,32,0.08)' : 'transparent',
+              borderRadius: 10,
+            }}
           >
             {/* Thumbnail */}
             <div
