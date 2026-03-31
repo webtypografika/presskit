@@ -292,6 +292,46 @@ export function registerPresscalHandlers(ipcMain: IpcMain): void {
     })
   })
 
+  // Upload file for costing (multipart/form-data)
+  ipcMain.handle('presscal:uploadFileForCosting', async (_e, data: {
+    filePath: string
+    fileName: string
+    target: 'customer' | 'quote'
+    targetId: string
+    quoteId?: string
+    itemId?: string
+  }) => {
+    const config = getConfig()
+    if (!config) throw new Error('PressCal not configured')
+
+    const { readFile: rf } = await import('fs/promises')
+    const { basename } = await import('path')
+
+    const fileBuffer = await rf(data.filePath)
+    const blob = new Blob([fileBuffer])
+
+    const formData = new FormData()
+    formData.append('file', blob, data.fileName || basename(data.filePath))
+    formData.append('target', data.target)
+    formData.append('targetId', data.targetId)
+    if (data.quoteId) formData.append('quoteId', data.quoteId)
+    if (data.itemId) formData.append('itemId', data.itemId)
+
+    const response = await fetch(`${config.url}/api/filehelper/files/upload`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.apiKey}`
+      },
+      body: formData
+    })
+
+    if (!response.ok) {
+      throw new Error(`Upload failed: ${response.status} ${response.statusText}`)
+    }
+
+    return response.json()
+  })
+
   // Get full email messages with attachments for a quote
   ipcMain.handle('presscal:getQuoteEmailMessages', async (_e, quoteId: string) => {
     return presscalFetch<{ messages: any[] }>(`/quotes/${quoteId}/emails/messages`)

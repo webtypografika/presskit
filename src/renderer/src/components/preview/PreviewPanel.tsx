@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
-  ExternalLink, FolderOpen, Eye, Columns, Rows
+  ExternalLink, FolderOpen, Eye, Columns, Rows, Calculator
 } from 'lucide-react'
 import { useAppStore } from '@/stores/app-store'
 import { FileBrowser } from '../browser/FileBrowser'
 import { PdfPreview } from './PdfPreview'
 import { ImagePreview } from './ImagePreview'
+import { CostingDialog } from '../presscal/CostingDialog'
 
 export function PreviewPanel() {
   const { selectedFile } = useAppStore()
@@ -112,53 +113,78 @@ export function PreviewPanel() {
 }
 
 function PreviewToolbar({ layout, onToggleLayout }: { layout: 'side' | 'bottom'; onToggleLayout: () => void }) {
-  const { selectedFile } = useAppStore()
+  const { selectedFile, presscalConnected } = useAppStore()
+  const [showCosting, setShowCosting] = useState(false)
 
   return (
-    <div className="flex items-center justify-between bg-bg-secondary border-b border-border flex-shrink-0" style={{ height: 40, padding: '0 16px' }}>
-      <div className="flex items-center" style={{ gap: 8, fontSize: 13, color: '#94a3b8' }}>
-        <Eye size={15} style={{ color: '#64748b' }} />
-        <span className="truncate" style={{ maxWidth: 200 }}>{selectedFile?.name}</span>
+    <>
+      <div className="flex items-center justify-between bg-bg-secondary border-b border-border flex-shrink-0" style={{ height: 40, padding: '0 16px' }}>
+        <div className="flex items-center" style={{ gap: 8, fontSize: 13, color: '#94a3b8' }}>
+          <Eye size={15} style={{ color: '#64748b' }} />
+          <span className="truncate" style={{ maxWidth: 200 }}>{selectedFile?.name}</span>
+        </div>
+
+        <div className="flex items-center" style={{ gap: 4 }}>
+          {/* Layout toggle */}
+          <button
+            onClick={onToggleLayout}
+            title={layout === 'side' ? 'Preview bottom' : 'Preview side'}
+            style={{
+              padding: '4px 8px', border: 'none', background: 'transparent',
+              color: '#64748b', cursor: 'pointer', borderRadius: 4,
+            }}
+          >
+            {layout === 'side' ? <Rows size={15} /> : <Columns size={15} />}
+          </button>
+
+          {/* Costing — only when PressCal connected */}
+          {presscalConnected && selectedFile && (
+            <button
+              className="flex items-center rounded"
+              style={{ gap: 5, padding: '4px 10px', fontSize: 12, color: '#f58220', border: '1px solid rgba(245,130,32,0.3)', background: 'rgba(245,130,32,0.06)' }}
+              onClick={() => setShowCosting(true)}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(245,130,32,0.15)'; e.currentTarget.style.borderColor = '#f58220' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245,130,32,0.06)'; e.currentTarget.style.borderColor = 'rgba(245,130,32,0.3)' }}
+            >
+              <Calculator size={13} />
+              <span>Κοστολόγηση</span>
+            </button>
+          )}
+
+          {/* Open in app */}
+          <button
+            className="flex items-center rounded hover:bg-bg-hover"
+            style={{ gap: 5, padding: '4px 10px', fontSize: 12, color: '#94a3b8', border: '1px solid #1e293b' }}
+            onClick={() => selectedFile && window.api.shell.openPath(selectedFile.path)}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = '#f58220'; e.currentTarget.style.color = '#f58220' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
+          >
+            <ExternalLink size={13} />
+            <span>Open</span>
+          </button>
+
+          {/* Show in folder */}
+          <button
+            className="flex items-center rounded hover:bg-bg-hover"
+            style={{ gap: 5, padding: '4px 10px', fontSize: 12, color: '#94a3b8', border: '1px solid #1e293b' }}
+            onClick={() => selectedFile && window.api.shell.showInFolder(selectedFile.path)}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = '#f58220'; e.currentTarget.style.color = '#f58220' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
+          >
+            <FolderOpen size={13} />
+            <span>Folder</span>
+          </button>
+        </div>
       </div>
 
-      <div className="flex items-center" style={{ gap: 4 }}>
-        {/* Layout toggle */}
-        <button
-          onClick={onToggleLayout}
-          title={layout === 'side' ? 'Preview bottom' : 'Preview side'}
-          style={{
-            padding: '4px 8px', border: 'none', background: 'transparent',
-            color: '#64748b', cursor: 'pointer', borderRadius: 4,
-          }}
-        >
-          {layout === 'side' ? <Rows size={15} /> : <Columns size={15} />}
-        </button>
-
-        {/* Open in app */}
-        <button
-          className="flex items-center rounded hover:bg-bg-hover"
-          style={{ gap: 5, padding: '4px 10px', fontSize: 12, color: '#94a3b8', border: '1px solid #1e293b' }}
-          onClick={() => selectedFile && window.api.shell.openPath(selectedFile.path)}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = '#f58220'; e.currentTarget.style.color = '#f58220' }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
-        >
-          <ExternalLink size={13} />
-          <span>Open</span>
-        </button>
-
-        {/* Show in folder */}
-        <button
-          className="flex items-center rounded hover:bg-bg-hover"
-          style={{ gap: 5, padding: '4px 10px', fontSize: 12, color: '#94a3b8', border: '1px solid #1e293b' }}
-          onClick={() => selectedFile && window.api.shell.showInFolder(selectedFile.path)}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = '#f58220'; e.currentTarget.style.color = '#f58220' }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
-        >
-          <FolderOpen size={13} />
-          <span>Folder</span>
-        </button>
-      </div>
-    </div>
+      {showCosting && selectedFile && (
+        <CostingDialog
+          filePath={selectedFile.path}
+          fileName={selectedFile.name}
+          onClose={() => setShowCosting(false)}
+        />
+      )}
+    </>
   )
 }
 
