@@ -22,6 +22,7 @@ export function QuoteLinker() {
   const [allQuotes, setAllQuotes] = useState<PresscalQuote[]>([])
   const [fileLinks, setFileLinks] = useState<FileLink[]>([])
   const [search, setSearch] = useState('')
+  const [filterStatus, setFilterStatus] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [linkingTo, setLinkingTo] = useState<string | null>(null)
   const [expandedQuote, setExpandedQuote] = useState<string | null>(null)
@@ -37,13 +38,40 @@ export function QuoteLinker() {
       .finally(() => setLoading(false))
   }, [])
 
+  // Exclude rejected & cancelled
+  const activeQuotes = useMemo(() =>
+    allQuotes.filter(q => q.status !== 'rejected' && q.status !== 'cancelled'),
+    [allQuotes]
+  )
+
+  // Fixed status order matching PressCal flow
+  const STATUS_ORDER = ['draft', 'sent', 'approved', 'completed']
+  const STATUS_LABELS: Record<string, string> = {
+    draft: 'Σε Επεξεργασία',
+    sent: 'Εστάλησαν',
+    approved: 'Εγκρίθηκαν',
+    completed: 'Ολοκληρώθηκαν',
+  }
+
+  const statuses = useMemo(() => {
+    const existing = new Set(activeQuotes.map(q => q.status))
+    // Keep order, only show statuses that have quotes
+    return STATUS_ORDER.filter(s => existing.has(s))
+  }, [activeQuotes])
+
   const quotes = useMemo(() => {
-    if (!search.trim()) return allQuotes
-    return allQuotes.filter(q => {
-      const text = [q.number, q.customerName, q.title].filter(Boolean).join(' ')
-      return fuzzyMatch(text, search)
-    })
-  }, [allQuotes, search])
+    let result = activeQuotes
+    if (filterStatus) {
+      result = result.filter(q => q.status === filterStatus)
+    }
+    if (search.trim()) {
+      result = result.filter(q => {
+        const text = [q.number, q.customerName, q.title].filter(Boolean).join(' ')
+        return fuzzyMatch(text, search)
+      })
+    }
+    return result
+  }, [activeQuotes, filterStatus, search])
 
   useEffect(() => {
     if (!selectedFile) return
@@ -157,6 +185,36 @@ export function QuoteLinker() {
           }}
         />
       </div>
+
+      {/* Status filter tabs */}
+      {statuses.length > 1 && (
+        <div className="flex items-center" style={{ gap: 4, flexWrap: 'wrap' }}>
+          <button
+            style={{
+              padding: '4px 10px', borderRadius: 6, fontSize: 11, border: 'none', cursor: 'pointer',
+              background: !filterStatus ? 'rgba(245,130,32,0.12)' : 'transparent',
+              color: !filterStatus ? '#f58220' : 'var(--th-text-muted)',
+            }}
+            onClick={() => setFilterStatus('')}
+          >
+            All ({activeQuotes.length})
+          </button>
+          {statuses.map(status => (
+            <button
+              key={status}
+              style={{
+                padding: '4px 10px', borderRadius: 6, fontSize: 11, border: 'none', cursor: 'pointer',
+                background: filterStatus === status ? 'rgba(245,130,32,0.12)' : 'transparent',
+                color: filterStatus === status ? '#f58220' : 'var(--th-text-muted)',
+                textTransform: 'capitalize',
+              }}
+              onClick={() => setFilterStatus(status)}
+            >
+              {STATUS_LABELS[status] || status} ({activeQuotes.filter(q => q.status === status).length})
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Current file */}
       {selectedFile && !selectedFile.isDirectory && (
