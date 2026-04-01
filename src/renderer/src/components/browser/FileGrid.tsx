@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   Folder, FileText, Image, Type, FileSpreadsheet,
   Archive, File, Layers
@@ -6,6 +6,7 @@ import {
 import { clsx } from 'clsx'
 import type { FileEntry, FileType } from '@/lib/file-types'
 import { formatFileSize, getFileTypeColor, getFileTypeLabel } from '@/lib/file-types'
+import { renderPdfThumbnail } from '@/lib/pdf-thumbnail'
 import type { ViewMode } from '@/stores/app-store'
 import { useAppStore } from '@/stores/app-store'
 import { ContextMenu } from './ContextMenu'
@@ -37,12 +38,22 @@ function FileThumbnail({ file, size }: { file: FileEntry; size: number }) {
     if (file.isDirectory) return
     let cancelled = false
 
-    window.api.preview.thumbnail(file.path, size)
-      .then(data => { if (!cancelled && data) setThumb(data) })
-      .catch(() => {})
+    const isPdf = file.type === 'pdf' || file.type === 'ai'
+
+    if (isPdf) {
+      // Render PDF/AI thumbnails client-side via pdf.js
+      renderPdfThumbnail(file.path, size)
+        .then(data => { if (!cancelled && data) setThumb(data) })
+        .catch(() => {})
+    } else {
+      // All other files via main process (sharp etc.)
+      window.api.preview.thumbnail(file.path, size)
+        .then(data => { if (!cancelled && data) setThumb(data) })
+        .catch(() => {})
+    }
 
     return () => { cancelled = true }
-  }, [file.path, file.isDirectory, size])
+  }, [file.path, file.isDirectory, file.type, size])
 
   if (file.isDirectory || !thumb) {
     return (
@@ -70,8 +81,27 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   onOpen: (file: FileEntry) => void
 }) {
   const thumbnailSize = useAppStore(s => s.thumbnailSize)
-  const { runPreflight, setInspectorTab, toggleFileSelection, selectedFiles } = useAppStore()
+  const { runPreflight, setInspectorTab, toggleFileSelection, selectedFiles, clearSelection, selectFileRange, copyFiles, cutFiles, pasteFiles } = useAppStore()
   const [ctxMenu, setCtxMenu] = useState<{ file: FileEntry; x: number; y: number } | null>(null)
+  const lastClickedIndexRef = useRef<number>(-1)
+
+  const handleClick = useCallback((e: React.MouseEvent, file: FileEntry, index: number) => {
+    if (e.shiftKey && lastClickedIndexRef.current >= 0) {
+      // Shift+click: select range
+      const start = Math.min(lastClickedIndexRef.current, index)
+      const end = Math.max(lastClickedIndexRef.current, index)
+      selectFileRange(files.slice(start, end + 1))
+    } else if (e.ctrlKey || e.metaKey) {
+      // Ctrl+click: toggle single
+      toggleFileSelection(file)
+      lastClickedIndexRef.current = index
+    } else {
+      // Normal click: select single, clear multi-selection
+      selectFileRange([file])
+      onSelect(file)
+      lastClickedIndexRef.current = index
+    }
+  }, [files, toggleFileSelection, selectFileRange, clearSelection, onSelect])
 
   const handleContextMenu = useCallback((e: React.MouseEvent, file: FileEntry) => {
     e.preventDefault()
@@ -182,8 +212,24 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
       case 'bookmark':
         if (file.isDirectory) window.api.settings.addBookmark(file.path)
         break
+      case 'copyFile':
+        onSelect(file)
+        setTimeout(copyFiles, 0)
+        break
+      case 'cutFile':
+        onSelect(file)
+        setTimeout(cutFiles, 0)
+        break
+      case 'pasteFile':
+        pasteFiles()
+        break
+      case 'delete':
+        if (confirm(`Διαγραφή "${file.name}";`)) {
+          window.api.fs.trash([file.path]).then(() => refreshDirectory())
+        }
+        break
     }
-  }, [ctxMenu, onSelect, runPreflight, setInspectorTab])
+  }, [ctxMenu, onSelect, runPreflight, setInspectorTab, refreshDirectory, copyFiles, cutFiles, pasteFiles])
 
   if (viewMode === 'list') {
     return (
@@ -198,7 +244,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         </div>
 
         {/* List items */}
-        {files.map(file => (
+        {files.map((file, index) => (
           <div
             key={file.path}
             className={clsx(
@@ -212,13 +258,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
             onDragOver={(e) => handleDragOver(e, file)}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, file)}
-            onClick={(e) => {
-              if (e.ctrlKey || e.metaKey) {
-                toggleFileSelection(file)
-              } else {
-                onSelect(file)
-              }
-            }}
+            onClick={(e) => handleClick(e, file, index)}
             onDoubleClick={() => onOpen(file)}
             onContextMenu={(e) => handleContextMenu(e, file)}
             style={{
@@ -227,7 +267,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
                 ? '2px solid #f58220' : '2px solid transparent',
               background: dropTarget === file.path
                 ? 'rgba(245,130,32,0.15)'
-                : selectedFiles.some(f => f.path === file.path)
+                : (selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path))
                   ? 'rgba(245,130,32,0.08)' : undefined,
               outline: dropTarget === file.path ? '2px dashed #f58220' : undefined,
               outlineOffset: -2,
@@ -275,18 +315,18 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   }
 
   // Grid view
-  const cellSize = thumbnailSize + 40
+  const cellSize = thumbnailSize + 24
 
   return (
-    <div className="h-full overflow-y-auto" style={{ padding: 20 }}>
+    <div className="h-full overflow-y-auto" style={{ padding: 10 }}>
       <div
         className="grid"
         style={{
-          gap: 12,
+          gap: 6,
           gridTemplateColumns: `repeat(auto-fill, minmax(${cellSize}px, 1fr))`
         }}
       >
-        {files.map(file => (
+        {files.map((file, index) => (
           <div
             key={file.path}
             className={clsx(
@@ -297,17 +337,11 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
             onDragOver={(e) => handleDragOver(e, file)}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, file)}
-            onClick={(e) => {
-              if (e.ctrlKey || e.metaKey) {
-                toggleFileSelection(file)
-              } else {
-                onSelect(file)
-              }
-            }}
+            onClick={(e) => handleClick(e, file, index)}
             onDoubleClick={() => onOpen(file)}
             onContextMenu={(e) => handleContextMenu(e, file)}
             style={{
-              padding: 8,
+              padding: 4,
               border: dropTarget === file.path
                 ? '2px dashed #f58220'
                 : (selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path))
@@ -321,7 +355,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
           >
             {/* Thumbnail */}
             <div
-              className="rounded bg-bg-primary flex items-center justify-center overflow-hidden"
+              className="rounded flex items-center justify-center overflow-hidden"
               style={{ width: thumbnailSize, height: thumbnailSize, position: 'relative' }}
             >
               <FileThumbnail file={file} size={thumbnailSize} />

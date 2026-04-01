@@ -35,6 +35,13 @@ export interface FileMetadata {
   hasAlpha?: boolean
   format?: string
   iccProfile?: { size: number; description: string }
+  // PDF-specific
+  pageCount?: number
+  mediaBox?: { width: number; height: number }
+  trimBox?: { width: number; height: number }
+  bleedBox?: { width: number; height: number }
+  cropBox?: { width: number; height: number }
+  pdfVersion?: string
   // PSD-specific
   colorMode?: number
   layerCount?: number

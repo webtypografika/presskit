@@ -1,13 +1,13 @@
 import {
   ArrowLeft, ArrowRight, ArrowUp, RefreshCw,
-  LayoutGrid, List, Scan, Settings,
-  HardDrive, Cloud, Layers, RefreshCcw, Search, Send, Sun, Moon
+  LayoutGrid, List, Scan,
+  HardDrive, Cloud, Layers, RefreshCcw, Search, Send,
+  PanelLeft, PanelRight, Eye, EyeOff
 } from 'lucide-react'
 import { useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useAppStore } from '@/stores/app-store'
 import { Breadcrumb } from '../browser/Breadcrumb'
-import { SettingsDialog } from '../tools/SettingsDialog'
 import { BatchPreflightPanel } from '../batch/BatchPreflightPanel'
 import { ConvertDialog } from '../convert/ConvertDialog'
 
@@ -17,10 +17,12 @@ export function Toolbar() {
   const {
     navigateBack, navigateForward, navigateUp, refreshDirectory,
     viewMode, setViewMode, source, setSource, runPreflight,
-    selectedFile, selectedFiles, pathHistory, historyIndex
+    selectedFile, selectedFiles, pathHistory, historyIndex,
+    showSidebar, setShowSidebar, showInspector, setShowInspector,
+    previewOpen, togglePreview,
+    thumbnailSize, setThumbnailSize
   } = useAppStore()
 
-  const [showSettings, setShowSettings] = useState(false)
   const [overlay, setOverlay] = useState<OverlayMode>('none')
   const [showSendEmail, setShowSendEmail] = useState(false)
 
@@ -35,123 +37,154 @@ export function Toolbar() {
 
   return (
     <>
-      <div className="titlebar-no-drag flex items-center bg-bg-secondary border-b border-border flex-shrink-0" style={{ height: 56, gap: 12, padding: '0 24px' }}>
+      {/* Row 1: Main toolbar with labels */}
+      <div className="titlebar-no-drag flex items-center flex-shrink-0" style={{ height: 52, padding: '0 16px' }}>
+
+        {/* Sidebar toggle */}
+        <LabeledButton icon={<PanelLeft size={16} />} label="Sidebar" onClick={() => setShowSidebar(!showSidebar)} active={showSidebar} />
+
+        <div className="w-px h-7 bg-border flex-shrink-0" style={{ margin: '0 10px' }} />
+
         {/* Navigation */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center" style={{ gap: 4, padding: '4px 8px', background: 'var(--th-bg-primary)', borderRadius: 10 }}>
           <ToolbarButton icon={<ArrowLeft size={18} />} onClick={navigateBack} disabled={!canGoBack} title="Back" />
           <ToolbarButton icon={<ArrowRight size={18} />} onClick={navigateForward} disabled={!canGoForward} title="Forward" />
           <ToolbarButton icon={<ArrowUp size={18} />} onClick={navigateUp} title="Up" />
           <ToolbarButton icon={<RefreshCw size={18} />} onClick={refreshDirectory} title="Refresh" />
         </div>
 
-        <div className="w-px h-5 bg-border" style={{ margin: '0 8px' }} />
+        <div className="w-px h-7 bg-border flex-shrink-0" style={{ margin: '0 14px' }} />
 
+        {/* Panels */}
+        <div className="flex items-center" style={{ gap: 4 }}>
+          <LabeledButton icon={previewOpen ? <Eye size={16} /> : <EyeOff size={16} />} label="Preview" onClick={togglePreview} active={previewOpen} />
+        </div>
+
+        <div className="w-px h-7 bg-border flex-shrink-0" style={{ margin: '0 10px' }} />
+
+        {/* File actions */}
+        <div className="flex items-center" style={{ gap: 4 }}>
+          <LabeledButton icon={<Scan size={16} />} label="Preflight" onClick={runPreflight} disabled={!canPreflight} accent />
+          <LabeledButton icon={<Layers size={16} />} label="Batch" onClick={() => setOverlay(overlay === 'batch' ? 'none' : 'batch')} active={overlay === 'batch'} />
+          <LabeledButton icon={<RefreshCcw size={16} />} label="Convert" onClick={() => setOverlay(overlay === 'convert' ? 'none' : 'convert')} active={overlay === 'convert'} disabled={!canPreflight} />
+        </div>
+
+        {/* Send email */}
+        {filesToSend.length > 0 && (
+          <>
+            <div className="w-px h-7 bg-border flex-shrink-0" style={{ margin: '0 10px' }} />
+            <button
+              onClick={() => setShowSendEmail(true)}
+              className="flex items-center rounded-lg transition-colors"
+              style={{
+                gap: 6, padding: '6px 16px', fontSize: 13, fontWeight: 600,
+                background: 'rgba(245,130,32,0.1)', color: '#f58220', border: '1px solid rgba(245,130,32,0.3)',
+                cursor: 'pointer',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,130,32,0.2)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(245,130,32,0.1)')}
+            >
+              <Send size={14} />
+              Αποστολή {filesToSend.length > 1 ? `(${filesToSend.length})` : ''}
+            </button>
+          </>
+        )}
+
+        <div className="flex-1" />
+
+        {/* View mode + size slider */}
+        <div className="flex items-center" style={{ gap: 4 }}>
+          <LabeledButton icon={<LayoutGrid size={16} />} label="Grid" onClick={() => setViewMode('grid')} active={viewMode === 'grid'} />
+          <LabeledButton icon={<List size={16} />} label="List" onClick={() => setViewMode('list')} active={viewMode === 'list'} />
+          {viewMode === 'grid' && (
+            <input
+              type="range"
+              min={64}
+              max={256}
+              step={8}
+              value={thumbnailSize}
+              onChange={e => setThumbnailSize(Number(e.target.value))}
+              title={`${thumbnailSize}px`}
+              style={{ width: 80, marginLeft: 6, accentColor: '#f58220', cursor: 'pointer' }}
+            />
+          )}
+        </div>
+
+        <div className="w-px h-7 bg-border flex-shrink-0" style={{ margin: '0 10px' }} />
+
+        {/* Inspector toggle */}
+        <LabeledButton icon={<PanelRight size={16} />} label="Inspector" onClick={() => setShowInspector(!showInspector)} active={showInspector} />
+      </div>
+
+      {/* Divider */}
+      <div className="border-b border-border" style={{ margin: '0 16px' }} />
+
+      {/* Row 2: Source + Path + Search */}
+      <div className="titlebar-no-drag flex items-center flex-shrink-0" style={{ height: 36, gap: 10, padding: '4px 16px' }}>
         {/* Source toggle */}
-        <div className="flex items-center bg-bg-primary rounded-lg" style={{ padding: 2 }}>
+        <div className="flex items-center bg-bg-primary rounded-md flex-shrink-0" style={{ padding: 2 }}>
           <button
-            className="flex items-center rounded-lg text-sm transition-colors"
+            className="flex items-center rounded transition-colors"
             style={{
-              gap: 6, padding: '6px 14px',
+              gap: 4, padding: '2px 10px', fontSize: 12, minHeight: 'auto',
               background: source === 'local' ? '#1e2a4a' : 'transparent',
               color: source === 'local' ? '#f58220' : '#94a3b8',
             }}
             onClick={() => setSource('local')}
           >
-            <HardDrive size={15} /> Local
+            <HardDrive size={13} /> Local
           </button>
           <button
-            className="flex items-center rounded-lg text-sm transition-colors"
+            className="flex items-center rounded transition-colors"
             style={{
-              gap: 6, padding: '6px 14px',
+              gap: 4, padding: '2px 10px', fontSize: 12, minHeight: 'auto',
               background: source === 'dropbox' ? '#1e2a4a' : 'transparent',
               color: source === 'dropbox' ? '#f58220' : '#94a3b8',
             }}
             onClick={() => setSource('dropbox')}
           >
-            <Cloud size={15} /> Dropbox
+            <Cloud size={13} /> Dropbox
           </button>
         </div>
 
-        <div className="w-px h-5 bg-border" style={{ margin: '0 8px' }} />
+        <div className="w-px h-4 bg-border flex-shrink-0" />
 
         {/* Breadcrumb */}
         <div className="flex-1 min-w-0">
           <Breadcrumb />
         </div>
 
-        <div className="w-px h-5 bg-border" style={{ margin: '0 8px' }} />
+        <div className="w-px h-4 bg-border flex-shrink-0" />
 
         {/* Search */}
-        <SearchBox />
-
-        <div className="w-px h-5 bg-border" style={{ margin: '0 8px' }} />
-
-        {/* Actions */}
-        <ToolbarButton
-          icon={<Scan size={18} />}
-          onClick={runPreflight}
-          disabled={!canPreflight}
-          title="Preflight"
-          accent
-        />
-        <ToolbarButton
-          icon={<Layers size={18} />}
-          onClick={() => setOverlay(overlay === 'batch' ? 'none' : 'batch')}
-          active={overlay === 'batch'}
-          title="Batch Preflight"
-        />
-        <ToolbarButton
-          icon={<RefreshCcw size={18} />}
-          onClick={() => setOverlay(overlay === 'convert' ? 'none' : 'convert')}
-          active={overlay === 'convert'}
-          disabled={!canPreflight}
-          title="Convert File"
-        />
-
-        {/* Send email */}
-        {filesToSend.length > 0 && (
-          <button
-            onClick={() => setShowSendEmail(true)}
-            className="flex items-center rounded-lg transition-colors"
-            style={{
-              gap: 6, padding: '6px 14px', fontSize: 13, fontWeight: 600,
-              background: 'rgba(245,130,32,0.1)', color: '#f58220', border: '1px solid rgba(245,130,32,0.3)',
-              cursor: 'pointer',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,130,32,0.2)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(245,130,32,0.1)')}
-          >
-            <Send size={14} />
-            Αποστολή {filesToSend.length > 1 ? `(${filesToSend.length})` : ''}
-          </button>
-        )}
-
-        <div className="w-px h-5 bg-border" style={{ margin: '0 8px' }} />
-
-        {/* View mode */}
-        <div className="flex items-center gap-0.5">
-          <ToolbarButton icon={<LayoutGrid size={18} />} onClick={() => setViewMode('grid')} active={viewMode === 'grid'} title="Grid" />
-          <ToolbarButton icon={<List size={18} />} onClick={() => setViewMode('list')} active={viewMode === 'list'} title="List" />
+        <div className="flex-shrink-0">
+          <SearchBox />
         </div>
-
-        <ThemeToggle />
-        <ToolbarButton icon={<Settings size={18} />} onClick={() => setShowSettings(true)} title="Settings" />
       </div>
 
+      {/* Bottom divider */}
+      <div className="border-b border-border" style={{ margin: '0 16px' }} />
+
       {/* Overlay panels */}
-      {overlay === 'batch' && (
-        <div className="absolute inset-x-0 top-[76px] bottom-6 z-40">
-          <BatchPreflightPanel onClose={() => setOverlay('none')} />
-        </div>
+      {overlay === 'batch' && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }}>
+          <div style={{ width: '90%', maxWidth: 1200, height: '80%', borderRadius: 12, overflow: 'hidden' }}>
+            <BatchPreflightPanel onClose={() => setOverlay('none')} />
+          </div>
+        </div>,
+        document.body
       )}
-      {overlay === 'convert' && (
-        <div className="absolute right-0 top-[76px] bottom-6 w-[360px] z-40 border-l border-border">
-          <ConvertDialog onClose={() => setOverlay('none')} />
-        </div>
+      {overlay === 'convert' && createPortal(
+        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: 50, display: 'flex' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setOverlay('none') }}
+        >
+          <div style={{ marginLeft: 'auto', width: 360, height: '100%', borderLeft: '1px solid var(--th-border)', background: 'var(--th-bg-secondary)', boxShadow: '-4px 0 20px rgba(0,0,0,0.15)' }}>
+            <ConvertDialog onClose={() => setOverlay('none')} />
+          </div>
+        </div>,
+        document.body
       )}
 
-      {/* Settings dialog */}
-      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
       {showSendEmail && <SendEmailDialog files={filesToSend} onClose={() => setShowSendEmail(false)} />}
     </>
   )
@@ -167,7 +200,7 @@ function ToolbarButton({ icon, onClick, disabled, active, accent, title }: {
 }) {
   return (
     <button
-      className={`p-2.5 rounded-lg transition-colors ${
+      className={`rounded-lg transition-colors ${
         disabled
           ? 'text-text-muted cursor-not-allowed'
           : active
@@ -176,11 +209,41 @@ function ToolbarButton({ icon, onClick, disabled, active, accent, title }: {
               ? 'text-accent hover:bg-bg-hover'
               : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'
       }`}
+      style={{ padding: 10, margin: 2 }}
       onClick={onClick}
       disabled={disabled}
       title={title}
     >
       {icon}
+    </button>
+  )
+}
+
+function LabeledButton({ icon, label, onClick, disabled, active, accent }: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  active?: boolean
+  accent?: boolean
+}) {
+  return (
+    <button
+      className={`flex items-center rounded-lg transition-colors ${
+        disabled
+          ? 'text-text-muted cursor-not-allowed'
+          : active
+            ? 'text-accent bg-bg-active'
+            : accent
+              ? 'text-accent hover:bg-bg-hover'
+              : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'
+      }`}
+      style={{ gap: 6, padding: '6px 12px', fontSize: 13 }}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {icon}
+      <span>{label}</span>
     </button>
   )
 }
@@ -221,10 +284,10 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
 
   if (!presscalConnected) {
     return createPortal(
-      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
-        <div onClick={e => e.stopPropagation()} style={{ width: 400, background: '#141e37', borderRadius: 14, border: '1px solid #1e293b', padding: 32, textAlign: 'center' }}>
-          <div style={{ fontSize: 14, color: '#94a3b8', marginBottom: 16 }}>Συνδεθείτε πρώτα στο PressCal (Settings → PressCal)</div>
-          <button onClick={onClose} style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid #1e293b', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}>OK</button>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }} onClick={onClose}>
+        <div onClick={e => e.stopPropagation()} style={{ width: 400, background: 'var(--th-bg-secondary)', borderRadius: 14, border: '1px solid var(--th-border)', padding: 32, textAlign: 'center' }}>
+          <div style={{ fontSize: 14, color: 'var(--th-text-muted)', marginBottom: 16 }}>Συνδεθείτε πρώτα στο PressCal (Settings → PressCal)</div>
+          <button onClick={onClose} style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid var(--th-border)', background: 'transparent', color: 'var(--th-text-muted)', cursor: 'pointer' }}>OK</button>
         </div>
       </div>,
       document.body
@@ -233,23 +296,23 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
 
   const inp: React.CSSProperties = {
     width: '100%', padding: '10px 14px', borderRadius: 8,
-    background: '#0a0e1a', border: '1px solid #1e293b', color: '#e2e8f0',
+    background: 'var(--th-bg-primary)', border: '1px solid var(--th-border)', color: 'var(--th-text-primary)',
     fontSize: 14, outline: 'none',
   }
 
   return createPortal(
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 500, maxHeight: '80vh', display: 'flex', flexDirection: 'column', background: '#141e37', borderRadius: 14, border: '1px solid #1e293b', boxShadow: '0 20px 60px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 500, maxHeight: '80vh', display: 'flex', flexDirection: 'column', background: 'var(--th-bg-secondary)', borderRadius: 14, border: '1px solid var(--th-border)', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
 
         {/* Header */}
-        <div style={{ padding: '18px 24px', borderBottom: '1px solid #1e293b', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--th-border)', display: 'flex', alignItems: 'center', gap: 10 }}>
           <Send size={18} style={{ color: '#f58220' }} />
-          <span style={{ fontSize: 16, fontWeight: 600, flex: 1 }}>Αποστολή Email</span>
-          <button onClick={onClose} style={{ border: 'none', background: 'transparent', color: '#64748b', cursor: 'pointer', fontSize: 18 }}>&times;</button>
+          <span style={{ fontSize: 16, fontWeight: 600, flex: 1, color: 'var(--th-text-primary)' }}>Αποστολή Email</span>
+          <button onClick={onClose} style={{ border: 'none', background: 'transparent', color: 'var(--th-text-muted)', cursor: 'pointer', fontSize: 18 }}>&times;</button>
         </div>
 
         {/* Attachments */}
-        <div style={{ padding: '12px 24px', borderBottom: '1px solid #1e293b', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--th-border)', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {files.map((f, i) => (
             <span key={i} style={{
               display: 'inline-flex', alignItems: 'center', gap: 4,
@@ -260,7 +323,7 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
               📎 {f.name}
             </span>
           ))}
-          <span style={{ fontSize: 11, color: '#64748b', alignSelf: 'center', marginLeft: 4 }}>
+          <span style={{ fontSize: 11, color: 'var(--th-text-muted)', alignSelf: 'center', marginLeft: 4 }}>
             {files.length} αρχεί{files.length === 1 ? 'ο' : 'α'} · {formatSize(totalSize)}
           </span>
         </div>
@@ -268,15 +331,15 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
         {/* Form */}
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12, flex: 1, overflow: 'auto' }}>
           <div>
-            <label style={{ fontSize: 12, color: '#64748b', fontWeight: 600, display: 'block', marginBottom: 4 }}>Προς</label>
+            <label style={{ fontSize: 12, color: 'var(--th-text-muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Προς</label>
             <input value={to} onChange={e => setTo(e.target.value)} placeholder="email@example.com" type="email" style={inp} autoFocus />
           </div>
           <div>
-            <label style={{ fontSize: 12, color: '#64748b', fontWeight: 600, display: 'block', marginBottom: 4 }}>Θέμα</label>
+            <label style={{ fontSize: 12, color: 'var(--th-text-muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Θέμα</label>
             <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Αρχεία για έγκριση" style={inp} />
           </div>
           <div>
-            <label style={{ fontSize: 12, color: '#64748b', fontWeight: 600, display: 'block', marginBottom: 4 }}>Μήνυμα</label>
+            <label style={{ fontSize: 12, color: 'var(--th-text-muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Μήνυμα</label>
             <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Σας αποστέλλουμε τα αρχεία..." rows={4} style={{ ...inp, resize: 'vertical' }} />
           </div>
 
@@ -284,8 +347,8 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
         </div>
 
         {/* Actions */}
-        <div style={{ padding: '14px 24px', borderTop: '1px solid #1e293b', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid #1e293b', background: 'transparent', color: '#94a3b8', fontSize: 14, cursor: 'pointer' }}>
+        <div style={{ padding: '14px 24px', borderTop: '1px solid var(--th-border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid var(--th-border)', background: 'transparent', color: 'var(--th-text-muted)', fontSize: 14, cursor: 'pointer' }}>
             Ακύρωση
           </button>
           <button
@@ -322,27 +385,6 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
-}
-
-function ThemeToggle() {
-  const { theme, setTheme } = useAppStore()
-  const isDark = theme === 'dark'
-
-  return (
-    <button
-      onClick={() => setTheme(isDark ? 'light' : 'dark')}
-      title={isDark ? 'Light mode' : 'Dark mode'}
-      style={{
-        padding: '6px 8px', borderRadius: 8, border: 'none', cursor: 'pointer',
-        background: 'transparent',
-        color: isDark ? '#64748b' : '#f59e0b',
-        display: 'flex', alignItems: 'center',
-        minHeight: 'auto',
-      }}
-    >
-      {isDark ? <Sun size={18} /> : <Moon size={18} />}
-    </button>
-  )
 }
 
 function SearchBox() {
@@ -408,10 +450,12 @@ function SearchBox() {
     <>
       <div ref={inputRef}>
         <div className="flex items-center" style={{
-          background: '#0a0e1a', border: '1px solid #1e293b', borderRadius: 8,
-          padding: '0 10px', height: 32, gap: 6, minWidth: 180,
+          background: 'var(--th-bg-primary)', border: 'none', borderRadius: 8,
+          padding: '0 12px', height: 32, gap: 10, minWidth: 180,
         }}>
-          <Search size={14} style={{ color: '#64748b', flexShrink: 0 }} />
+          <span style={{ display: 'inline-flex', paddingRight: 8, flexShrink: 0 }}>
+            <Search size={14} style={{ color: 'var(--th-text-muted)' }} />
+          </span>
           <input
             value={query}
             onChange={e => handleChange(e.target.value)}
@@ -419,9 +463,9 @@ function SearchBox() {
             onBlur={() => setTimeout(() => setOpen(false), 300)}
             placeholder="Αναζήτηση..."
             style={{
-              border: 'none', background: 'transparent', color: '#e2e8f0',
+              border: 'none', background: 'transparent', color: 'var(--th-text-primary)',
               fontSize: 13, outline: 'none', width: '100%',
-              padding: '0 !important', margin: 0,
+              padding: 0, margin: 0,
             }}
           />
         </div>
@@ -430,14 +474,14 @@ function SearchBox() {
         <div style={{
           position: 'fixed',
           top: rect.bottom + 4,
-          left: Math.max(rect.left - 100, 10),
-          width: Math.max(rect.width + 200, 420),
-          background: '#141e37', border: '1px solid #1e293b', borderRadius: 10,
+          right: Math.max(window.innerWidth - rect.right, 10),
+          width: Math.min(Math.max(rect.width + 200, 420), window.innerWidth - 20),
+          background: 'var(--th-bg-secondary)', border: '1px solid var(--th-border)', borderRadius: 10,
           boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
           maxHeight: 360, overflowY: 'auto', zIndex: 9999,
         }}>
           {searching && (
-            <div style={{ padding: '8px 14px', fontSize: 12, color: '#64748b' }}>Αναζήτηση...</div>
+            <div style={{ padding: '8px 14px', fontSize: 12, color: 'var(--th-text-muted)' }}>Αναζήτηση...</div>
           )}
           {results.map(f => {
             // Short parent path for context
@@ -458,15 +502,15 @@ function SearchBox() {
                     {f.isDirectory ? '📁' : f.extension === '.pdf' ? '📕' : f.extension?.match(/\.(jpg|png|tif|psd|ai|svg)/) ? '🖼️' : '📄'}
                   </span>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, color: '#e2e8f0', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ fontSize: 13, color: 'var(--th-text-primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {f.name}
                     </div>
-                    <div style={{ fontSize: 11, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ fontSize: 11, color: 'var(--th-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {parentPath}
                     </div>
                   </div>
                   {f.size > 0 && (
-                    <span style={{ fontSize: 11, color: '#475569', flexShrink: 0 }}>
+                    <span style={{ fontSize: 11, color: 'var(--th-text-muted)', flexShrink: 0 }}>
                       {f.size < 1024 * 1024 ? Math.round(f.size / 1024) + 'K' : (f.size / (1024 * 1024)).toFixed(1) + 'M'}
                     </span>
                   )}

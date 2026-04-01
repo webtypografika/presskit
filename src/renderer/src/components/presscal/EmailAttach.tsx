@@ -1,20 +1,66 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useAppStore } from '@/stores/app-store'
 import {
-  Send, Paperclip, Loader2, CheckCircle, FileText
+  Send, Paperclip, Loader2, CheckCircle, FileText, X
 } from 'lucide-react'
 import { formatFileSize } from '@/lib/file-types'
+import { fuzzyMatch } from '@/lib/fuzzy'
+import type { PresscalCustomer } from '@/lib/ipc'
 
 export function EmailAttach() {
-  const { selectedFile, preflight } = useAppStore()
+  const { selectedFile, selectedFiles, preflight } = useAppStore()
   const [to, setTo] = useState('')
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
-  const [includeFile, setIncludeFile] = useState(true)
   const [includePreflight, setIncludePreflight] = useState(false)
+
+  // Collect files to attach: multi-selected or single selected
+  const files = useMemo(() => {
+    if (selectedFiles.length > 0) return selectedFiles.filter(f => !f.isDirectory)
+    if (selectedFile && !selectedFile.isDirectory) return [selectedFile]
+    return []
+  }, [selectedFiles, selectedFile])
+
+  const [excludedPaths, setExcludedPaths] = useState<Set<string>>(new Set())
+  const attachedFiles = files.filter(f => !excludedPaths.has(f.path))
+
+  const toggleFile = (path: string) => {
+    setExcludedPaths(prev => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+
+  // Customer email autocomplete
+  const [allCustomers, setAllCustomers] = useState<PresscalCustomer[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    window.api.presscal.getCustomers()
+      .then(setAllCustomers)
+      .catch(() => setAllCustomers([]))
+  }, [])
+
+  const suggestions = useMemo(() => {
+    if (!to.trim() || to.includes('@') && to.includes('.')) return []
+    return allCustomers
+      .filter(c => {
+        const text = [c.name, c.company, c.email].filter(Boolean).join(' ')
+        return fuzzyMatch(text, to) && c.email
+      })
+      .slice(0, 6)
+  }, [to, allCustomers])
+
+  const selectCustomer = (customer: PresscalCustomer) => {
+    setTo(customer.email || '')
+    setShowSuggestions(false)
+  }
 
   const handleSend = useCallback(async () => {
     if (!to || !subject) return
@@ -23,29 +69,17 @@ export function EmailAttach() {
     setSent(false)
 
     try {
-      const attachments: any[] = []
+      const filePaths = attachedFiles.map(f => ({
+        path: f.path,
+        name: f.name,
+        ext: f.extension
+      }))
 
-      if (includeFile && selectedFile && !selectedFile.isDirectory) {
-        const fileData = await window.api.fs.readFile(selectedFile.path)
-        attachments.push({
-          filename: selectedFile.name,
-          content: Buffer.from(fileData).toString('base64'),
-          contentType: getMimeType(selectedFile.extension)
-        })
-      }
-
-      if (includePreflight && preflight) {
-        const reportText = formatPreflightText(preflight)
-        attachments.push({
-          filename: `preflight_${preflight.fileName}.txt`,
-          content: Buffer.from(reportText).toString('base64'),
-          contentType: 'text/plain'
-        })
-      }
-
-      await window.api.presscal.sendEmail({
-        to, subject, body,
-        attachments: attachments.length > 0 ? attachments : undefined
+      await window.api.presscal.sendEmailWithFiles({
+        to: to.trim(),
+        subject: subject.trim(),
+        body: body.trim(),
+        filePaths
       })
 
       setSent(true)
@@ -55,68 +89,119 @@ export function EmailAttach() {
     } finally {
       setSending(false)
     }
-  }, [to, subject, body, selectedFile, includeFile, includePreflight, preflight])
+  }, [to, subject, body, attachedFiles])
 
-  const inputCls = "w-full px-3 py-2.5 bg-bg-primary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '10px 12px', borderRadius: 8,
+    background: 'var(--th-bg-primary)', border: '1px solid var(--th-border)',
+    color: 'var(--th-text-primary)', fontSize: 13, outline: 'none',
+  }
 
   return (
-    <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {selectedFile && !selectedFile.isDirectory && (
-        <div className="flex items-center gap-3 p-3 bg-bg-primary rounded-lg">
-          <Paperclip size={16} className="text-accent flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="text-sm text-text-primary truncate">{selectedFile.name}</div>
-            <div className="text-sm text-text-muted">{formatFileSize(selectedFile.size)}</div>
+    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Attached files */}
+      {files.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ fontSize: 11, color: 'var(--th-text-muted)', fontWeight: 600, marginBottom: 2 }}>
+            Attachments ({attachedFiles.length})
           </div>
-          <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
-            <input type="checkbox" checked={includeFile} onChange={e => setIncludeFile(e.target.checked)} className="w-4 h-4 accent-accent" />
-            <span className="text-sm text-text-muted">Attach</span>
-          </label>
+          {files.map(f => (
+            <div
+              key={f.path}
+              className="flex items-center"
+              style={{
+                gap: 8, padding: '6px 10px', borderRadius: 6,
+                background: excludedPaths.has(f.path) ? 'transparent' : 'var(--th-bg-primary)',
+                opacity: excludedPaths.has(f.path) ? 0.4 : 1,
+              }}
+            >
+              <Paperclip size={12} style={{ color: '#f58220', flexShrink: 0 }} />
+              <span style={{ fontSize: 12, color: 'var(--th-text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {f.name}
+              </span>
+              <span style={{ fontSize: 10, color: 'var(--th-text-muted)', flexShrink: 0 }}>
+                {formatFileSize(f.size)}
+              </span>
+              <button
+                onClick={() => toggleFile(f.path)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--th-text-muted)' }}
+                title={excludedPaths.has(f.path) ? 'Include' : 'Exclude'}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
+      {/* Preflight report */}
       {preflight && (
-        <label className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-bg-hover rounded-lg">
-          <input type="checkbox" checked={includePreflight} onChange={e => setIncludePreflight(e.target.checked)} className="w-4 h-4 accent-accent" />
-          <FileText size={14} className="text-text-muted" />
-          <span className="text-sm text-text-secondary">Include preflight report ({preflight.overallStatus})</span>
+        <label className="flex items-center cursor-pointer" style={{ gap: 8, padding: '6px 10px', borderRadius: 6 }}>
+          <input type="checkbox" checked={includePreflight} onChange={e => setIncludePreflight(e.target.checked)} style={{ width: 14, height: 14, accentColor: '#f58220' }} />
+          <FileText size={12} style={{ color: 'var(--th-text-muted)' }} />
+          <span style={{ fontSize: 12, color: 'var(--th-text-secondary)' }}>Preflight report ({preflight.overallStatus})</span>
         </label>
       )}
 
-      <div className="space-y-3">
-        <input type="email" value={to} onChange={e => setTo(e.target.value)} placeholder="To: email@example.com" className={inputCls} />
-        <input type="text" value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" className={inputCls} />
-        <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Message..." rows={5} className={`${inputCls} resize-none`} />
+      {/* Form */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {/* To field with autocomplete */}
+        <div style={{ position: 'relative' }}>
+          <input
+            ref={inputRef}
+            type="email"
+            value={to}
+            onChange={e => { setTo(e.target.value); setShowSuggestions(true) }}
+            onFocus={() => setShowSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+            placeholder="To: email or customer name..."
+            style={inputStyle}
+          />
+          {showSuggestions && suggestions.length > 0 && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+              marginTop: 4, borderRadius: 8, overflow: 'hidden',
+              background: 'var(--th-bg-secondary)', border: '1px solid var(--th-border)',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+            }}>
+              {suggestions.map(c => (
+                <div
+                  key={c.id}
+                  onMouseDown={() => selectCustomer(c)}
+                  style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--th-border)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--th-bg-hover)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <div style={{ fontSize: 12, color: 'var(--th-text-primary)', fontWeight: 500 }}>{c.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--th-text-muted)' }}>{c.email}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <input type="text" value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" style={inputStyle} />
+        <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Message..." rows={4} style={{ ...inputStyle, resize: 'vertical' }} />
       </div>
 
-      {error && <div className="text-sm text-error px-1">{error}</div>}
+      {error && <div style={{ fontSize: 12, color: '#ef4444' }}>{error}</div>}
 
       <button
-        className="w-full flex items-center justify-center gap-2 py-3 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors disabled:opacity-50"
         onClick={handleSend}
         disabled={sending || !to || !subject}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: 8, padding: '10px 16px', borderRadius: 8, border: 'none',
+          background: sent ? '#22c55e' : '#f58220', color: '#fff',
+          fontSize: 13, fontWeight: 600, cursor: sending ? 'default' : 'pointer',
+          opacity: (sending || !to || !subject) ? 0.5 : 1,
+        }}
       >
-        {sending ? <><Loader2 size={16} className="animate-spin" /> Sending...</> : sent ? <><CheckCircle size={16} /> Sent!</> : <><Send size={16} /> Send via PressCal</>}
+        {sending ? <><Loader2 size={14} className="animate-spin" /> Sending...</>
+          : sent ? <><CheckCircle size={14} /> Sent!</>
+          : <><Send size={14} /> Send via PressCal</>
+        }
       </button>
     </div>
   )
-}
-
-function getMimeType(ext: string): string {
-  const types: Record<string, string> = {
-    '.pdf': 'application/pdf', '.ai': 'application/postscript', '.psd': 'image/vnd.adobe.photoshop',
-    '.eps': 'application/postscript', '.tif': 'image/tiff', '.tiff': 'image/tiff',
-    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml'
-  }
-  return types[ext] || 'application/octet-stream'
-}
-
-function formatPreflightText(report: any): string {
-  let text = `PREFLIGHT REPORT\n${'='.repeat(40)}\nFile: ${report.fileName}\nStatus: ${report.overallStatus.toUpperCase()}\n${'='.repeat(40)}\n\n`
-  for (const check of report.checks) {
-    const icon = check.severity === 'pass' ? '[OK]' : check.severity === 'warning' ? '[!!]' : check.severity === 'error' ? '[XX]' : '[--]'
-    text += `${icon} ${check.label}: ${check.value}\n`
-    if (check.detail) text += `    ${check.detail}\n`
-  }
-  return text
 }

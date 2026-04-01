@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAppStore } from '@/stores/app-store'
+import { fuzzyMatch } from '@/lib/fuzzy'
 import {
   Search, Link2, FileText, Paperclip, Image, File,
   Loader2, CheckCircle, ChevronDown, ChevronRight, Download
@@ -18,7 +19,7 @@ interface EmailMessage {
 
 export function QuoteLinker() {
   const { selectedFile, preflight, selectFile } = useAppStore()
-  const [quotes, setQuotes] = useState<PresscalQuote[]>([])
+  const [allQuotes, setAllQuotes] = useState<PresscalQuote[]>([])
   const [fileLinks, setFileLinks] = useState<FileLink[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
@@ -30,11 +31,19 @@ export function QuoteLinker() {
 
   useEffect(() => {
     setLoading(true)
-    window.api.presscal.getQuotes({ search: search || undefined })
-      .then(setQuotes)
-      .catch(() => setQuotes([]))
+    window.api.presscal.getQuotes()
+      .then(setAllQuotes)
+      .catch(() => setAllQuotes([]))
       .finally(() => setLoading(false))
-  }, [search])
+  }, [])
+
+  const quotes = useMemo(() => {
+    if (!search.trim()) return allQuotes
+    return allQuotes.filter(q => {
+      const text = [q.number, q.customerName, q.title].filter(Boolean).join(' ')
+      return fuzzyMatch(text, search)
+    })
+  }, [allQuotes, search])
 
   useEffect(() => {
     if (!selectedFile) return
@@ -133,16 +142,19 @@ export function QuoteLinker() {
   const isImage = (mime: string) => mime.startsWith('image/')
 
   return (
-    <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* Search */}
-      <div className="relative">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px', height: 36, background: 'var(--th-bg-primary)', borderRadius: 8 }}>
+        <Search size={14} style={{ color: 'var(--th-text-muted)', flexShrink: 0 }} />
         <input
           type="text"
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search quotes..."
-          className="w-full pl-9 pr-3 py-2.5 bg-bg-primary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+          style={{
+            border: 'none', background: 'transparent', color: 'var(--th-text-primary)',
+            fontSize: 13, outline: 'none', width: '100%', padding: 0, margin: 0,
+          }}
         />
       </div>
 

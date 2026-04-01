@@ -2,12 +2,14 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useAppStore } from '@/stores/app-store'
 import {
   RefreshCw, ArrowRight, Loader2, CheckCircle, XCircle,
-  FileImage, Palette, Maximize, Layers
+  FileImage, Palette, Maximize, Layers, X, FolderOpen
 } from 'lucide-react'
 import { formatFileSize } from '@/lib/file-types'
 
+type OutputFormat = 'tiff' | 'png' | 'jpg' | 'pdf'
+
 interface ConvertOptions {
-  format: 'tiff' | 'png' | 'jpg'
+  format: OutputFormat
   colorSpace: 'cmyk' | 'srgb' | 'keep'
   dpi: number
   quality: number
@@ -35,29 +37,34 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
   const [converting, setConverting] = useState(false)
   const [result, setResult] = useState<ConvertResult | null>(null)
   const [progress, setProgress] = useState<any>(null)
+  const [hasGs, setHasGs] = useState(false)
   const cleanupRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     cleanupRef.current = window.api.batch.onProgress(setProgress)
+    window.api.convert.hasGhostscript().then(setHasGs)
     return () => cleanupRef.current?.()
   }, [])
+
+  const isPdfInput = selectedFile && ['.pdf', '.ai', '.eps'].includes(
+    (selectedFile.extension || '').toLowerCase()
+  )
+
+  const outputFormats: OutputFormat[] = isPdfInput
+    ? (hasGs ? ['tiff', 'png', 'jpg', 'pdf'] : [])
+    : ['tiff', 'png', 'jpg']
 
   const handleConvert = useCallback(async () => {
     if (!selectedFile) return
     setConverting(true)
     setResult(null)
-
     try {
       const res = await window.api.convert.file(selectedFile.path, options)
       setResult(res)
     } catch (err: any) {
       setResult({
-        success: false,
-        inputPath: selectedFile.path,
-        outputPath: '',
-        inputSize: selectedFile.size,
-        outputSize: 0,
-        error: err.message
+        success: false, inputPath: selectedFile.path, outputPath: '',
+        inputSize: selectedFile.size, outputSize: 0, error: err.message
       })
     } finally {
       setConverting(false)
@@ -66,184 +73,254 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
 
   if (!selectedFile || selectedFile.isDirectory) {
     return (
-      <div className="p-4 text-center text-text-muted text-xs">
+      <div style={{ padding: 32, textAlign: 'center', color: 'var(--th-text-muted)', fontSize: 13 }}>
         Select a file to convert
       </div>
     )
   }
 
-  return (
-    <div className="h-full flex flex-col bg-bg-secondary">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border" style={{ padding: '14px 20px' }}>
-        <div className="flex items-center gap-2">
-          <RefreshCw size={16} className="text-accent" />
-          <span className="text-sm font-medium">Convert File</span>
+  if (isPdfInput && !hasGs) {
+    return (
+      <div className="h-full flex flex-col">
+        <PanelHeader onClose={onClose} />
+        <div style={{ padding: 24 }}>
+          <div style={{ fontSize: 13, color: 'var(--th-text-muted)' }}>
+            PDF conversion requires Ghostscript which was not found on this system.
+          </div>
         </div>
-        <button onClick={onClose} className="text-text-muted hover:text-text-primary text-xs">Close</button>
       </div>
+    )
+  }
+
+  return (
+    <div className="h-full flex flex-col overflow-y-auto" style={{ background: 'var(--th-bg-secondary)' }}>
+      {/* Header */}
+      <PanelHeader onClose={onClose} />
 
       {/* Source file */}
-      <div className="border-b border-border" style={{ padding: '14px 20px' }}>
-        <div className="text-sm text-text-muted mb-1">Source</div>
-        <div className="flex items-center gap-2">
-          <FileImage size={14} className="text-text-secondary" />
-          <span className="text-xs text-text-primary truncate">{selectedFile.name}</span>
-          <span className="text-xs text-text-muted">({formatFileSize(selectedFile.size)})</span>
+      <Section>
+        <SectionLabel>Source</SectionLabel>
+        <div className="flex items-center" style={{ gap: 10, marginTop: 6 }}>
+          <FileImage size={18} style={{ color: 'var(--th-text-muted)', flexShrink: 0 }} />
+          <span style={{ fontSize: 13, color: 'var(--th-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {selectedFile.name}
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--th-text-muted)', flexShrink: 0 }}>
+            {formatFileSize(selectedFile.size)}
+          </span>
         </div>
-      </div>
+      </Section>
 
-      {/* Options */}
-      <div className="border-b border-border" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {/* Format */}
-        <div>
-          <label className="text-sm text-text-muted block mb-1">
-            <FileImage size={11} className="inline mr-1" />Output Format
-          </label>
-          <div className="flex items-center gap-1">
-            {(['tiff', 'png', 'jpg'] as const).map(fmt => (
-              <button
-                key={fmt}
-                className={`px-3 py-1 rounded text-xs ${
-                  options.format === fmt
-                    ? 'bg-accent/10 text-accent'
-                    : 'bg-bg-primary text-text-secondary hover:text-text-primary'
-                }`}
-                onClick={() => setOptions(o => ({ ...o, format: fmt }))}
-              >
-                {fmt.toUpperCase()}
-              </button>
-            ))}
-          </div>
+      {/* Output Format */}
+      <Section>
+        <SectionLabel><FileImage size={14} style={{ marginRight: 10 }} />Output Format</SectionLabel>
+        <div className="flex items-center" style={{ gap: 6, marginTop: 8 }}>
+          {outputFormats.map(fmt => (
+            <OptionButton
+              key={fmt}
+              active={options.format === fmt}
+              onClick={() => setOptions(o => ({ ...o, format: fmt }))}
+            >
+              {fmt === 'pdf' ? 'PDF (flatten)' : fmt.toUpperCase()}
+            </OptionButton>
+          ))}
         </div>
+      </Section>
 
-        {/* Color Space */}
-        <div>
-          <label className="text-sm text-text-muted block mb-1">
-            <Palette size={11} className="inline mr-1" />Color Space
-          </label>
-          <div className="flex items-center gap-1">
-            {([
-              { value: 'cmyk', label: 'CMYK' },
-              { value: 'srgb', label: 'sRGB' },
-              { value: 'keep', label: 'Keep' }
-            ] as const).map(cs => (
-              <button
-                key={cs.value}
-                className={`px-3 py-1 rounded text-xs ${
-                  options.colorSpace === cs.value
-                    ? 'bg-accent/10 text-accent'
-                    : 'bg-bg-primary text-text-secondary hover:text-text-primary'
-                }`}
-                onClick={() => setOptions(o => ({ ...o, colorSpace: cs.value }))}
-              >
-                {cs.label}
-              </button>
-            ))}
-          </div>
+      {/* Color Space */}
+      <Section>
+        <SectionLabel><Palette size={14} style={{ marginRight: 10 }} />Color Space</SectionLabel>
+        <div className="flex items-center" style={{ gap: 6, marginTop: 8 }}>
+          {([
+            { value: 'cmyk', label: 'CMYK' },
+            { value: 'srgb', label: 'sRGB' },
+            { value: 'keep', label: 'Keep' }
+          ] as const).map(cs => (
+            <OptionButton
+              key={cs.value}
+              active={options.colorSpace === cs.value}
+              onClick={() => setOptions(o => ({ ...o, colorSpace: cs.value }))}
+            >
+              {cs.label}
+            </OptionButton>
+          ))}
         </div>
+      </Section>
 
-        {/* DPI */}
-        <div>
-          <label className="text-sm text-text-muted block mb-1">
-            <Maximize size={11} className="inline mr-1" />Resolution (DPI)
-          </label>
-          <div className="flex items-center gap-1">
-            {[150, 300, 600].map(dpi => (
-              <button
-                key={dpi}
-                className={`px-3 py-1 rounded text-xs ${
-                  options.dpi === dpi
-                    ? 'bg-accent/10 text-accent'
-                    : 'bg-bg-primary text-text-secondary hover:text-text-primary'
-                }`}
-                onClick={() => setOptions(o => ({ ...o, dpi }))}
-              >
-                {dpi}
-              </button>
-            ))}
-            <input
-              type="number"
-              value={options.dpi}
-              onChange={e => setOptions(o => ({ ...o, dpi: Number(e.target.value) || 300 }))}
-              className="w-16 px-2 py-1 bg-bg-primary border border-border rounded text-xs text-text-primary text-center"
-            />
-          </div>
-        </div>
-
-        {/* Quality (JPEG only) */}
-        {options.format === 'jpg' && (
-          <div>
-            <label className="text-sm text-text-muted block mb-1">Quality: {options.quality}%</label>
-            <input
-              type="range"
-              min={50}
-              max={100}
-              value={options.quality}
-              onChange={e => setOptions(o => ({ ...o, quality: Number(e.target.value) }))}
-              className="w-full accent-accent"
-            />
-          </div>
-        )}
-
-        {/* Flatten transparency */}
-        <label className="flex items-center gap-2 cursor-pointer">
+      {/* Resolution */}
+      <Section>
+        <SectionLabel><Maximize size={14} style={{ marginRight: 10 }} />Resolution (DPI)</SectionLabel>
+        <div className="flex items-center" style={{ gap: 6, marginTop: 8 }}>
+          {[150, 300, 600].map(dpi => (
+            <OptionButton
+              key={dpi}
+              active={options.dpi === dpi}
+              onClick={() => setOptions(o => ({ ...o, dpi }))}
+            >
+              {dpi}
+            </OptionButton>
+          ))}
           <input
-            type="checkbox"
-            checked={options.flatten}
-            onChange={e => setOptions(o => ({ ...o, flatten: e.target.checked }))}
-            className="w-3 h-3 accent-accent"
+            type="number"
+            value={options.dpi}
+            onChange={e => setOptions(o => ({ ...o, dpi: Number(e.target.value) || 300 }))}
+            style={{
+              width: 72, padding: '8px 10px', fontSize: 13, textAlign: 'center',
+              background: 'var(--th-bg-primary)', border: '1px solid var(--th-border)',
+              borderRadius: 8, color: 'var(--th-text-primary)', outline: 'none',
+            }}
           />
-          <Layers size={11} className="text-text-muted" />
-          <span className="text-sm text-text-secondary">Flatten transparency (white background)</span>
-        </label>
-      </div>
+        </div>
+      </Section>
+
+      {/* Quality (JPEG only) */}
+      {options.format === 'jpg' && (
+        <Section>
+          <SectionLabel>Quality: {options.quality}%</SectionLabel>
+          <input
+            type="range" min={50} max={100} value={options.quality}
+            onChange={e => setOptions(o => ({ ...o, quality: Number(e.target.value) }))}
+            style={{ width: '100%', marginTop: 8, accentColor: '#f58220' }}
+          />
+        </Section>
+      )}
+
+      {/* Flatten transparency (non-PDF) */}
+      {options.format !== 'pdf' && !isPdfInput && (
+        <Section>
+          <label className="flex items-center cursor-pointer" style={{
+            gap: 10, padding: '8px 12px', borderRadius: 8,
+            background: options.flatten ? 'rgba(245,130,32,0.06)' : 'transparent',
+          }}>
+            <input
+              type="checkbox" checked={options.flatten}
+              onChange={e => setOptions(o => ({ ...o, flatten: e.target.checked }))}
+              style={{ width: 18, height: 18, accentColor: '#f58220', flexShrink: 0 }}
+            />
+            <Layers size={16} style={{ color: 'var(--th-text-muted)', flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: 'var(--th-text-secondary)' }}>Flatten transparency</span>
+          </label>
+        </Section>
+      )}
+
+      {/* Info for PDF flatten */}
+      {isPdfInput && options.format === 'pdf' && (
+        <div style={{ padding: '8px 24px', fontSize: 12, color: 'var(--th-text-muted)', fontStyle: 'italic' }}>
+          Flattens transparency, embeds fonts, converts to PDF 1.4
+        </div>
+      )}
+
+      {/* Spacer */}
+      <div style={{ flex: 1 }} />
 
       {/* Convert button */}
-      <div style={{ padding: '16px 20px' }}>
+      <div style={{ padding: '20px 24px' }}>
         <button
           onClick={handleConvert}
           disabled={converting}
-          className="w-full flex items-center justify-center gap-2 py-2 bg-accent text-white rounded text-xs font-medium hover:bg-accent-hover transition-colors disabled:opacity-50"
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            gap: 8, padding: '12px 20px', borderRadius: 10, border: 'none',
+            background: '#f58220', color: '#fff', fontSize: 14, fontWeight: 600,
+            cursor: converting ? 'default' : 'pointer',
+            opacity: converting ? 0.6 : 1,
+          }}
         >
           {converting ? (
-            <><Loader2 size={14} className="animate-spin" /> Converting...</>
+            <><Loader2 size={16} className="animate-spin" /> Converting...</>
           ) : (
-            <><ArrowRight size={14} /> Convert to {options.format.toUpperCase()}</>
+            <><ArrowRight size={16} /> Convert to {options.format === 'pdf' ? 'Flat PDF' : options.format.toUpperCase()}</>
           )}
         </button>
       </div>
 
       {/* Result */}
       {result && (
-        <div className={`rounded ${result.success ? 'bg-success/10' : 'bg-error/10'}`} style={{ margin: '0 20px 16px', padding: 16 }}>
-          <div className="flex items-center gap-2 mb-1">
-            {result.success ? (
-              <CheckCircle size={14} className="text-success" />
-            ) : (
-              <XCircle size={14} className="text-error" />
-            )}
-            <span className={`text-xs font-medium ${result.success ? 'text-success' : 'text-error'}`}>
+        <div style={{
+          margin: '0 24px 20px', padding: 16, borderRadius: 10,
+          background: result.success ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+          border: `1px solid ${result.success ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}`,
+        }}>
+          <div className="flex items-center" style={{ gap: 8, marginBottom: 6 }}>
+            {result.success
+              ? <CheckCircle size={18} style={{ color: '#22c55e' }} />
+              : <XCircle size={18} style={{ color: '#ef4444' }} />
+            }
+            <span style={{ fontSize: 13, fontWeight: 600, color: result.success ? '#22c55e' : '#ef4444' }}>
               {result.success ? 'Converted successfully' : 'Conversion failed'}
             </span>
           </div>
 
           {result.success ? (
-            <div className="text-sm text-text-secondary space-y-0.5 ml-5">
-              <div>Output: {result.outputPath.split(/[/\\]/).pop()}</div>
-              <div>Size: {formatFileSize(result.inputSize)} → {formatFileSize(result.outputSize)}</div>
+            <div style={{ marginLeft: 26, fontSize: 12, color: 'var(--th-text-secondary)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div>{result.outputPath.split(/[/\\]/).pop()}</div>
+              <div>{formatFileSize(result.inputSize)} → {formatFileSize(result.outputSize)}</div>
               <button
-                className="text-accent hover:underline mt-1"
                 onClick={() => window.api.shell.showInFolder(result.outputPath)}
+                className="flex items-center"
+                style={{ gap: 4, color: '#f58220', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: 4 }}
               >
-                Show in folder
+                <FolderOpen size={13} /> Show in folder
               </button>
             </div>
           ) : (
-            <div className="text-sm text-error ml-5">{result.error}</div>
+            <div style={{ marginLeft: 26, fontSize: 12, color: '#ef4444' }}>{result.error}</div>
           )}
         </div>
       )}
     </div>
+  )
+}
+
+function PanelHeader({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="flex items-center justify-between" style={{
+      padding: '18px 24px', borderBottom: '1px solid var(--th-border)',
+    }}>
+      <div className="flex items-center" style={{ gap: 10 }}>
+        <RefreshCw size={20} style={{ color: '#f58220' }} />
+        <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--th-text-primary)' }}>Convert File</span>
+      </div>
+      <button onClick={onClose} style={{
+        background: 'none', border: 'none', cursor: 'pointer',
+        padding: 6, borderRadius: 6, color: 'var(--th-text-muted)',
+      }}>
+        <X size={18} />
+      </button>
+    </div>
+  )
+}
+
+function Section({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--th-border)' }}>
+      {children}
+    </div>
+  )
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center" style={{ fontSize: 13, fontWeight: 500, color: 'var(--th-text-muted)' }}>
+      {children}
+    </div>
+  )
+}
+
+function OptionButton({ active, onClick, children }: {
+  active: boolean; onClick: () => void; children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500,
+        border: 'none', cursor: 'pointer',
+        background: active ? 'rgba(245,130,32,0.12)' : 'var(--th-bg-primary)',
+        color: active ? '#f58220' : 'var(--th-text-secondary)',
+      }}
+    >
+      {children}
+    </button>
   )
 }

@@ -24,87 +24,94 @@
 }
 
 [data-theme="light"] {
-  --th-bg-primary: #f8fafc;
-  --th-bg-secondary: #ffffff;
-  --th-bg-tertiary: #f1f5f9;
-  --th-bg-hover: #f1f5f9;
-  --th-bg-active: #e2e8f0;
-  --th-border: #e2e8f0;
-  --th-border-light: #cbd5e1;
+  --th-bg-primary: #e4e8ee;
+  --th-bg-secondary: #e4e8ee;
+  --th-bg-tertiary: #dde2e9;
+  --th-bg-hover: #d4d9e2;
+  --th-bg-active: #c8cfd9;
+  --th-border: #c0c8d4;
+  --th-border-light: #b0b9c6;
   --th-text-primary: #0f172a;
-  --th-text-secondary: #475569;
-  --th-text-muted: #94a3b8;
+  --th-text-secondary: #374151;
+  --th-text-muted: #6b7a8d;
   --th-accent: #ea580c;
   --th-accent-hover: #f97316;
   --th-success: #16a34a;
   --th-warning: #ca8a04;
   --th-error: #dc2626;
   --th-info: #2563eb;
-  --th-input-bg: #ffffff;
-  --th-canvas-bg: #f1f5f9;
-  --th-shadow: rgba(0,0,0,0.08);
+  --th-input-bg: #e2e7ef;
+  --th-canvas-bg: #cad1dc;
+  --th-shadow: rgba(0,0,0,0.12);
 }
 
 /* Light mode: override hardcoded dark inline styles on key areas */
 [data-theme="light"] .titlebar-drag {
-  background: #f1f5f9 !important;
+  background: var(--th-bg-tertiary) !important;
 }
 [data-theme="light"] .titlebar-no-drag {
-  background: #ffffff !important;
-  border-color: #e2e8f0 !important;
+  background: var(--th-bg-secondary) !important;
+  border-color: var(--th-border) !important;
 }
 
-/* Override dark inline colors in all components */
+/* Override dark inline backgrounds in all components */
 [data-theme="light"] [style*="background: #0a0e1a"],
 [data-theme="light"] [style*="background:#0a0e1a"],
 [data-theme="light"] [style*="background: rgb(10, 14, 26)"] {
-  background: #ffffff !important;
+  background: var(--th-bg-primary) !important;
 }
 [data-theme="light"] [style*="background: #141e37"],
 [data-theme="light"] [style*="background:#141e37"] {
-  background: #ffffff !important;
+  background: var(--th-bg-secondary) !important;
 }
 [data-theme="light"] [style*="background: #0f1525"],
 [data-theme="light"] [style*="background:#0f1525"] {
-  background: #f8fafc !important;
+  background: var(--th-bg-secondary) !important;
 }
 [data-theme="light"] [style*="background: #151c2e"],
 [data-theme="light"] [style*="background:#151c2e"] {
-  background: #f1f5f9 !important;
+  background: var(--th-bg-tertiary) !important;
 }
 [data-theme="light"] [style*="background: #1a1f2e"],
 [data-theme="light"] [style*="background:#1a1f2e"] {
-  background: #f1f5f9 !important;
+  background: var(--th-bg-tertiary) !important;
 }
 
-/* Light borders */
+/* Light borders — override all hardcoded dark borders */
 [data-theme="light"] [style*="border: 1px solid #1e293b"],
 [data-theme="light"] [style*="border:1px solid #1e293b"] {
-  border-color: #e2e8f0 !important;
+  border-color: var(--th-border) !important;
 }
-[data-theme="light"] [style*="border-color: #1e293b"] {
-  border-color: #e2e8f0 !important;
+[data-theme="light"] [style*="border-color: #1e293b"],
+[data-theme="light"] [style*="border-color:#1e293b"] {
+  border-color: var(--th-border) !important;
 }
 [data-theme="light"] [style*="border-bottom: 1px solid #1e293b"] {
-  border-color: #e2e8f0 !important;
+  border-color: var(--th-border) !important;
+}
+[data-theme="light"] [style*="border: 1px solid #334155"] {
+  border-color: var(--th-border-light) !important;
 }
 
-/* Light text */
+/* Light text — override hardcoded dark text colors */
 [data-theme="light"] [style*="color: #e2e8f0"],
 [data-theme="light"] [style*="color:#e2e8f0"] {
-  color: #0f172a !important;
+  color: var(--th-text-primary) !important;
 }
 [data-theme="light"] [style*="color: #94a3b8"],
 [data-theme="light"] [style*="color:#94a3b8"] {
-  color: #475569 !important;
+  color: var(--th-text-secondary) !important;
 }
 [data-theme="light"] [style*="color: #64748b"],
 [data-theme="light"] [style*="color:#64748b"] {
-  color: #94a3b8 !important;
+  color: var(--th-text-muted) !important;
 }
 [data-theme="light"] [style*="color: #475569"],
 [data-theme="light"] [style*="color:#475569"] {
-  color: #64748b !important;
+  color: var(--th-text-secondary) !important;
+}
+[data-theme="light"] [style*="color: #334155"] {
+  color: var(--th-text-muted) !important;
 }
 
 @theme {
@@ -248,6 +255,25 @@ label {
 [data-theme="light"] .text-text-secondary { color: var(--th-text-secondary) !important; }
 [data-theme="light"] .text-text-muted { color: var(--th-text-muted) !important; }
 [data-theme="light"] .text-accent { color: var(--th-accent) !important; }
+
+/* Tab styles — override everything */
+.tab-item {
+  background: transparent !important;
+  border-bottom: 2px solid transparent !important;
+}
+.tab-item.is-active {
+  background: rgba(245, 130, 32, 0.12) !important;
+  border-bottom: 2px solid #f58220 !important;
+}
+.tab-item:not(.is-active):hover {
+  background: var(--th-bg-hover) !important;
+}
+.tab-bar button {
+  min-height: auto !important;
+}
+.tab-item button {
+  min-height: auto !important;
+}
 
 /* Quote card delete */
 .quote-card-hover:hover button[title="Διαγραφή"] {

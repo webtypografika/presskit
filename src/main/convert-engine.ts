@@ -1,6 +1,11 @@
-import { IpcMain, dialog, BrowserWindow } from 'electron'
-import { readFile, writeFile } from 'fs/promises'
+import { IpcMain, dialog, BrowserWindow, app } from 'electron'
+import { readFile, writeFile, stat, access } from 'fs/promises'
 import { extname, basename, dirname, join } from 'path'
+import { existsSync, readdirSync } from 'fs'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
+
+const execFileAsync = promisify(execFile)
 
 export interface ConvertOptions {
   // Target format
@@ -16,6 +21,111 @@ export interface ConvertOptions {
   // Resize
   maxWidth?: number
   maxHeight?: number
+}
+
+// ─── Ghostscript detection ───────────────────────────────────────────
+
+let gsPath: string | null = null
+
+function findGhostscript(): string | null {
+  if (gsPath) return gsPath
+
+  // System install (user must install Ghostscript separately)
+  const programFiles = process.env['ProgramFiles'] || 'C:\\Program Files'
+  const gsRoot = join(programFiles, 'gs')
+  if (existsSync(gsRoot)) {
+    try {
+      const versions = readdirSync(gsRoot, { withFileTypes: true })
+        .filter(d => d.isDirectory() && d.name.startsWith('gs'))
+        .sort((a, b) => b.name.localeCompare(a.name)) // newest first
+      for (const ver of versions) {
+        const exe = join(gsRoot, ver.name, 'bin', 'gswin64c.exe')
+        if (existsSync(exe)) {
+          gsPath = exe
+          return gsPath
+        }
+      }
+    } catch {}
+  }
+
+  return null
+}
+
+// ─── Ghostscript PDF conversion ──────────────────────────────────────
+
+async function convertPdfWithGs(inputPath: string, outputPath: string, options: ConvertOptions): Promise<ConvertResult> {
+  const gs = findGhostscript()
+  if (!gs) {
+    return { success: false, inputPath, outputPath: '', inputSize: 0, outputSize: 0, error: 'Ghostscript not found' }
+  }
+
+  const dpi = options.dpi || 300
+  const args: string[] = [
+    '-dNOPAUSE', '-dBATCH', '-dSAFER', '-dQUIET',
+    `-r${dpi}`,
+  ]
+
+  if (options.format === 'pdf') {
+    // PDF → flat PDF
+    args.push(
+      '-sDEVICE=pdfwrite',
+      '-dCompatibilityLevel=1.4',
+      '-dHaveTransparency=false',
+    )
+    if (options.colorSpace === 'cmyk') {
+      args.push(
+        '-sColorConversionStrategy=CMYK',
+        '-dProcessColorModel=/DeviceCMYK',
+      )
+    } else if (options.colorSpace === 'srgb') {
+      args.push(
+        '-sColorConversionStrategy=sRGB',
+        '-dProcessColorModel=/DeviceRGB',
+      )
+    }
+  } else {
+    // PDF → image
+    let device: string
+    switch (options.format) {
+      case 'tiff':
+        device = options.colorSpace === 'cmyk' ? 'tiff32nc' : 'tiff24nc'
+        args.push(`-sCompression=lzw`)
+        break
+      case 'png':
+        device = 'png16m'
+        break
+      case 'jpg':
+        device = 'jpeg'
+        args.push(`-dJPEGQ=${options.quality || 95}`)
+        break
+      default:
+        device = 'png16m'
+    }
+    args.push(`-sDEVICE=${device}`)
+  }
+
+  args.push(`-sOutputFile=${outputPath}`, inputPath)
+
+  try {
+    await execFileAsync(gs, args, { timeout: 120000 })
+    const outputStats = await stat(outputPath)
+    return {
+      success: true,
+      inputPath,
+      outputPath,
+      inputSize: 0,
+      outputSize: outputStats.size,
+    }
+  } catch (err: any) {
+    return {
+      success: false,
+      inputPath,
+      outputPath: '',
+      inputSize: 0,
+      outputSize: 0,
+      error: err.stderr || err.message || 'Ghostscript conversion failed',
+    }
+  }
 }
 
 export interface ConvertResult {
@@ -38,6 +148,12 @@ export function registerConvertHandlers(ipcMain: IpcMain): void {
       const outputPath = join(dir, `${name}_converted${outputExt}`)
 
       const inputStats = await (await import('fs/promises')).stat(inputPath)
+
+      // PDF/AI/EPS → via Ghostscript
+      if (['.pdf', '.ai', '.eps'].includes(ext)) {
+        const result = await convertPdfWithGs(inputPath, outputPath, options)
+        return { ...result, inputSize: inputStats.size }
+      }
 
       // PSD → Image conversion
       if (['.psd', '.psb'].includes(ext)) {
@@ -92,7 +208,9 @@ export function registerConvertHandlers(ipcMain: IpcMain): void {
 
         let result: ConvertResult
 
-        if (['.psd', '.psb'].includes(ext)) {
+        if (['.pdf', '.ai', '.eps'].includes(ext)) {
+          result = await convertPdfWithGs(filePaths[i], outputPath, options)
+        } else if (['.psd', '.psb'].includes(ext)) {
           result = await convertPsd(filePaths[i], outputPath, options)
         } else {
           result = await convertImage(filePaths[i], outputPath, options)
@@ -113,6 +231,9 @@ export function registerConvertHandlers(ipcMain: IpcMain): void {
 
     return results
   })
+
+  // Check Ghostscript availability
+  ipcMain.handle('convert:hasGhostscript', () => !!findGhostscript())
 
   // Save dialog for output
   ipcMain.handle('convert:saveDialog', async (_e, defaultName: string) => {

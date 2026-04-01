@@ -31,7 +31,14 @@ const api = {
     getDrives: () => ipcRenderer.invoke('fs:getDrives'),
     search: (rootPath: string, query: string, maxResults?: number) => ipcRenderer.invoke('fs:search', rootPath, query, maxResults),
     move: (sourcePaths: string[], targetDir: string) => ipcRenderer.invoke('fs:move', sourcePaths, targetDir),
-    copy: (sourcePaths: string[], targetDir: string) => ipcRenderer.invoke('fs:copy', sourcePaths, targetDir)
+    copy: (sourcePaths: string[], targetDir: string) => ipcRenderer.invoke('fs:copy', sourcePaths, targetDir),
+    trash: (paths: string[]) => ipcRenderer.invoke('fs:trash', paths),
+    watch: (dirPath: string) => ipcRenderer.invoke('fs:watch', dirPath),
+    unwatch: () => ipcRenderer.invoke('fs:unwatch'),
+    onChanged: (callback: (dirPath: string) => void) => {
+      ipcRenderer.on('fs:changed', (_e, dirPath) => callback(dirPath))
+      return () => ipcRenderer.removeAllListeners('fs:changed')
+    }
   },
 
   // Indexed search
@@ -105,7 +112,8 @@ const api = {
 
   // Theme
   theme: {
-    get: () => ipcRenderer.invoke('theme:get')
+    get: () => ipcRenderer.invoke('theme:get'),
+    update: (theme: string) => ipcRenderer.invoke('theme:update', theme)
   },
 
   // Batch operations
@@ -123,7 +131,8 @@ const api = {
   convert: {
     file: (inputPath: string, options: any) => ipcRenderer.invoke('convert:file', inputPath, options),
     batch: (filePaths: string[], options: any) => ipcRenderer.invoke('convert:batch', filePaths, options),
-    saveDialog: (defaultName: string) => ipcRenderer.invoke('convert:saveDialog', defaultName)
+    saveDialog: (defaultName: string) => ipcRenderer.invoke('convert:saveDialog', defaultName),
+    hasGhostscript: () => ipcRenderer.invoke('convert:hasGhostscript')
   },
 
   // Font management

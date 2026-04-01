@@ -1,4 +1,4 @@
-import { IpcMain } from 'electron'
+import { IpcMain, BrowserWindow } from 'electron'
 import { readdir, stat, readFile } from 'fs/promises'
 import { join, extname, basename, dirname } from 'path'
 import { existsSync } from 'fs'
@@ -237,6 +237,62 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
       }
     }
 
+    // PDF metadata — extract page boxes
+    if (['.pdf'].includes(ext)) {
+      try {
+        const { PDFDocument } = await import('pdf-lib')
+        const buffer = await readFile(filePath)
+        const pdf = await PDFDocument.load(buffer, { ignoreEncryption: true })
+        const pageCount = pdf.getPageCount()
+        metadata.pageCount = pageCount
+
+        if (pageCount > 0) {
+          const page = pdf.getPage(0)
+
+          // PDF points to mm (1pt = 0.352778mm)
+          const ptToMm = (pt: number) => Math.round(pt * 0.352778 * 10) / 10
+
+          const mediaBox = page.getMediaBox()
+          metadata.mediaBox = {
+            width: ptToMm(mediaBox.width),
+            height: ptToMm(mediaBox.height)
+          }
+
+          const trimBox = page.getTrimBox()
+          // Only include if different from mediaBox
+          if (trimBox.width !== mediaBox.width || trimBox.height !== mediaBox.height) {
+            metadata.trimBox = {
+              width: ptToMm(trimBox.width),
+              height: ptToMm(trimBox.height)
+            }
+          }
+
+          const bleedBox = page.getBleedBox()
+          if (bleedBox.width !== mediaBox.width || bleedBox.height !== mediaBox.height) {
+            metadata.bleedBox = {
+              width: ptToMm(bleedBox.width),
+              height: ptToMm(bleedBox.height)
+            }
+          }
+
+          const cropBox = page.getCropBox()
+          if (cropBox.width !== mediaBox.width || cropBox.height !== mediaBox.height) {
+            metadata.cropBox = {
+              width: ptToMm(cropBox.width),
+              height: ptToMm(cropBox.height)
+            }
+          }
+        }
+
+        // PDF version from header
+        const header = buffer.subarray(0, 20).toString('ascii')
+        const versionMatch = header.match(/PDF-(\d\.\d)/)
+        if (versionMatch) metadata.pdfVersion = versionMatch[1]
+      } catch {
+        // pdf-lib parse error
+      }
+    }
+
     // PSD metadata
     if (['.psd', '.psb'].includes(ext)) {
       try {
@@ -393,5 +449,77 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
       return drives
     }
     return ['/']
+  })
+
+  // Delete files (move to trash)
+  ipcMain.handle('fs:trash', async (_e, paths: string[]) => {
+    const { shell } = await import('electron')
+    const results: { path: string; ok: boolean; error?: string }[] = []
+    for (const p of paths) {
+      try {
+        await shell.trashItem(p)
+        results.push({ path: p, ok: true })
+      } catch (err: any) {
+        results.push({ path: p, ok: false, error: err.message })
+      }
+    }
+    return results
+  })
+
+  // ─── File watcher ────────────────────────────────────────────────
+  let watcher: any = null
+
+  ipcMain.handle('fs:watch', async (_e, dirPath: string) => {
+    // Stop previous watcher
+    if (watcher) {
+      await watcher.close()
+      watcher = null
+    }
+
+    if (!dirPath || !existsSync(dirPath)) return
+
+    const chokidar = await import('chokidar')
+    let debounceTimer: any = null
+
+    watcher = chokidar.watch(dirPath, {
+      depth: 0,
+      ignoreInitial: true,
+      awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
+      ignored: [
+        /(^|[/\\])\../,           // dotfiles
+        /\.tmp$/i,                // temp files
+        /DumpStack\.log/i,        // Windows system
+        /pagefile\.sys/i,
+        /hiberfil\.sys/i,
+        /swapfile\.sys/i,
+        /System Volume Information/i,
+        /\$Recycle\.Bin/i,
+      ],
+    })
+
+    watcher.on('error', () => {}) // silently ignore permission errors
+
+    const notify = () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        const wins = BrowserWindow.getAllWindows()
+        for (const win of wins) {
+          win.webContents.send('fs:changed', dirPath)
+        }
+      }, 500)
+    }
+
+    watcher.on('add', notify)
+    watcher.on('unlink', notify)
+    watcher.on('addDir', notify)
+    watcher.on('unlinkDir', notify)
+    watcher.on('change', notify)
+  })
+
+  ipcMain.handle('fs:unwatch', async () => {
+    if (watcher) {
+      await watcher.close()
+      watcher = null
+    }
   })
 }

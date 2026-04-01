@@ -9,12 +9,12 @@ import { ImagePreview } from './ImagePreview'
 import { CostingDialog } from '../presscal/CostingDialog'
 
 export function PreviewPanel() {
-  const { selectedFile } = useAppStore()
+  const { selectedFile, previewOpen } = useAppStore()
   const [layout, setLayout] = useState<'side' | 'bottom'>('side')
   const [previewSize, setPreviewSize] = useState(50) // percentage
   const resizingRef = useRef<boolean>(false)
 
-  const hasPreview = selectedFile && !selectedFile.isDirectory
+  const hasPreview = previewOpen && selectedFile && !selectedFile.isDirectory
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [isResizing, setIsResizing] = useState(false)
@@ -193,9 +193,9 @@ function PreviewContent() {
 
   if (previewLoading) {
     return (
-      <div className="h-full flex items-center justify-center" style={{ background: '#0a0e1a' }}>
-        <div className="flex flex-col items-center gap-2" style={{ color: '#64748b' }}>
-          <div style={{ width: 24, height: 24, border: '2px solid #1e293b', borderTopColor: '#f58220', borderRadius: '50%' }} className="animate-spin" />
+      <div className="h-full flex items-center justify-center bg-bg-primary">
+        <div className="flex flex-col items-center gap-2 text-text-muted">
+          <div style={{ width: 24, height: 24, borderTopColor: '#f58220', borderRadius: '50%' }} className="animate-spin border-2 border-border" />
           <span style={{ fontSize: 12 }}>Loading...</span>
         </div>
       </div>
@@ -204,17 +204,17 @@ function PreviewContent() {
 
   if (!preview || preview.type === 'none') {
     return (
-      <div className="h-full flex items-center justify-center" style={{ background: '#0a0e1a' }}>
-        <div className="flex flex-col items-center gap-2" style={{ color: '#64748b' }}>
+      <div className="h-full flex items-center justify-center bg-bg-primary">
+        <div className="flex flex-col items-center gap-2 text-text-muted">
           <Eye size={28} style={{ opacity: 0.3 }} />
           <span style={{ fontSize: 12 }}>No preview available</span>
           {selectedFile && (
             <button
+              className="border border-border text-text-secondary hover:border-accent hover:text-accent"
               onClick={() => window.api.shell.openPath(selectedFile.path)}
               style={{
                 marginTop: 8, padding: '6px 16px', borderRadius: 6,
-                border: '1px solid #1e293b', background: 'transparent',
-                color: '#94a3b8', fontSize: 12, cursor: 'pointer',
+                background: 'transparent', fontSize: 12, cursor: 'pointer',
               }}
             >
               Open in native app
@@ -235,8 +235,8 @@ function PreviewContent() {
 
   if (preview.type === 'svg') {
     return (
-      <div className="w-full h-full flex items-center justify-center overflow-auto"
-        style={{ padding: 16, background: '#0a0e1a' }}
+      <div className="w-full h-full flex items-center justify-center overflow-hidden bg-bg-primary"
+        style={{ padding: 16 }}
         dangerouslySetInnerHTML={{ __html: preview.data }}
       />
     )

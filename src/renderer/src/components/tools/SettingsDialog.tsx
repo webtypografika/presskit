@@ -12,18 +12,29 @@ type SettingsTab = 'presscal' | 'dropbox' | 'preflight' | 'ui'
 function Field({ label, description, children, noPad }: { label?: string; description?: string; children: ReactNode; noPad?: boolean }) {
   const row: CSSProperties = {
     padding: noPad ? '16px 0' : '20px 24px',
-    borderBottom: '1px solid rgba(255,255,255,0.04)',
-    background: noPad ? 'transparent' : 'rgba(255,255,255,0.015)',
+    borderBottom: '1px solid var(--th-border)',
+    background: noPad ? 'transparent' : 'var(--th-bg-primary)',
     borderRadius: noPad ? 0 : 10,
     marginBottom: 4,
   }
   return (
     <div style={row}>
-      {label && <div style={{ fontSize: 13, color: '#94a3b8', fontWeight: 500, marginBottom: 10 }}>{label}</div>}
+      {label && <div style={{ fontSize: 13, color: 'var(--th-text-muted)', fontWeight: 500, marginBottom: 10 }}>{label}</div>}
       {children}
-      {description && <div style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}>{description}</div>}
+      {description && <div style={{ fontSize: 12, color: 'var(--th-text-muted)', marginTop: 8, opacity: 0.7 }}>{description}</div>}
     </div>
   )
+}
+
+const inputStyle: CSSProperties = {
+  width: '100%',
+  padding: '10px 14px',
+  borderRadius: 8,
+  background: 'var(--th-bg-primary)',
+  border: '1px solid var(--th-border)',
+  color: 'var(--th-text-primary)',
+  fontSize: 14,
+  outline: 'none',
 }
 
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
@@ -31,21 +42,21 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', padding: 40 }}>
-      <div style={{ width: '100%', maxWidth: 800, maxHeight: '100%', background: '#0f1525', borderRadius: 16, border: '1px solid #1e293b', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ width: '100%', maxWidth: 800, maxHeight: '100%', background: 'var(--th-bg-secondary)', borderRadius: 16, border: '1px solid var(--th-border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border" style={{ padding: '24px 40px' }}>
+        <div className="flex items-center justify-between" style={{ padding: '24px 40px', borderBottom: '1px solid var(--th-border)' }}>
           <div className="flex items-center gap-3">
-            <Settings size={22} className="text-accent" />
-            <span className="text-lg font-semibold">Settings</span>
+            <Settings size={22} style={{ color: 'var(--th-accent)' }} />
+            <span style={{ fontSize: 18, fontWeight: 600, color: 'var(--th-text-primary)' }}>Settings</span>
           </div>
-          <button onClick={onClose} className="hover:bg-bg-hover rounded-lg" style={{ padding: 8 }}>
-            <X size={20} className="text-text-muted" />
+          <button onClick={onClose} style={{ padding: 8, background: 'none', border: 'none', cursor: 'pointer', borderRadius: 8 }}>
+            <X size={20} style={{ color: 'var(--th-text-muted)' }} />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-border" style={{ padding: '0 24px' }}>
+        <div className="flex" style={{ padding: '0 24px', borderBottom: '1px solid var(--th-border)' }}>
           {([
             { id: 'presscal', label: 'PressCal', icon: <Link2 size={16} /> },
             { id: 'dropbox', label: 'Dropbox', icon: <Cloud size={16} /> },
@@ -54,12 +65,12 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           ] as const).map(t => (
             <button
               key={t.id}
-              className={`flex items-center gap-2 text-sm border-b-2 transition-colors ${
-                tab === t.id
-                  ? 'text-accent border-accent'
-                  : 'text-text-secondary border-transparent hover:text-text-primary'
-              }`}
-              style={{ padding: '16px 20px' }}
+              className="flex items-center gap-2"
+              style={{
+                padding: '16px 20px', fontSize: 14, background: 'none', border: 'none', cursor: 'pointer',
+                color: tab === t.id ? 'var(--th-accent)' : 'var(--th-text-muted)',
+                borderBottom: tab === t.id ? '2px solid var(--th-accent)' : '2px solid transparent',
+              }}
               onClick={() => setTab(t.id)}
             >
               {t.icon} {t.label}
@@ -117,8 +128,8 @@ function PresscalSettings() {
       {/* Status */}
       <Field>
         <div className="flex items-center" style={{ gap: 12 }}>
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: presscalConnected ? '#22c55e' : '#64748b' }} />
-          <span style={{ fontSize: 14, color: presscalConnected ? '#e2e8f0' : '#94a3b8', fontWeight: 500 }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: presscalConnected ? '#22c55e' : 'var(--th-text-muted)' }} />
+          <span style={{ fontSize: 14, color: 'var(--th-text-primary)', fontWeight: 500 }}>
             {presscalConnected ? `Connected to ${presscalOrgName}` : 'Not connected'}
           </span>
         </div>
@@ -131,7 +142,7 @@ function PresscalSettings() {
           value={url}
           onChange={e => setUrl(e.target.value)}
           placeholder="http://localhost:3000"
-          style={{ width: '100%' }}
+          style={inputStyle}
         />
       </Field>
 
@@ -143,13 +154,13 @@ function PresscalSettings() {
             value={apiKey}
             onChange={e => setApiKey(e.target.value)}
             placeholder="fh_..."
-            className="flex-1 font-mono"
+            style={{ ...inputStyle, fontFamily: 'monospace' }}
           />
           <button
             onClick={() => setShowKey(!showKey)}
-            style={{ padding: 12, background: '#0a0e1a', border: '1px solid #1e293b', borderRadius: 8, cursor: 'pointer' }}
+            style={{ padding: 12, background: 'var(--th-bg-primary)', border: '1px solid var(--th-border)', borderRadius: 8, cursor: 'pointer' }}
           >
-            {showKey ? <EyeOff size={18} style={{ color: '#64748b' }} /> : <Eye size={18} style={{ color: '#64748b' }} />}
+            {showKey ? <EyeOff size={18} style={{ color: 'var(--th-text-muted)' }} /> : <Eye size={18} style={{ color: 'var(--th-text-muted)' }} />}
           </button>
         </div>
       </Field>
@@ -204,15 +215,15 @@ function DropboxSettings() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <Field>
         <div className="flex items-center" style={{ gap: 12 }}>
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: dropboxConnected ? '#22c55e' : '#64748b' }} />
-          <span style={{ fontSize: 14, color: dropboxConnected ? '#e2e8f0' : '#94a3b8', fontWeight: 500 }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: dropboxConnected ? '#22c55e' : 'var(--th-text-muted)' }} />
+          <span style={{ fontSize: 14, color: 'var(--th-text-primary)', fontWeight: 500 }}>
             {dropboxConnected ? `Connected as ${dropboxName}` : 'Not connected'}
           </span>
         </div>
       </Field>
 
       <Field label="Dropbox App Client ID" description="Create an app at dropbox.com/developers/apps to get a client ID">
-        <input type="text" value={clientId} onChange={e => setClientId(e.target.value)} placeholder="Your Dropbox App client ID" className="font-mono" style={{ width: '100%' }} />
+        <input type="text" value={clientId} onChange={e => setClientId(e.target.value)} placeholder="Your Dropbox App client ID" style={{ ...inputStyle, fontFamily: 'monospace' }} />
       </Field>
 
       <div style={{ paddingTop: 16, display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -273,28 +284,28 @@ function PreflightSettings() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <Field label="Minimum DPI">
-        <input type="number" value={minDpi} onChange={e => setMinDpi(Number(e.target.value))} onBlur={save} style={{ width: 120 }} />
+        <input type="number" value={minDpi} onChange={e => setMinDpi(Number(e.target.value))} onBlur={save} style={{ ...inputStyle, width: 120 }} />
       </Field>
 
       <Field label="Max Total Area Coverage (TAC %)">
-        <input type="number" value={maxTac} onChange={e => setMaxTac(Number(e.target.value))} onBlur={save} style={{ width: 120 }} />
+        <input type="number" value={maxTac} onChange={e => setMaxTac(Number(e.target.value))} onBlur={save} style={{ ...inputStyle, width: 120 }} />
       </Field>
 
       <Field label="Bleed (mm)">
-        <input type="number" value={bleedMm} onChange={e => setBleedMm(Number(e.target.value))} onBlur={save} style={{ width: 120 }} />
+        <input type="number" value={bleedMm} onChange={e => setBleedMm(Number(e.target.value))} onBlur={save} style={{ ...inputStyle, width: 120 }} />
       </Field>
 
       <Field>
         <label className="flex items-center cursor-pointer" style={{ gap: 12 }} onClick={() => { setRequireCmyk(!requireCmyk); setTimeout(save, 0) }}>
-          <input type="checkbox" checked={requireCmyk} readOnly style={{ width: 18, height: 18 }} className="accent-accent" />
-          <span style={{ fontSize: 14, color: '#cbd5e1' }}>Require CMYK color space</span>
+          <input type="checkbox" checked={requireCmyk} readOnly style={{ width: 18, height: 18, accentColor: '#f58220' }} />
+          <span style={{ fontSize: 14, color: 'var(--th-text-primary)' }}>Require CMYK color space</span>
         </label>
       </Field>
 
       <Field>
         <label className="flex items-center cursor-pointer" style={{ gap: 12 }} onClick={() => { setRequireBleed(!requireBleed); setTimeout(save, 0) }}>
-          <input type="checkbox" checked={requireBleed} readOnly style={{ width: 18, height: 18 }} className="accent-accent" />
-          <span style={{ fontSize: 14, color: '#cbd5e1' }}>Require bleed</span>
+          <input type="checkbox" checked={requireBleed} readOnly style={{ width: 18, height: 18, accentColor: '#f58220' }} />
+          <span style={{ fontSize: 14, color: 'var(--th-text-primary)' }}>Require bleed</span>
         </label>
       </Field>
     </div>
@@ -311,16 +322,16 @@ function UiSettings() {
           <button
             style={{
               padding: '10px 24px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14,
-              background: viewMode === 'grid' ? 'rgba(245,130,32,0.1)' : '#0a0e1a',
-              color: viewMode === 'grid' ? '#f58220' : '#94a3b8',
+              background: viewMode === 'grid' ? 'rgba(245,130,32,0.1)' : 'var(--th-bg-primary)',
+              color: viewMode === 'grid' ? '#f58220' : 'var(--th-text-muted)',
             }}
             onClick={() => setViewMode('grid')}
           >Grid</button>
           <button
             style={{
               padding: '10px 24px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14,
-              background: viewMode === 'list' ? 'rgba(245,130,32,0.1)' : '#0a0e1a',
-              color: viewMode === 'list' ? '#f58220' : '#94a3b8',
+              background: viewMode === 'list' ? 'rgba(245,130,32,0.1)' : 'var(--th-bg-primary)',
+              color: viewMode === 'list' ? '#f58220' : 'var(--th-text-muted)',
             }}
             onClick={() => setViewMode('list')}
           >List</button>
@@ -328,7 +339,7 @@ function UiSettings() {
       </Field>
 
       <Field label={`Thumbnail Size: ${thumbnailSize}px`}>
-        <input type="range" min={64} max={256} step={16} value={thumbnailSize} onChange={e => setThumbnailSize(Number(e.target.value))} className="accent-accent" style={{ width: '100%' }} />
+        <input type="range" min={64} max={256} step={16} value={thumbnailSize} onChange={e => setThumbnailSize(Number(e.target.value))} style={{ width: '100%', accentColor: '#f58220' }} />
       </Field>
     </div>
   )

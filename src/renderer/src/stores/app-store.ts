@@ -6,52 +6,99 @@ export type Source = 'local' | 'dropbox'
 export type Theme = 'dark' | 'light'
 export type InspectorTab = 'metadata' | 'preflight' | 'presscal'
 
-interface AppState {
-  // Navigation
+export interface Tab {
+  id: string
+  label: string
   currentPath: string
   pathHistory: string[]
   historyIndex: number
   source: Source
+  files: FileEntry[]
+  selectedFile: FileEntry | null
+  selectedFiles: FileEntry[]
+  loading: boolean
+  preview: PreviewResult | null
+  previewLoading: boolean
+  metadata: FileMetadata | null
+  preflight: PreflightReport | null
+  metadataLoading: boolean
+  preflightLoading: boolean
+}
+
+function createTab(path = '', source: Source = 'local'): Tab {
+  return {
+    id: crypto.randomUUID(),
+    label: path.split(/[/\\]/).pop() || path || 'New Tab',
+    currentPath: path,
+    pathHistory: [],
+    historyIndex: -1,
+    source,
+    files: [],
+    selectedFile: null,
+    selectedFiles: [],
+    loading: false,
+    preview: null,
+    previewLoading: false,
+    metadata: null,
+    preflight: null,
+    metadataLoading: false,
+    preflightLoading: false,
+  }
+}
+
+interface AppState {
+  // Tabs
+  tabs: Tab[]
+  activeTabId: string
+
+  // Mirrored from active tab (for backward compatibility)
+  currentPath: string
+  pathHistory: string[]
+  historyIndex: number
+  source: Source
+  files: FileEntry[]
+  selectedFile: FileEntry | null
+  selectedFiles: FileEntry[]
+  loading: boolean
+  preview: PreviewResult | null
+  previewLoading: boolean
+  metadata: FileMetadata | null
+  preflight: PreflightReport | null
+  metadataLoading: boolean
+  preflightLoading: boolean
 
   // Theme
   theme: Theme
   setTheme: (theme: Theme) => void
 
-  // File browser
-  files: FileEntry[]
-  selectedFile: FileEntry | null
-  selectedFiles: FileEntry[]
+  // UI state (shared across tabs)
   viewMode: ViewMode
   thumbnailSize: number
-  loading: boolean
-
-  // Preview
-  preview: PreviewResult | null
-  previewLoading: boolean
-
-  // Inspector
-  metadata: FileMetadata | null
-  preflight: PreflightReport | null
   inspectorTab: InspectorTab
-  metadataLoading: boolean
-  preflightLoading: boolean
-
-  // Panel sizes
+  previewOpen: boolean
+  fullscreenPreview: boolean
+  showSidebar: boolean
+  showInspector: boolean
   sidebarWidth: number
   inspectorWidth: number
 
   // PressCal connection
   presscalConnected: boolean
   presscalOrgName: string
-  lastCustomerEmail: string  // Auto-fill for send email
-  pickFileMode: { quoteId: string; itemId: string } | null  // Pick file for quote item
-  attachmentQuoteId: string  // Quote context from deep link attachment
+  lastCustomerEmail: string
+  pickFileMode: { quoteId: string; itemId: string } | null
+  attachmentQuoteId: string
 
   // Dropbox connection
   dropboxConnected: boolean
   dropboxName: string
 
-  // Actions
+  // Tab actions
+  addTab: (path?: string) => void
+  closeTab: (id: string) => void
+  setActiveTab: (id: string) => void
+
+  // Navigation actions
   loadSettings: () => Promise<void>
   navigateTo: (path: string) => Promise<void>
   navigateBack: () => void
@@ -60,250 +107,467 @@ interface AppState {
   selectFile: (file: FileEntry | null) => void
   toggleFileSelection: (file: FileEntry) => void
   clearSelection: () => void
+  selectFileRange: (files: FileEntry[]) => void
   setViewMode: (mode: ViewMode) => void
   setThumbnailSize: (size: number) => void
   setSource: (source: Source) => void
   setInspectorTab: (tab: InspectorTab) => void
+  togglePreview: () => void
+  setShowSidebar: (show: boolean) => void
+  setShowInspector: (show: boolean) => void
   setSidebarWidth: (width: number) => void
   setInspectorWidth: (width: number) => void
   refreshDirectory: () => Promise<void>
   runPreflight: () => Promise<void>
+
+  // Clipboard
+  clipboard: { files: FileEntry[]; mode: 'copy' | 'cut' } | null
+  copyFiles: () => void
+  cutFiles: () => void
+  pasteFiles: () => Promise<void>
+  selectAll: () => void
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
-  // Initial state
-  theme: 'dark' as Theme,
-  setTheme: (theme) => {
-    set({ theme })
-    document.documentElement.setAttribute('data-theme', theme)
-    document.body.style.background = theme === 'light' ? '#f8fafc' : '#0a0e1a'
-    document.body.style.color = theme === 'light' ? '#0f172a' : '#e2e8f0'
-    window.api.settings.set('ui.theme', theme)
-  },
-  currentPath: '',
-  pathHistory: [],
-  historyIndex: -1,
-  source: 'local',
-  files: [],
-  selectedFile: null,
-  selectedFiles: [],
-  viewMode: 'grid',
-  thumbnailSize: 128,
-  loading: false,
-  preview: null,
-  previewLoading: false,
-  metadata: null,
-  preflight: null,
-  inspectorTab: 'metadata',
-  metadataLoading: false,
-  preflightLoading: false,
-  sidebarWidth: 280,
-  inspectorWidth: 320,
-  presscalConnected: false,
-  presscalOrgName: '',
-  lastCustomerEmail: '',
-  pickFileMode: null,
-  attachmentQuoteId: '',
-  dropboxConnected: false,
-  dropboxName: '',
-
-  loadSettings: async () => {
-    try {
-      const settings = await window.api.settings.getAll()
-      const drives = await window.api.fs.getDrives()
-      const defaultPath = drives[0] || 'C:\\'
-
-      // Check connections
-      const [presscalStatus, dropboxStatus] = await Promise.all([
-        window.api.presscal.status().catch(() => ({ connected: false })),
-        window.api.dropbox.status().catch(() => ({ connected: false }))
-      ])
-
-      const savedTheme = (settings['ui.theme'] as Theme) || 'dark'
-      document.documentElement.setAttribute('data-theme', savedTheme)
-      document.body.style.background = savedTheme === 'light' ? '#f8fafc' : '#0a0e1a'
-      document.body.style.color = savedTheme === 'light' ? '#0f172a' : '#e2e8f0'
-
-      set({
-        theme: savedTheme,
-        viewMode: (settings['ui.viewMode'] as ViewMode) || 'grid',
-        thumbnailSize: (settings['ui.thumbnailSize'] as number) || 128,
-        sidebarWidth: (settings['ui.sidebarWidth'] as number) || 280,
-        inspectorWidth: (settings['ui.inspectorWidth'] as number) || 320,
-        presscalConnected: presscalStatus.connected,
-        presscalOrgName: (presscalStatus as any).orgName || '',
-        dropboxConnected: dropboxStatus.connected,
-        dropboxName: (dropboxStatus as any).name || ''
-      })
-
-      // Navigate to recent or default path
-      const recent = (settings['paths.recent'] as string[]) || []
-      const startPath = recent[0] || defaultPath
-      await get().navigateTo(startPath)
-    } catch (err) {
-      console.error('loadSettings error:', err)
-      // Navigate to default
-      try {
-        const drives = await window.api.fs.getDrives()
-        await get().navigateTo(drives[0] || 'C:\\')
-      } catch {
-        // Last resort
-        await get().navigateTo('C:\\')
-      }
-    }
-  },
-
-  navigateTo: async (path: string) => {
-    const { source, currentPath, pathHistory, historyIndex } = get()
-    set({ loading: true, selectedFile: null, selectedFiles: [], preview: null, metadata: null, preflight: null })
-
-    try {
-      let files: FileEntry[]
-      if (source === 'local') {
-        files = await window.api.fs.listDirectory(path)
-        window.api.settings.addRecentPath(path)
-      } else {
-        const entries = await window.api.dropbox.listFolder(path)
-        files = entries.map((e: any) => ({
-          name: e.name,
-          path: e.path,
-          isDirectory: e.isDirectory,
-          size: e.size,
-          modified: e.modified || '',
-          created: '',
-          extension: e.isDirectory ? '' : ('.' + e.name.split('.').pop()?.toLowerCase()),
-          type: e.isDirectory ? 'folder' : 'unknown'
-        }))
-      }
-
-      // Update history
-      const newHistory = pathHistory.slice(0, historyIndex + 1)
-      if (currentPath !== path) {
-        newHistory.push(path)
-      }
-
-      set({
-        currentPath: path,
-        files,
-        loading: false,
-        pathHistory: newHistory,
-        historyIndex: newHistory.length - 1
-      })
-    } catch {
-      set({ files: [], loading: false })
-    }
-  },
-
-  navigateBack: () => {
-    const { pathHistory, historyIndex } = get()
-    if (historyIndex > 0) {
-      const prevPath = pathHistory[historyIndex - 1]
-      set({ historyIndex: historyIndex - 1 })
-      get().navigateTo(prevPath)
-    }
-  },
-
-  navigateForward: () => {
-    const { pathHistory, historyIndex } = get()
-    if (historyIndex < pathHistory.length - 1) {
-      const nextPath = pathHistory[historyIndex + 1]
-      set({ historyIndex: historyIndex + 1 })
-      get().navigateTo(nextPath)
-    }
-  },
-
-  navigateUp: () => {
-    const { currentPath, source } = get()
-    if (source === 'local') {
-      const parts = currentPath.replace(/\\/g, '/').split('/')
-      parts.pop()
-      const parent = parts.join('/') || parts[0] + '/'
-      if (parent !== currentPath) {
-        get().navigateTo(parent)
-      }
-    } else {
-      const parts = currentPath.split('/')
-      parts.pop()
-      get().navigateTo(parts.join('/') || '')
-    }
-  },
-
-  selectFile: (file) => {
-    if (!file || file.isDirectory) {
-      set({ selectedFile: file, preview: null, metadata: null, preflight: null })
-      return
-    }
-
-    set({ selectedFile: file, preview: null, metadata: null, preflight: null, previewLoading: true, metadataLoading: true })
-
-    // Load preview and metadata in parallel
-    window.api.preview.full(file.path)
-      .then(preview => set({ preview, previewLoading: false }))
-      .catch(() => set({ previewLoading: false }))
-
-    window.api.fs.getMetadata(file.path)
-      .then(metadata => set({ metadata, metadataLoading: false }))
-      .catch(() => set({ metadataLoading: false }))
-  },
-
-  toggleFileSelection: (file) => {
-    const { selectedFiles } = get()
-    const exists = selectedFiles.some(f => f.path === file.path)
-    if (exists) {
-      set({ selectedFiles: selectedFiles.filter(f => f.path !== file.path) })
-    } else {
-      set({ selectedFiles: [...selectedFiles, file] })
-    }
-  },
-
-  clearSelection: () => set({ selectedFiles: [] }),
-
-  setViewMode: (mode) => {
-    set({ viewMode: mode })
-    window.api.settings.set('ui.viewMode', mode)
-  },
-
-  setThumbnailSize: (size) => {
-    set({ thumbnailSize: size })
-    window.api.settings.set('ui.thumbnailSize', size)
-  },
-
-  setSource: (source) => {
-    set({ source, currentPath: '', files: [], selectedFile: null })
-    if (source === 'dropbox') {
-      get().navigateTo('')
-    } else {
-      window.api.fs.getDrives().then(drives => get().navigateTo(drives[0] || 'C:\\'))
-    }
-  },
-
-  setInspectorTab: (tab) => set({ inspectorTab: tab }),
-
-  setSidebarWidth: (width) => {
-    set({ sidebarWidth: width })
-    window.api.settings.set('ui.sidebarWidth', width)
-  },
-
-  setInspectorWidth: (width) => {
-    set({ inspectorWidth: width })
-    window.api.settings.set('ui.inspectorWidth', width)
-  },
-
-  refreshDirectory: async () => {
-    const { currentPath } = get()
-    await get().navigateTo(currentPath)
-  },
-
-  runPreflight: async () => {
-    const { selectedFile } = get()
-    if (!selectedFile || selectedFile.isDirectory) return
-
-    set({ preflightLoading: true, inspectorTab: 'preflight' })
-    try {
-      const report = await window.api.preflight.run(selectedFile.path)
-      set({ preflight: report, preflightLoading: false })
-    } catch {
-      set({ preflightLoading: false })
-    }
+export const useAppStore = create<AppState>((set, get) => {
+  // Helper: update active tab and mirror to top-level
+  const updateActiveTab = (patch: Partial<Tab>) => {
+    const { tabs, activeTabId } = get()
+    const newTabs = tabs.map(t => t.id === activeTabId ? { ...t, ...patch } : t)
+    const activeTab = newTabs.find(t => t.id === activeTabId)!
+    set({
+      tabs: newTabs,
+      // Mirror active tab to top-level
+      currentPath: activeTab.currentPath,
+      pathHistory: activeTab.pathHistory,
+      historyIndex: activeTab.historyIndex,
+      source: activeTab.source,
+      files: activeTab.files,
+      selectedFile: activeTab.selectedFile,
+      selectedFiles: activeTab.selectedFiles,
+      loading: activeTab.loading,
+      preview: activeTab.preview,
+      previewLoading: activeTab.previewLoading,
+      metadata: activeTab.metadata,
+      preflight: activeTab.preflight,
+      metadataLoading: activeTab.metadataLoading,
+      preflightLoading: activeTab.preflightLoading,
+    })
   }
-}))
+
+  const syncTabToTopLevel = (tab: Tab) => ({
+    currentPath: tab.currentPath,
+    pathHistory: tab.pathHistory,
+    historyIndex: tab.historyIndex,
+    source: tab.source,
+    files: tab.files,
+    selectedFile: tab.selectedFile,
+    selectedFiles: tab.selectedFiles,
+    loading: tab.loading,
+    preview: tab.preview,
+    previewLoading: tab.previewLoading,
+    metadata: tab.metadata,
+    preflight: tab.preflight,
+    metadataLoading: tab.metadataLoading,
+    preflightLoading: tab.preflightLoading,
+  })
+
+  const initialTab = createTab()
+
+  return {
+    // Tabs
+    tabs: [initialTab],
+    activeTabId: initialTab.id,
+
+    // Mirrored state
+    currentPath: '',
+    pathHistory: [],
+    historyIndex: -1,
+    source: 'local',
+    files: [],
+    selectedFile: null,
+    selectedFiles: [],
+    loading: false,
+    preview: null,
+    previewLoading: false,
+    metadata: null,
+    preflight: null,
+    metadataLoading: false,
+    preflightLoading: false,
+
+    // Theme
+    theme: 'light' as Theme,
+    setTheme: (theme) => {
+      set({ theme })
+      document.documentElement.setAttribute('data-theme', theme)
+      document.body.style.background = theme === 'light' ? '#e4e8ee' : '#0a0e1a'
+      document.body.style.color = theme === 'light' ? '#0f172a' : '#e2e8f0'
+      window.api.settings.set('ui.theme', theme)
+      window.api.theme.update(theme)
+    },
+
+    // UI state
+    viewMode: 'grid',
+    thumbnailSize: 128,
+    inspectorTab: 'metadata',
+    previewOpen: false,
+    fullscreenPreview: false,
+    showSidebar: true,
+    showInspector: true,
+    sidebarWidth: 280,
+    inspectorWidth: 320,
+    presscalConnected: false,
+    presscalOrgName: '',
+    lastCustomerEmail: '',
+    pickFileMode: null,
+    attachmentQuoteId: '',
+    dropboxConnected: false,
+    dropboxName: '',
+
+    // Tab actions
+    addTab: (path?: string) => {
+      const { source } = get()
+      const tab = createTab(path || '', source)
+      const { tabs } = get()
+      set({ tabs: [...tabs, tab], activeTabId: tab.id, ...syncTabToTopLevel(tab) })
+      if (path) {
+        get().navigateTo(path)
+      } else {
+        // Navigate to default
+        if (source === 'local') {
+          window.api.fs.getDrives().then(drives => get().navigateTo(drives[0] || 'C:\\'))
+        } else {
+          get().navigateTo('')
+        }
+      }
+    },
+
+    closeTab: (id: string) => {
+      const { tabs, activeTabId } = get()
+      if (tabs.length <= 1) return // Don't close last tab
+
+      const idx = tabs.findIndex(t => t.id === id)
+      const newTabs = tabs.filter(t => t.id !== id)
+
+      if (id === activeTabId) {
+        // Activate adjacent tab
+        const newIdx = Math.min(idx, newTabs.length - 1)
+        const newActive = newTabs[newIdx]
+        set({ tabs: newTabs, activeTabId: newActive.id, ...syncTabToTopLevel(newActive) })
+      } else {
+        set({ tabs: newTabs })
+      }
+    },
+
+    setActiveTab: (id: string) => {
+      const { tabs } = get()
+      const tab = tabs.find(t => t.id === id)
+      if (tab) {
+        set({ activeTabId: id, ...syncTabToTopLevel(tab) })
+      }
+    },
+
+    // Settings
+    loadSettings: async () => {
+      try {
+        const settings = await window.api.settings.getAll()
+        const drives = await window.api.fs.getDrives()
+        const defaultPath = drives[0] || 'C:\\'
+
+        const [presscalStatus, dropboxStatus] = await Promise.all([
+          window.api.presscal.status().catch(() => ({ connected: false })),
+          window.api.dropbox.status().catch(() => ({ connected: false }))
+        ])
+
+        const savedTheme = (settings['ui.theme'] as Theme) || 'light'
+        document.documentElement.setAttribute('data-theme', savedTheme)
+        document.body.style.background = savedTheme === 'light' ? '#e4e8ee' : '#0a0e1a'
+        document.body.style.color = savedTheme === 'light' ? '#0f172a' : '#e2e8f0'
+
+        set({
+          theme: savedTheme,
+          viewMode: (settings['ui.viewMode'] as ViewMode) || 'grid',
+          thumbnailSize: (settings['ui.thumbnailSize'] as number) || 128,
+          sidebarWidth: (settings['ui.sidebarWidth'] as number) || 280,
+          inspectorWidth: Math.max(320, (settings['ui.inspectorWidth'] as number) || 320),
+          previewOpen: settings['ui.previewOpen'] === true,
+          showSidebar: settings['ui.showSidebar'] !== false,
+          showInspector: settings['ui.showInspector'] !== false,
+          presscalConnected: presscalStatus.connected,
+          presscalOrgName: (presscalStatus as any).orgName || '',
+          dropboxConnected: dropboxStatus.connected,
+          dropboxName: (dropboxStatus as any).name || ''
+        })
+
+        const recent = (settings['paths.recent'] as string[]) || []
+        const startPath = recent[0] || defaultPath
+        await get().navigateTo(startPath)
+      } catch (err) {
+        console.error('loadSettings error:', err)
+        try {
+          const drives = await window.api.fs.getDrives()
+          await get().navigateTo(drives[0] || 'C:\\')
+        } catch {
+          await get().navigateTo('C:\\')
+        }
+      }
+    },
+
+    navigateTo: async (path: string) => {
+      const { activeTabId } = get()
+      const tab = get().tabs.find(t => t.id === activeTabId)
+      if (!tab) return
+      const { source } = tab
+
+      updateActiveTab({
+        loading: true, selectedFile: null, selectedFiles: [],
+        preview: null, metadata: null, preflight: null
+      })
+
+      try {
+        let files: FileEntry[]
+        if (source === 'local') {
+          files = await window.api.fs.listDirectory(path)
+          window.api.settings.addRecentPath(path)
+        } else {
+          const entries = await window.api.dropbox.listFolder(path)
+          files = entries.map((e: any) => ({
+            name: e.name,
+            path: e.path,
+            isDirectory: e.isDirectory,
+            size: e.size,
+            modified: e.modified || '',
+            created: '',
+            extension: e.isDirectory ? '' : ('.' + e.name.split('.').pop()?.toLowerCase()),
+            type: e.isDirectory ? 'folder' : 'unknown'
+          }))
+        }
+
+        // Check if still the active tab
+        if (get().activeTabId !== activeTabId) return
+
+        const currentTab = get().tabs.find(t => t.id === activeTabId)!
+        const newHistory = currentTab.pathHistory.slice(0, currentTab.historyIndex + 1)
+        if (currentTab.currentPath !== path) {
+          newHistory.push(path)
+        }
+
+        updateActiveTab({
+          currentPath: path,
+          label: path.split(/[/\\]/).pop() || path || 'New Tab',
+          files,
+          loading: false,
+          pathHistory: newHistory,
+          historyIndex: newHistory.length - 1
+        })
+
+        // Start watching this directory
+        if (source === 'local' && path) {
+          window.api.fs.watch(path)
+        }
+      } catch {
+        if (get().activeTabId === activeTabId) {
+          updateActiveTab({ files: [], loading: false })
+        }
+      }
+    },
+
+    navigateBack: () => {
+      const tab = get().tabs.find(t => t.id === get().activeTabId)
+      if (!tab || tab.historyIndex <= 0) return
+      const prevPath = tab.pathHistory[tab.historyIndex - 1]
+      updateActiveTab({ historyIndex: tab.historyIndex - 1 })
+      get().navigateTo(prevPath)
+    },
+
+    navigateForward: () => {
+      const tab = get().tabs.find(t => t.id === get().activeTabId)
+      if (!tab || tab.historyIndex >= tab.pathHistory.length - 1) return
+      const nextPath = tab.pathHistory[tab.historyIndex + 1]
+      updateActiveTab({ historyIndex: tab.historyIndex + 1 })
+      get().navigateTo(nextPath)
+    },
+
+    navigateUp: () => {
+      const tab = get().tabs.find(t => t.id === get().activeTabId)
+      if (!tab) return
+      if (tab.source === 'local') {
+        const parts = tab.currentPath.replace(/\\/g, '/').split('/')
+        parts.pop()
+        const parent = parts.join('/') || parts[0] + '/'
+        if (parent !== tab.currentPath) {
+          get().navigateTo(parent)
+        }
+      } else {
+        const parts = tab.currentPath.split('/')
+        parts.pop()
+        get().navigateTo(parts.join('/') || '')
+      }
+    },
+
+    selectFile: (file) => {
+      if (!file || file.isDirectory) {
+        updateActiveTab({ selectedFile: file, preview: null, metadata: null, preflight: null })
+        return
+      }
+
+      const { previewOpen } = get()
+      updateActiveTab({
+        selectedFile: file, preview: null, metadata: null, preflight: null,
+        previewLoading: previewOpen, metadataLoading: true
+      })
+
+      const { activeTabId } = get()
+
+      if (previewOpen) {
+        window.api.preview.full(file.path)
+          .then(preview => {
+            if (get().activeTabId === activeTabId) updateActiveTab({ preview, previewLoading: false })
+          })
+          .catch(() => {
+            if (get().activeTabId === activeTabId) updateActiveTab({ previewLoading: false })
+          })
+      }
+
+      window.api.fs.getMetadata(file.path)
+        .then(metadata => {
+          if (get().activeTabId === activeTabId) updateActiveTab({ metadata, metadataLoading: false })
+        })
+        .catch(() => {
+          if (get().activeTabId === activeTabId) updateActiveTab({ metadataLoading: false })
+        })
+    },
+
+    toggleFileSelection: (file) => {
+      const tab = get().tabs.find(t => t.id === get().activeTabId)
+      if (!tab) return
+      const exists = tab.selectedFiles.some(f => f.path === file.path)
+      if (exists) {
+        updateActiveTab({ selectedFiles: tab.selectedFiles.filter(f => f.path !== file.path) })
+      } else {
+        updateActiveTab({ selectedFiles: [...tab.selectedFiles, file] })
+      }
+    },
+
+    clearSelection: () => updateActiveTab({ selectedFiles: [] }),
+
+    selectFileRange: (files: FileEntry[]) => {
+      updateActiveTab({ selectedFiles: files })
+    },
+
+    togglePreview: () => {
+      const { previewOpen } = get()
+      const newOpen = !previewOpen
+      set({ previewOpen: newOpen })
+      window.api.settings.set('ui.previewOpen', newOpen)
+
+      const tab = get().tabs.find(t => t.id === get().activeTabId)
+      if (newOpen && tab?.selectedFile && !tab.selectedFile.isDirectory) {
+        updateActiveTab({ previewLoading: true })
+        window.api.preview.full(tab.selectedFile.path)
+          .then(preview => updateActiveTab({ preview, previewLoading: false }))
+          .catch(() => updateActiveTab({ previewLoading: false }))
+      }
+      if (!newOpen) {
+        updateActiveTab({ preview: null, previewLoading: false })
+      }
+    },
+
+    setShowSidebar: (show) => {
+      set({ showSidebar: show })
+      window.api.settings.set('ui.showSidebar', show)
+    },
+
+    setShowInspector: (show) => {
+      set({ showInspector: show })
+      window.api.settings.set('ui.showInspector', show)
+    },
+
+    setViewMode: (mode) => {
+      set({ viewMode: mode })
+      window.api.settings.set('ui.viewMode', mode)
+    },
+
+    setThumbnailSize: (size) => {
+      set({ thumbnailSize: size })
+      window.api.settings.set('ui.thumbnailSize', size)
+    },
+
+    setSource: (source) => {
+      updateActiveTab({ source, currentPath: '', files: [], selectedFile: null })
+      if (source === 'dropbox') {
+        get().navigateTo('')
+      } else {
+        window.api.fs.getDrives().then(drives => get().navigateTo(drives[0] || 'C:\\'))
+      }
+    },
+
+    setInspectorTab: (tab) => set({ inspectorTab: tab }),
+
+    setSidebarWidth: (width) => {
+      set({ sidebarWidth: width })
+      window.api.settings.set('ui.sidebarWidth', width)
+    },
+
+    setInspectorWidth: (width) => {
+      set({ inspectorWidth: width })
+      window.api.settings.set('ui.inspectorWidth', width)
+    },
+
+    refreshDirectory: async () => {
+      const tab = get().tabs.find(t => t.id === get().activeTabId)
+      if (tab) await get().navigateTo(tab.currentPath)
+    },
+
+    runPreflight: async () => {
+      const tab = get().tabs.find(t => t.id === get().activeTabId)
+      if (!tab?.selectedFile || tab.selectedFile.isDirectory) return
+
+      updateActiveTab({ preflightLoading: true })
+      set({ inspectorTab: 'preflight' })
+      try {
+        const report = await window.api.preflight.run(tab.selectedFile.path)
+        updateActiveTab({ preflight: report, preflightLoading: false })
+      } catch {
+        updateActiveTab({ preflightLoading: false })
+      }
+    },
+
+    // Clipboard
+    clipboard: null,
+
+    copyFiles: () => {
+      const { selectedFiles, selectedFile } = get()
+      const files = selectedFiles.length > 0 ? selectedFiles : (selectedFile ? [selectedFile] : [])
+      if (files.length > 0) set({ clipboard: { files, mode: 'copy' } })
+    },
+
+    cutFiles: () => {
+      const { selectedFiles, selectedFile } = get()
+      const files = selectedFiles.length > 0 ? selectedFiles : (selectedFile ? [selectedFile] : [])
+      if (files.length > 0) set({ clipboard: { files, mode: 'cut' } })
+    },
+
+    pasteFiles: async () => {
+      const { clipboard, currentPath } = get()
+      if (!clipboard || !currentPath) return
+      const paths = clipboard.files.map(f => f.path)
+      try {
+        if (clipboard.mode === 'copy') {
+          await window.api.fs.copy(paths, currentPath)
+        } else {
+          await window.api.fs.move(paths, currentPath)
+          set({ clipboard: null })
+        }
+        await get().refreshDirectory()
+      } catch (err) {
+        console.error('Paste failed:', err)
+      }
+    },
+
+    selectAll: () => {
+      const tab = get().tabs.find(t => t.id === get().activeTabId)
+      if (!tab) return
+      updateActiveTab({ selectedFiles: tab.files })
+    },
+  }
+})

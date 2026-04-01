@@ -1,25 +1,34 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAppStore } from '@/stores/app-store'
 import {
   Search, User, Building2, Mail,
   Loader2, Link2, Tag
 } from 'lucide-react'
 import type { PresscalCustomer } from '@/lib/ipc'
+import { fuzzyMatch } from '@/lib/fuzzy'
 
 export function CustomerPicker() {
   const { selectedFile, preflight } = useAppStore()
-  const [customers, setCustomers] = useState<PresscalCustomer[]>([])
+  const [allCustomers, setAllCustomers] = useState<PresscalCustomer[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [linkingTo, setLinkingTo] = useState<string | null>(null)
 
   useEffect(() => {
     setLoading(true)
-    window.api.presscal.getCustomers(search || undefined)
-      .then(setCustomers)
-      .catch(() => setCustomers([]))
+    window.api.presscal.getCustomers()
+      .then(setAllCustomers)
+      .catch(() => setAllCustomers([]))
       .finally(() => setLoading(false))
-  }, [search])
+  }, [])
+
+  const customers = useMemo(() => {
+    if (!search.trim()) return allCustomers
+    return allCustomers.filter(c => {
+      const text = [c.name, c.company, c.email].filter(Boolean).join(' ')
+      return fuzzyMatch(text, search)
+    })
+  }, [allCustomers, search])
 
   const linkToCustomer = useCallback(async (customerId: string) => {
     if (!selectedFile || selectedFile.isDirectory) return
@@ -41,15 +50,18 @@ export function CustomerPicker() {
   }, [selectedFile, preflight])
 
   return (
-    <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div className="relative">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px', height: 36, background: 'var(--th-bg-primary)', borderRadius: 8 }}>
+        <Search size={14} style={{ color: 'var(--th-text-muted)', flexShrink: 0 }} />
         <input
           type="text"
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search clients..."
-          className="w-full pl-9 pr-3 py-2.5 bg-bg-primary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+          style={{
+            border: 'none', background: 'transparent', color: 'var(--th-text-primary)',
+            fontSize: 13, outline: 'none', width: '100%', padding: 0, margin: 0,
+          }}
         />
       </div>
 

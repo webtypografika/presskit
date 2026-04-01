@@ -6,7 +6,7 @@ import { registerPreviewHandlers } from './preview-engine'
 import { registerPreflightHandlers } from './preflight-engine'
 import { registerDropboxHandlers } from './dropbox-client'
 import { registerPresscalHandlers } from './presscal-client'
-import { registerSettingsHandlers } from './settings'
+import { registerSettingsHandlers, store } from './settings'
 import { registerBatchHandlers } from './batch-engine'
 import { registerConvertHandlers } from './convert-engine'
 import { registerColorHandlers } from './color-tools'
@@ -161,17 +161,23 @@ async function handleProtocolUrl(url: string): Promise<void> {
 }
 
 function createWindow(): void {
+  const savedTheme = store.get('ui.theme', 'light') as string
+  const isLight = savedTheme === 'light'
+  const bgColor = isLight ? '#e4e8ee' : '#0a0e1a'
+  const overlayColor = isLight ? '#e4e8ee' : '#0f1525'
+  const symbolColor = isLight ? '#374151' : '#94a3b8'
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 900,
     minHeight: 600,
     show: false,
-    backgroundColor: '#0a0e1a',
+    backgroundColor: bgColor,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#0a0e1a',
-      symbolColor: '#94a3b8',
+      color: overlayColor,
+      symbolColor,
       height: 36
     },
     webPreferences: {
@@ -404,7 +410,7 @@ function registerHandlers(): void {
           if (!existsSync(basePath)) continue
           try {
             const findExe = (dir: string, target: string, depth = 0): string | null => {
-              if (depth > 3) return null
+              if (depth > 6) return null
               const entries = readdirSync(dir, { withFileTypes: true })
               for (const entry of entries) {
                 const full = `${dir}\\${entry.name}`
@@ -445,8 +451,7 @@ function registerHandlers(): void {
       })
     }
 
-    const ext = extension.toLowerCase()
-    return cachedApps.filter(app => app.extensions.includes(ext))
+    return cachedApps
   })
 
   ipcMain.handle('apps:openWith', async (_e, appPath: string, filePath: string) => {
@@ -507,6 +512,16 @@ function registerHandlers(): void {
 
   // Theme
   ipcMain.handle('theme:get', () => nativeTheme.shouldUseDarkColors)
+
+  ipcMain.handle('theme:update', (_e, theme: string) => {
+    if (!mainWindow) return
+    const isLight = theme === 'light'
+    const bgColor = isLight ? '#e4e8ee' : '#0a0e1a'
+    const overlayColor = isLight ? '#e4e8ee' : '#0f1525'
+    const symbolColor = isLight ? '#374151' : '#94a3b8'
+    mainWindow.setBackgroundColor(bgColor)
+    mainWindow.setTitleBarOverlay({ color: overlayColor, symbolColor, height: 36 })
+  })
 }
 
 // Windows: handle protocol URL when app is already running

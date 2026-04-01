@@ -39,7 +39,7 @@ export function PresscalPanel() {
                 ? 'text-accent border-accent'
                 : 'text-text-muted border-transparent hover:text-text-secondary'
             }`}
-            style={{ padding: '12px 16px' }}
+            style={{ padding: '10px 8px', flexShrink: 0, fontSize: 12 }}
             onClick={() => setSubTab(tab.id)}
           >
             {tab.icon}

@@ -1,40 +1,66 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAppStore } from '@/stores/app-store'
 import {
-  Briefcase, Loader2, Link2,
+  Briefcase, Loader2, Link2, Search,
   Clock, AlertTriangle, Zap
 } from 'lucide-react'
 import type { PresscalJob } from '@/lib/ipc'
+import { fuzzyMatch } from '@/lib/fuzzy'
 
-const STAGES = ['files', 'printing', 'cutting', 'finishing', 'delivery'] as const
-const STAGE_LABELS: Record<string, string> = {
-  files: 'Files',
-  printing: 'Printing',
-  cutting: 'Cutting',
-  finishing: 'Finishing',
-  delivery: 'Delivery'
-}
+const PAGE_SIZE = 50
 
 const PRIORITY_ICONS: Record<string, React.ReactNode> = {
-  normal: <Clock size={12} className="text-text-muted" />,
-  urgent: <AlertTriangle size={12} className="text-warning" />,
-  rush: <Zap size={12} className="text-error" />
+  normal: <Clock size={12} style={{ color: 'var(--th-text-muted)' }} />,
+  urgent: <AlertTriangle size={12} style={{ color: '#eab308' }} />,
+  rush: <Zap size={12} style={{ color: '#ef4444' }} />
 }
 
 export function JobFiles() {
   const { selectedFile, preflight } = useAppStore()
-  const [jobs, setJobs] = useState<PresscalJob[]>([])
+  const [allJobs, setAllJobs] = useState<PresscalJob[]>([])
   const [loading, setLoading] = useState(false)
   const [linkingTo, setLinkingTo] = useState<string | null>(null)
   const [filterStage, setFilterStage] = useState<string>('')
+  const [search, setSearch] = useState('')
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
 
-  useEffect(() => {
+  // Fetch all jobs
+  const fetchJobs = useCallback(() => {
     setLoading(true)
-    window.api.presscal.getJobs(filterStage ? { stage: filterStage } : undefined)
-      .then(setJobs)
-      .catch(() => setJobs([]))
+    window.api.presscal.getJobs()
+      .then(jobs => { setAllJobs(jobs); setVisibleCount(PAGE_SIZE) })
+      .catch(() => setAllJobs([]))
       .finally(() => setLoading(false))
-  }, [filterStage])
+  }, [])
+
+  useEffect(() => { fetchJobs() }, [fetchJobs])
+
+  // Extract unique stages dynamically from jobs data
+  const stages = useMemo(() => {
+    const stageSet = new Set<string>()
+    for (const job of allJobs) {
+      if (job.jobStage) stageSet.add(job.jobStage)
+    }
+    return Array.from(stageSet)
+  }, [allJobs])
+
+  // Filter & search
+  const filteredJobs = useMemo(() => {
+    let result = allJobs
+    if (filterStage) {
+      result = result.filter(j => j.jobStage === filterStage)
+    }
+    if (search.trim()) {
+      result = result.filter(j => {
+        const text = [j.number, j.title, j.customerName].filter(Boolean).join(' ')
+        return fuzzyMatch(text, search)
+      })
+    }
+    return result
+  }, [allJobs, filterStage, search])
+
+  const visibleJobs = filteredJobs.slice(0, visibleCount)
+  const hasMore = visibleCount < filteredJobs.length
 
   const linkToJob = useCallback(async (jobId: string) => {
     if (!selectedFile || selectedFile.isDirectory) return
@@ -56,79 +82,121 @@ export function JobFiles() {
   }, [selectedFile, preflight])
 
   return (
-    <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Stage filter */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-        <button
-          className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors ${
-            !filterStage ? 'bg-accent/10 text-accent' : 'text-text-muted hover:text-text-secondary hover:bg-bg-hover'
-          }`}
-          onClick={() => setFilterStage('')}
-        >
-          All
-        </button>
-        {STAGES.map(stage => (
-          <button
-            key={stage}
-            className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors ${
-              filterStage === stage ? 'bg-accent/10 text-accent' : 'text-text-muted hover:text-text-secondary hover:bg-bg-hover'
-            }`}
-            onClick={() => setFilterStage(stage)}
-          >
-            {STAGE_LABELS[stage]}
-          </button>
-        ))}
+    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Search */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px', height: 36, background: 'var(--th-bg-primary)', borderRadius: 8 }}>
+        <Search size={14} style={{ color: 'var(--th-text-muted)', flexShrink: 0 }} />
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search jobs..."
+          style={{
+            border: 'none', background: 'transparent', color: 'var(--th-text-primary)',
+            fontSize: 13, outline: 'none', width: '100%', padding: 0, margin: 0,
+          }}
+        />
       </div>
+
+      {/* Stage filter — dynamic from data */}
+      {stages.length > 0 && (
+        <div className="flex items-center" style={{ gap: 4, flexWrap: 'wrap' }}>
+          <button
+            style={{
+              padding: '4px 10px', borderRadius: 6, fontSize: 11, border: 'none', cursor: 'pointer',
+              background: !filterStage ? 'rgba(245,130,32,0.12)' : 'transparent',
+              color: !filterStage ? '#f58220' : 'var(--th-text-muted)',
+            }}
+            onClick={() => setFilterStage('')}
+          >
+            All
+          </button>
+          {stages.map(stage => (
+            <button
+              key={stage}
+              style={{
+                padding: '4px 10px', borderRadius: 6, fontSize: 11, border: 'none', cursor: 'pointer',
+                background: filterStage === stage ? 'rgba(245,130,32,0.12)' : 'transparent',
+                color: filterStage === stage ? '#f58220' : 'var(--th-text-muted)',
+                textTransform: 'capitalize',
+              }}
+              onClick={() => setFilterStage(stage)}
+            >
+              {stage}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Job list */}
       {loading ? (
-        <div className="flex justify-center py-8">
-          <Loader2 size={20} className="animate-spin text-text-muted" />
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}>
+          <Loader2 size={20} className="animate-spin" style={{ color: 'var(--th-text-muted)' }} />
         </div>
       ) : (
-        <div className="space-y-1.5">
-          {jobs.map(job => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {visibleJobs.map(job => (
             <div
               key={job.id}
-              className="px-3 py-3 rounded-lg hover:bg-bg-hover group cursor-pointer"
+              style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer' }}
+              className="group"
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--th-bg-hover)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
               onClick={() => linkToJob(job.id)}
             >
-              <div className="flex items-center gap-3">
-                <Briefcase size={18} className="text-accent flex-shrink-0" />
+              <div className="flex items-center" style={{ gap: 10 }}>
+                <Briefcase size={16} style={{ color: '#f58220', flexShrink: 0 }} />
 
-                <div className="flex-1 min-w-0 space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-accent">{job.number}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="flex items-center" style={{ gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#f58220' }}>{job.number}</span>
                     {PRIORITY_ICONS[job.jobPriority]}
                   </div>
-                  <div className="text-sm text-text-secondary truncate leading-relaxed">
+                  <div style={{ fontSize: 12, color: 'var(--th-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {job.title || job.customerName || 'Untitled'}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <span className="text-xs px-2 py-1 rounded-md bg-bg-primary text-text-muted">
-                    {STAGE_LABELS[job.jobStage] || job.jobStage}
+                <div className="flex items-center" style={{ gap: 6, flexShrink: 0 }}>
+                  <span style={{
+                    fontSize: 10, padding: '2px 8px', borderRadius: 4,
+                    background: 'var(--th-bg-primary)', color: 'var(--th-text-muted)',
+                    textTransform: 'capitalize',
+                  }}>
+                    {job.jobStage}
                   </span>
                   {linkingTo === job.id ? (
-                    <Loader2 size={15} className="animate-spin text-accent" />
+                    <Loader2 size={14} className="animate-spin" style={{ color: '#f58220' }} />
                   ) : (
-                    <Link2 size={15} className="text-text-muted opacity-0 group-hover:opacity-100" />
+                    <Link2 size={14} className="opacity-0 group-hover:opacity-100" style={{ color: 'var(--th-text-muted)' }} />
                   )}
                 </div>
               </div>
 
               {job.deadline && (
-                <div className="text-sm text-text-muted mt-1.5 ml-8">
+                <div style={{ fontSize: 11, color: 'var(--th-text-muted)', marginTop: 4, marginLeft: 26 }}>
                   Deadline: {new Date(job.deadline).toLocaleDateString('el-GR')}
                 </div>
               )}
             </div>
           ))}
 
-          {jobs.length === 0 && !loading && (
-            <div className="text-center py-8 text-sm text-text-muted">
-              No active jobs
+          {/* Load more */}
+          {hasMore && (
+            <button
+              onClick={() => setVisibleCount(v => v + PAGE_SIZE)}
+              style={{
+                padding: '8px 0', border: 'none', background: 'none', cursor: 'pointer',
+                fontSize: 12, color: '#f58220', textAlign: 'center',
+              }}
+            >
+              Show more ({filteredJobs.length - visibleCount} remaining)
+            </button>
+          )}
+
+          {filteredJobs.length === 0 && !loading && (
+            <div style={{ textAlign: 'center', padding: 32, fontSize: 13, color: 'var(--th-text-muted)' }}>
+              {search || filterStage ? 'No jobs found' : 'No active jobs'}
             </div>
           )}
         </div>

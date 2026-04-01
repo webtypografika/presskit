@@ -1,7 +1,9 @@
+import { useState, useEffect } from 'react'
 import { useAppStore } from '@/stores/app-store'
-import { formatFileSize, getFileTypeLabel } from '@/lib/file-types'
+import { formatFileSize, getFileTypeLabel, isPreviewable } from '@/lib/file-types'
 import { Loader2 } from 'lucide-react'
 import { ColorPalette } from '../tools/ColorPalette'
+import { renderPdfThumbnail } from '@/lib/pdf-thumbnail'
 
 export function FileMetadata() {
   const { metadata, metadataLoading, selectedFile } = useAppStore()
@@ -24,6 +26,11 @@ export function FileMetadata() {
 
   return (
     <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Mini preview */}
+      {selectedFile && !selectedFile.isDirectory && isPreviewable(selectedFile.type) && (
+        <MiniPreview file={selectedFile} />
+      )}
+
       {/* Basic info */}
       <MetadataSection title="File">
         <MetadataRow label="Name" value={metadata.name} />
@@ -50,6 +57,28 @@ export function FileMetadata() {
                 value={`${((metadata.width / metadata.dpi) * 25.4).toFixed(1)} x ${((metadata.height / metadata.dpi) * 25.4).toFixed(1)} mm`}
               />
             </>
+          )}
+        </MetadataSection>
+      )}
+
+      {/* PDF dimensions */}
+      {metadata.mediaBox && (
+        <MetadataSection title="Page Size">
+          <MetadataRow label="Media" value={`${metadata.mediaBox.width} × ${metadata.mediaBox.height} mm`} />
+          {metadata.trimBox && (
+            <MetadataRow label="Trim" value={`${metadata.trimBox.width} × ${metadata.trimBox.height} mm`} />
+          )}
+          {metadata.bleedBox && (
+            <MetadataRow label="Bleed" value={`${metadata.bleedBox.width} × ${metadata.bleedBox.height} mm`} />
+          )}
+          {metadata.cropBox && (
+            <MetadataRow label="Crop" value={`${metadata.cropBox.width} × ${metadata.cropBox.height} mm`} />
+          )}
+          {metadata.pageCount && (
+            <MetadataRow label="Pages" value={String(metadata.pageCount)} />
+          )}
+          {metadata.pdfVersion && (
+            <MetadataRow label="PDF Version" value={metadata.pdfVersion} />
           )}
         </MetadataSection>
       )}
@@ -97,6 +126,45 @@ export function FileMetadata() {
 
       {/* Color palette & ink coverage */}
       <ColorPalette />
+    </div>
+  )
+}
+
+function MiniPreview({ file }: { file: import('@/lib/file-types').FileEntry }) {
+  const [thumb, setThumb] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setThumb(null)
+
+    const isPdf = file.type === 'pdf' || file.type === 'ai'
+
+    if (isPdf) {
+      renderPdfThumbnail(file.path, 280)
+        .then(data => { if (!cancelled) setThumb(data) })
+        .catch(() => {})
+    } else {
+      window.api.preview.thumbnail(file.path, 280)
+        .then(data => { if (!cancelled) setThumb(data) })
+        .catch(() => {})
+    }
+
+    return () => { cancelled = true }
+  }, [file.path, file.type])
+
+  if (!thumb) return null
+
+  return (
+    <div
+      className="rounded-lg overflow-hidden border border-border bg-bg-primary flex items-center justify-center"
+      style={{ maxHeight: 200 }}
+    >
+      <img
+        src={thumb}
+        alt={file.name}
+        style={{ maxWidth: '100%', maxHeight: 200, objectFit: 'contain' }}
+        draggable={false}
+      />
     </div>
   )
 }

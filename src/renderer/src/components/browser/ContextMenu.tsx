@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import {
-  ExternalLink, FolderOpen, Scan, Link2, RefreshCw,
-  Copy, Star, Eye, FileText, ChevronRight
+  ExternalLink, FolderOpen, Scan, RefreshCw,
+  Copy, Star, ChevronRight, Trash2, Scissors, Clipboard
 } from 'lucide-react'
 import type { FileEntry } from '@/lib/file-types'
+import { useAppStore } from '@/stores/app-store'
 
 interface ContextMenuProps {
   file: FileEntry
@@ -43,16 +44,19 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
     }
   }, [onClose])
 
-  // Fetch available apps for this file type
+  // Fetch available apps — show all installed apps for any file
   useEffect(() => {
-    if (file.isDirectory || !file.extension) return
-    window.api.apps.getOpenWith(file.extension)
+    if (file.isDirectory) return
+    window.api.apps.getOpenWith(file.extension || '')
       .then(setOpenWithApps)
       .catch(() => setOpenWithApps([]))
   }, [file])
 
-  const adjustedX = Math.min(x, window.innerWidth - 200)
-  const adjustedY = Math.min(y, window.innerHeight - 400)
+  // Adjust position to keep menu within viewport with some margin
+  const menuWidth = 220
+  const menuHeight = 400
+  const adjustedX = Math.max(8, Math.min(x, window.innerWidth - menuWidth))
+  const adjustedY = Math.max(8, Math.min(y, window.innerHeight - menuHeight))
 
   const isFile = !file.isDirectory
   const isPrint = isFile && ['pdf', 'ai', 'psd', 'eps', 'indd', 'tiff'].includes(file.type)
@@ -60,13 +64,10 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 min-w-[200px] bg-bg-tertiary border border-border rounded-lg shadow-xl py-1.5 animate-in fade-in zoom-in-95 duration-100"
-      style={{ left: adjustedX, top: adjustedY }}
+      className="fixed z-50 bg-bg-tertiary border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-100"
+      style={{ left: adjustedX, top: adjustedY, minWidth: 200, padding: 6 }}
     >
-      {/* Preview / Open */}
-      {isFile && (
-        <MenuItem icon={<Eye size={13} />} label="Preview" onClick={() => onAction('preview')} />
-      )}
+      {/* Open in app */}
       <MenuItem icon={<ExternalLink size={13} />} label="Open in app" onClick={() => onAction('openInApp')} />
 
       {/* Open with submenu */}
@@ -77,22 +78,24 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
           onMouseLeave={() => setShowOpenWith(false)}
         >
           <button
-            className="w-full flex items-center gap-3 px-4 py-2 text-xs text-left hover:bg-bg-hover transition-colors text-text-secondary"
+            className="w-full flex items-center text-left hover:bg-bg-hover transition-colors text-text-secondary"
+            style={{ gap: 10, padding: '7px 12px', fontSize: 12, borderRadius: 4 }}
           >
-            <span className="flex-shrink-0"><ExternalLink size={13} /></span>
+            <span style={{ flexShrink: 0 }}><ExternalLink size={13} /></span>
             Open with
-            <ChevronRight size={11} className="ml-auto text-text-muted" />
+            <ChevronRight size={11} style={{ marginLeft: 'auto', color: '#64748b' }} />
           </button>
 
           {showOpenWith && (
             <div
-              className="absolute z-50 min-w-[160px] bg-bg-tertiary border border-border rounded-lg shadow-xl py-1"
-              style={{ left: '100%', top: 0, marginLeft: -2 }}
+              className="absolute z-50 border border-border rounded-lg shadow-xl"
+              style={{ minWidth: 160, padding: 6, left: '100%', top: 0, marginLeft: -2, background: 'var(--th-bg-primary)' }}
             >
               {openWithApps.map(app => (
                 <button
                   key={app.id}
-                  className="w-full flex items-center gap-3 px-4 py-2 text-xs text-left hover:bg-bg-hover transition-colors text-text-secondary"
+                  className="w-full flex items-center text-left hover:bg-bg-hover transition-colors text-text-secondary"
+                  style={{ gap: 10, padding: '7px 12px', fontSize: 12, borderRadius: 4 }}
                   onClick={() => {
                     window.api.apps.openWith(app.path, file.path)
                     onClose()
@@ -119,40 +122,52 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
         </>
       )}
 
-      {/* PressCal actions */}
-      {isFile && (
-        <>
-          <MenuItem icon={<Link2 size={13} />} label="Link to Quote..." onClick={() => onAction('linkQuote')} />
-          <MenuItem icon={<Link2 size={13} />} label="Link to Job..." onClick={() => onAction('linkJob')} />
-          <MenuItem icon={<Link2 size={13} />} label="Link to Customer..." onClick={() => onAction('linkCustomer')} />
-          <MenuItem icon={<FileText size={13} />} label="Send via Email..." onClick={() => onAction('sendEmail')} />
-          <Divider />
-        </>
-      )}
+      {/* Copy / Cut / Paste */}
+      <MenuItem icon={<Copy size={13} />} label="Copy" onClick={() => onAction('copyFile')} shortcut="Ctrl+C" />
+      <MenuItem icon={<Scissors size={13} />} label="Cut" onClick={() => onAction('cutFile')} shortcut="Ctrl+X" />
+      <PasteMenuItem onAction={onAction} />
+
+      <Divider />
 
       {/* File operations */}
       <MenuItem icon={<Copy size={13} />} label="Copy path" onClick={() => onAction('copyPath')} />
       <MenuItem icon={<Star size={13} />} label={file.isDirectory ? 'Bookmark folder' : 'Copy name'} onClick={() => onAction(file.isDirectory ? 'bookmark' : 'copyName')} />
+
+      <Divider />
+      <MenuItem icon={<Trash2 size={13} />} label="Delete" onClick={() => onAction('delete')} danger />
     </div>
   )
 }
 
-function MenuItem({ icon, label, onClick, accent, danger }: {
+function PasteMenuItem({ onAction }: { onAction: (action: string) => void }) {
+  const clipboard = useAppStore(s => s.clipboard)
+  if (!clipboard) return null
+  const count = clipboard.files.length
+  const label = `Paste${count > 1 ? ` (${count})` : ''}`
+  return <MenuItem icon={<Clipboard size={13} />} label={label} onClick={() => onAction('pasteFile')} shortcut="Ctrl+V" />
+}
+
+function MenuItem({ icon, label, onClick, accent, danger, shortcut, disabled }: {
   icon: React.ReactNode
   label: string
   onClick: () => void
   accent?: boolean
   danger?: boolean
+  shortcut?: string
+  disabled?: boolean
 }) {
   return (
     <button
-      className={`w-full flex items-center gap-3 px-4 py-2 text-xs text-left hover:bg-bg-hover transition-colors ${
+      className={`w-full flex items-center text-left hover:bg-bg-hover transition-colors ${
+        disabled ? 'text-text-muted cursor-not-allowed' :
         accent ? 'text-accent' : danger ? 'text-error' : 'text-text-secondary'
       }`}
-      onClick={onClick}
+      style={{ gap: 10, padding: '7px 12px', fontSize: 12, borderRadius: 4 }}
+      onClick={disabled ? undefined : onClick}
     >
-      <span className="flex-shrink-0">{icon}</span>
-      {label}
+      <span style={{ flexShrink: 0 }}>{icon}</span>
+      <span style={{ flex: 1 }}>{label}</span>
+      {shortcut && <span style={{ fontSize: 10, color: 'var(--th-text-muted)', opacity: 0.6 }}>{shortcut}</span>}
     </button>
   )
 }
