@@ -33,6 +33,7 @@ const api = {
     move: (sourcePaths: string[], targetDir: string) => ipcRenderer.invoke('fs:move', sourcePaths, targetDir),
     copy: (sourcePaths: string[], targetDir: string) => ipcRenderer.invoke('fs:copy', sourcePaths, targetDir),
     trash: (paths: string[]) => ipcRenderer.invoke('fs:trash', paths),
+    createDirectory: (dirPath: string) => ipcRenderer.invoke('fs:createDirectory', dirPath),
     watch: (dirPath: string) => ipcRenderer.invoke('fs:watch', dirPath),
     unwatch: () => ipcRenderer.invoke('fs:unwatch'),
     onChanged: (callback: (dirPath: string) => void) => {
@@ -172,6 +173,52 @@ const api = {
   color: {
     extractPalette: (path: string, count?: number) => ipcRenderer.invoke('color:extractPalette', path, count),
     inkCoverage: (path: string) => ipcRenderer.invoke('color:inkCoverage', path)
+  },
+
+  // Tools
+  tools: {
+    // Pantone
+    pantoneSearch: (query: string) => ipcRenderer.invoke('tools:pantoneSearch', query),
+    pantoneFromRgb: (r: number, g: number, b: number, count?: number) => ipcRenderer.invoke('tools:pantoneFromRgb', r, g, b, count),
+    rgbToCmyk: (r: number, g: number, b: number) => ipcRenderer.invoke('tools:rgbToCmyk', r, g, b),
+    cmykToRgb: (c: number, m: number, y: number, k: number) => ipcRenderer.invoke('tools:cmykToRgb', c, m, y, k),
+
+    // Barcodes
+    generateBarcode: (type: string, data: string) => ipcRenderer.invoke('tools:generateBarcode', type, data),
+    saveBarcodeImage: (svgData: string, format: 'svg' | 'png') => ipcRenderer.invoke('tools:saveBarcodeImage', svgData, format),
+
+    // Job folders
+    getFolderTemplates: () => ipcRenderer.invoke('tools:getFolderTemplates'),
+    createJobFolders: (basePath: string, templateName: string, jobName: string) => ipcRenderer.invoke('tools:createJobFolders', basePath, templateName, jobName),
+
+    // File packaging
+    collectFiles: (sourcePaths: string[], targetDir: string) => ipcRenderer.invoke('tools:collectFiles', sourcePaths, targetDir),
+    collectJobFiles: (jobDir: string) => ipcRenderer.invoke('tools:collectJobFiles', jobDir),
+
+    // Annotations
+    loadAnnotations: (filePath: string) => ipcRenderer.invoke('tools:loadAnnotations', filePath),
+    saveAnnotations: (filePath: string, annotations: any[]) => ipcRenderer.invoke('tools:saveAnnotations', filePath, annotations),
+
+    // Version history
+    getVersions: (filePath: string) => ipcRenderer.invoke('tools:getVersions', filePath),
+
+    // ICC Profile
+    getIccProfile: (filePath: string) => ipcRenderer.invoke('tools:getIccProfile', filePath),
+
+    // Compare
+    compareFiles: (path1: string, path2: string) => ipcRenderer.invoke('tools:compareFiles', path1, path2),
+
+    // Print checklist
+    printChecklist: (filePath: string) => ipcRenderer.invoke('tools:printChecklist', filePath),
+
+    // Spot colors
+    extractSpotColors: (filePath: string) => ipcRenderer.invoke('tools:extractSpotColors', filePath),
+
+    // Picks
+    loadPicks: (dirPath: string) => ipcRenderer.invoke('tools:loadPicks', dirPath),
+    togglePick: (dirPath: string, fileName: string) => ipcRenderer.invoke('tools:togglePick', dirPath, fileName),
+    setPicks: (dirPath: string, fileNames: string[]) => ipcRenderer.invoke('tools:setPicks', dirPath, fileNames),
+    clearPicks: (dirPath: string) => ipcRenderer.invoke('tools:clearPicks', dirPath),
   }
 }
 

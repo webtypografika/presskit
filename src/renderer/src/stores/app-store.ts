@@ -4,7 +4,7 @@ import type { FileEntry, FileMetadata, PreviewResult, PreflightReport } from '..
 export type ViewMode = 'grid' | 'list'
 export type Source = 'local' | 'dropbox'
 export type Theme = 'dark' | 'light'
-export type InspectorTab = 'metadata' | 'preflight' | 'presscal'
+export type InspectorTab = 'metadata' | 'preflight' | 'presscal' | 'tools'
 
 export interface Tab {
   id: string
@@ -126,6 +126,21 @@ interface AppState {
   cutFiles: () => void
   pasteFiles: () => Promise<void>
   selectAll: () => void
+
+  // New folder
+  newFolderPending: boolean
+  requestNewFolder: () => void
+  clearNewFolder: () => void
+  createNewFolder: (name: string) => Promise<void>
+
+  // Picks
+  pickedFiles: Set<string>  // set of filenames (not paths)
+  picksFilter: 'all' | 'picked' | 'unpicked'
+  loadPicks: () => Promise<void>
+  togglePick: (fileName: string) => Promise<void>
+  togglePickSelected: () => Promise<void>
+  clearPicks: () => Promise<void>
+  setPicksFilter: (filter: 'all' | 'picked' | 'unpicked') => void
 }
 
 export const useAppStore = create<AppState>((set, get) => {
@@ -360,6 +375,11 @@ export const useAppStore = create<AppState>((set, get) => {
           historyIndex: newHistory.length - 1
         })
 
+        // Load picks for this directory
+        if (source === 'local' && path) {
+          get().loadPicks()
+        }
+
         // Start watching this directory
         if (source === 'local' && path) {
           window.api.fs.watch(path)
@@ -538,29 +558,35 @@ export const useAppStore = create<AppState>((set, get) => {
     copyFiles: () => {
       const { selectedFiles, selectedFile } = get()
       const files = selectedFiles.length > 0 ? selectedFiles : (selectedFile ? [selectedFile] : [])
+      console.log('[COPY]', files.length, 'files', files.map(f => f.name))
       if (files.length > 0) set({ clipboard: { files, mode: 'copy' } })
     },
 
     cutFiles: () => {
       const { selectedFiles, selectedFile } = get()
       const files = selectedFiles.length > 0 ? selectedFiles : (selectedFile ? [selectedFile] : [])
+      console.log('[CUT]', files.length, 'files', files.map(f => f.name))
       if (files.length > 0) set({ clipboard: { files, mode: 'cut' } })
     },
 
     pasteFiles: async () => {
       const { clipboard, currentPath } = get()
+      console.log('[PASTE]', { hasClipboard: !!clipboard, currentPath, mode: clipboard?.mode, fileCount: clipboard?.files.length })
       if (!clipboard || !currentPath) return
       const paths = clipboard.files.map(f => f.path)
       try {
+        let results: any
         if (clipboard.mode === 'copy') {
-          await window.api.fs.copy(paths, currentPath)
+          results = await window.api.fs.copy(paths, currentPath)
         } else {
-          await window.api.fs.move(paths, currentPath)
+          results = await window.api.fs.move(paths, currentPath)
           set({ clipboard: null })
         }
+        console.log('[PASTE] results:', results)
         await get().refreshDirectory()
       } catch (err) {
         console.error('Paste failed:', err)
+        alert(`Paste failed: ${(err as any)?.message || err}`)
       }
     },
 
@@ -569,5 +595,85 @@ export const useAppStore = create<AppState>((set, get) => {
       if (!tab) return
       updateActiveTab({ selectedFiles: tab.files })
     },
+
+    // New folder
+    newFolderPending: false,
+    requestNewFolder: () => set({ newFolderPending: true }),
+    clearNewFolder: () => set({ newFolderPending: false }),
+    createNewFolder: async (name: string) => {
+      const { currentPath } = get()
+      if (!name.trim() || !currentPath) {
+        set({ newFolderPending: false })
+        return
+      }
+      const sep = currentPath.includes('/') ? '/' : '\\'
+      const fullPath = currentPath + sep + name.trim()
+      const result = await window.api.fs.createDirectory(fullPath)
+      set({ newFolderPending: false })
+      if (result.ok) {
+        await get().refreshDirectory()
+      } else {
+        alert(`Αποτυχία δημιουργίας φακέλου: ${result.error}`)
+      }
+    },
+
+    // Picks
+    pickedFiles: new Set<string>(),
+    picksFilter: 'all',
+
+    loadPicks: async () => {
+      const { currentPath } = get()
+      if (!currentPath) return
+      try {
+        const data = await window.api.tools.loadPicks(currentPath)
+        set({ pickedFiles: new Set(data.picked || []) })
+      } catch {
+        set({ pickedFiles: new Set() })
+      }
+    },
+
+    togglePick: async (fileName: string) => {
+      const { currentPath } = get()
+      if (!currentPath) return
+      try {
+        const newPicked = await window.api.tools.togglePick(currentPath, fileName)
+        set({ pickedFiles: new Set(newPicked) })
+      } catch {}
+    },
+
+    togglePickSelected: async () => {
+      const { currentPath, selectedFiles, selectedFile, pickedFiles } = get()
+      if (!currentPath) return
+      const files = selectedFiles.length > 0
+        ? selectedFiles.filter(f => !f.isDirectory)
+        : selectedFile && !selectedFile.isDirectory ? [selectedFile] : []
+      if (files.length === 0) return
+
+      // If all selected are already picked → unpick them, otherwise pick them all
+      const allPicked = files.every(f => pickedFiles.has(f.name))
+      const newSet = new Set(pickedFiles)
+      for (const f of files) {
+        if (allPicked) {
+          newSet.delete(f.name)
+        } else {
+          newSet.add(f.name)
+        }
+      }
+      try {
+        await window.api.tools.setPicks(currentPath, [...newSet])
+        set({ pickedFiles: newSet })
+      } catch {}
+    },
+
+    clearPicks: async () => {
+      const { currentPath } = get()
+      if (!currentPath) return
+      try {
+        await window.api.tools.clearPicks(currentPath)
+        set({ pickedFiles: new Set() })
+      } catch {}
+    },
+
+    setPicksFilter: (filter) => set({ picksFilter: filter }),
   }
 })

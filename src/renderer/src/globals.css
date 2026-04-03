@@ -279,3 +279,12 @@ label {
 .quote-card-hover:hover button[title="Διαγραφή"] {
   opacity: 1 !important;
 }
+
+/* Pick badge — show on hover of parent grid/list item */
+[data-file-item]:hover .pick-badge {
+  opacity: 0.5 !important;
+}
+[data-file-item]:hover .pick-badge:hover {
+  opacity: 1 !important;
+  transform: scale(1.3);
+}

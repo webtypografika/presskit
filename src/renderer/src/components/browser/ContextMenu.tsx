@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   ExternalLink, FolderOpen, Scan, RefreshCw,
-  Copy, Star, ChevronRight, Trash2, Scissors, Clipboard
+  Copy, Star, ChevronRight, Trash2, Scissors, Clipboard, CircleCheck, Circle,
+  FolderPlus
 } from 'lucide-react'
 import type { FileEntry } from '@/lib/file-types'
 import { useAppStore } from '@/stores/app-store'
@@ -60,6 +61,8 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
 
   const isFile = !file.isDirectory
   const isPrint = isFile && ['pdf', 'ai', 'psd', 'eps', 'indd', 'tiff'].includes(file.type)
+  const { pickedFiles } = useAppStore()
+  const isPicked = isFile && pickedFiles.has(file.name)
 
   return (
     <div
@@ -67,6 +70,19 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
       className="fixed z-50 bg-bg-tertiary border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-100"
       style={{ left: adjustedX, top: adjustedY, minWidth: 200, padding: 6 }}
     >
+      {/* Pick/Unpick */}
+      {isFile && (
+        <>
+          <MenuItem
+            icon={isPicked ? <CircleCheck size={13} /> : <Circle size={13} />}
+            label={isPicked ? 'Unpick' : 'Pick'}
+            onClick={() => onAction('togglePick')}
+            accent={!isPicked}
+          />
+          <Divider />
+        </>
+      )}
+
       {/* Open in app */}
       <MenuItem icon={<ExternalLink size={13} />} label="Open in app" onClick={() => onAction('openInApp')} />
 
@@ -134,6 +150,7 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
       <MenuItem icon={<Star size={13} />} label={file.isDirectory ? 'Bookmark folder' : 'Copy name'} onClick={() => onAction(file.isDirectory ? 'bookmark' : 'copyName')} />
 
       <Divider />
+      <MenuItem icon={<FolderPlus size={13} />} label="Νέος Φάκελος" onClick={() => onAction('newFolder')} />
       <MenuItem icon={<Trash2 size={13} />} label="Delete" onClick={() => onAction('delete')} danger />
     </div>
   )

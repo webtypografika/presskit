@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import { useAppStore } from '@/stores/app-store'
 import { formatFileSize } from '@/lib/file-types'
-import { HardDrive, Cloud, Link2, Scan, Settings, Sun, Moon } from 'lucide-react'
+import { HardDrive, Cloud, Link2, Scan, Settings, Sun, Moon, CircleCheck, CircleDashed } from 'lucide-react'
 import { SettingsDialog } from '../tools/SettingsDialog'
 
 export function StatusBar() {
   const {
     files, selectedFile, currentPath, source,
     presscalConnected, dropboxConnected,
-    preflight, theme, setTheme
+    preflight, theme, setTheme,
+    pickedFiles, picksFilter, setPicksFilter, clearPicks
   } = useAppStore()
 
   const [showSettings, setShowSettings] = useState(false)
@@ -16,6 +17,7 @@ export function StatusBar() {
 
   const fileCount = files.filter(f => !f.isDirectory).length
   const folderCount = files.filter(f => f.isDirectory).length
+  const pickedCount = pickedFiles.size
 
   return (
     <>
@@ -34,6 +36,41 @@ export function StatusBar() {
             {fileCount > 0 && `${fileCount} files`}
             {folderCount === 0 && fileCount === 0 && 'Empty'}
           </span>
+
+          {/* Picks counter + filter */}
+          {pickedCount > 0 && (
+            <>
+              <div className="w-px h-4 bg-border" />
+              <span className="flex items-center gap-1" style={{ color: '#22c55e', fontWeight: 600 }}>
+                <CircleCheck size={12} />
+                {pickedCount} picked
+              </span>
+              {/* Filter buttons */}
+              <div style={{ display: 'flex', gap: 2, background: 'var(--th-bg-primary)', borderRadius: 6, padding: 2 }}>
+                {(['all', 'picked', 'unpicked'] as const).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setPicksFilter(f)}
+                    style={{
+                      padding: '1px 8px', borderRadius: 4, fontSize: 11, fontWeight: 500,
+                      border: 'none', cursor: 'pointer',
+                      background: picksFilter === f ? (f === 'picked' ? 'rgba(34,197,94,0.15)' : f === 'unpicked' ? 'rgba(234,179,8,0.15)' : 'rgba(245,130,32,0.15)') : 'transparent',
+                      color: picksFilter === f ? (f === 'picked' ? '#22c55e' : f === 'unpicked' ? '#eab308' : '#f58220') : '#64748b',
+                    }}
+                  >
+                    {f === 'all' ? 'All' : f === 'picked' ? 'Picked' : 'Unpicked'}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={clearPicks}
+                title="Clear all picks"
+                style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b', fontSize: 11, padding: '1px 4px' }}
+              >
+                Clear
+              </button>
+            </>
+          )}
 
           {/* Selected file info */}
           {selectedFile && !selectedFile.isDirectory && (

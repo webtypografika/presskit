@@ -8,21 +8,33 @@ import Store from 'electron-store'
 const store = new Store()
 
 let db: Database.Database | null = null
-let watcher: any = null
 let indexing = false
 let indexed = false
 
-function getDb(): Database.Database {
-  if (db) return db
+function getDbPath(): string {
+  return join(app.getPath('userData'), 'search-index.db')
+}
 
-  const dbPath = join(app.getPath('userData'), 'search-index.db')
-  db = new Database(dbPath)
+function destroyDb(): void {
+  if (db) {
+    try { db.close() } catch {}
+    db = null
+  }
+  const dbPath = getDbPath()
+  for (const suffix of ['', '-wal', '-shm']) {
+    try { require('fs').unlinkSync(dbPath + suffix) } catch {}
+  }
+  console.log('[SEARCH] Destroyed database, will recreate')
+}
 
-  // Enable WAL mode for better performance
-  db.pragma('journal_mode = WAL')
+function createDb(): Database.Database {
+  const dbPath = getDbPath()
+  const d = new Database(dbPath)
 
-  // Create tables
-  db.exec(`
+  d.pragma('journal_mode = WAL')
+  d.pragma('synchronous = NORMAL')
+
+  d.exec(`
     CREATE TABLE IF NOT EXISTS files (
       path TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -35,12 +47,12 @@ function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_name_lower ON files(name_lower);
+    CREATE INDEX IF NOT EXISTS idx_name ON files(name COLLATE NOCASE);
     CREATE INDEX IF NOT EXISTS idx_dir ON files(dir);
     CREATE INDEX IF NOT EXISTS idx_ext ON files(ext);
   `)
 
-  // FTS5 virtual table for fuzzy search
-  db.exec(`
+  d.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
       name, path,
       content='files',
@@ -49,20 +61,40 @@ function getDb(): Database.Database {
     );
   `)
 
-  return db
+  return d
 }
 
-// Normalize name for better matching: split on _ - . spaces, camelCase
+function getDb(): Database.Database {
+  if (db) return db
+
+  try {
+    db = createDb()
+    db.pragma('integrity_check')
+    return db
+  } catch (err: any) {
+    console.error('[SEARCH] Database corrupt:', err.message)
+    destroyDb()
+    db = createDb()
+    return db
+  }
+}
+
+// Normalize name for better matching
 function tokenize(name: string): string {
   return name
-    .replace(/\.[^.]+$/, '') // remove extension
-    .replace(/([a-z])([A-Z])/g, '$1 $2') // camelCase split
-    .replace(/[_\-.\s]+/g, ' ') // separators to spaces
+    .replace(/\.[^.]+$/, '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_\-.\s]+/g, ' ')
     .toLowerCase()
     .trim()
 }
 
-async function scanDirectory(dirPath: string, depth = 0, maxDepth = 6): Promise<void> {
+// Yield control to event loop periodically to avoid freezing
+function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms))
+}
+
+async function scanDirectory(dirPath: string, depth = 0, maxDepth = 4): Promise<void> {
   if (depth > maxDepth) return
 
   try {
@@ -75,10 +107,12 @@ async function scanDirectory(dirPath: string, depth = 0, maxDepth = 6): Promise<
     `)
 
     const batch: (() => void)[] = []
+    const subdirs: string[] = []
 
     for (const name of names) {
       if (name.startsWith('.') || name === 'node_modules' || name === '.git' ||
-          name === 'Thumbs.db' || name === 'desktop.ini' || name === '$RECYCLE.BIN') continue
+          name === 'Thumbs.db' || name === 'desktop.ini' || name === '$RECYCLE.BIN' ||
+          name === 'System Volume Information') continue
 
       const fullPath = join(dirPath, name)
       try {
@@ -94,7 +128,7 @@ async function scanDirectory(dirPath: string, depth = 0, maxDepth = 6): Promise<
         })
 
         if (isDir) {
-          await scanDirectory(fullPath, depth + 1, maxDepth)
+          subdirs.push(fullPath)
         }
       } catch {
         // Skip inaccessible files
@@ -102,21 +136,39 @@ async function scanDirectory(dirPath: string, depth = 0, maxDepth = 6): Promise<
     }
 
     // Batch insert in transaction
-    const transaction = d.transaction(() => {
-      for (const fn of batch) fn()
-    })
-    transaction()
+    if (batch.length > 0) {
+      const transaction = d.transaction(() => {
+        for (const fn of batch) fn()
+      })
+      transaction()
+    }
+
+    // Yield to event loop every directory to prevent freezing
+    await sleep(1)
+
+    // Recurse into subdirectories
+    for (const sub of subdirs) {
+      await scanDirectory(sub, depth + 1, maxDepth)
+    }
   } catch {
     // Skip inaccessible directories
   }
 }
 
 function rebuildFts(): void {
-  const d = getDb()
-  d.exec(`
-    DELETE FROM files_fts;
-    INSERT INTO files_fts(rowid, name, path) SELECT rowid, name, path FROM files;
-  `)
+  try {
+    const d = getDb()
+    d.exec(`
+      DELETE FROM files_fts;
+      INSERT INTO files_fts(rowid, name, path) SELECT rowid, name, path FROM files;
+    `)
+  } catch (err: any) {
+    console.error('[SEARCH] rebuildFts failed:', err.message)
+    try {
+      destroyDb()
+      getDb()
+    } catch {}
+  }
 }
 
 async function buildIndex(): Promise<{ count: number; ms: number }> {
@@ -124,131 +176,76 @@ async function buildIndex(): Promise<{ count: number; ms: number }> {
   indexing = true
 
   const start = Date.now()
-  const d = getDb()
 
-  // Get watched paths: bookmarks + Dropbox + customer folders
-  const bookmarks = (store.get('paths.bookmarks') as string[]) || []
-  const home = process.env.USERPROFILE || process.env.HOME || ''
+  try {
+    const d = getDb()
 
-  const paths = new Set<string>()
+    const bookmarks = (store.get('paths.bookmarks') as string[]) || []
+    const home = process.env.USERPROFILE || process.env.HOME || ''
 
-  // Always index Dropbox
-  const dropboxCandidates = [
-    join(home, 'Dropbox'),
-    join(home, 'Documents', 'Dropbox'),
-    'D:\\Dropbox'
-  ]
-  for (const p of dropboxCandidates) {
-    if (existsSync(p)) { paths.add(p); break }
+    const paths = new Set<string>()
+
+    // Dropbox
+    const dropboxCandidates = [
+      join(home, 'Dropbox'),
+      join(home, 'Documents', 'Dropbox'),
+      'D:\\Dropbox'
+    ]
+    for (const p of dropboxCandidates) {
+      if (existsSync(p)) { paths.add(p); break }
+    }
+
+    // Bookmarks
+    for (const b of bookmarks) {
+      if (existsSync(b)) paths.add(b)
+    }
+
+    // Desktop, Downloads
+    const desktop = join(home, 'Desktop')
+    const downloads = join(home, 'Downloads')
+    if (existsSync(desktop)) paths.add(desktop)
+    if (existsSync(downloads)) paths.add(downloads)
+
+    // Scan all paths with depth limit 4 (was 6)
+    for (const p of paths) {
+      await scanDirectory(p, 0, 4)
+    }
+
+    // Rebuild FTS index
+    rebuildFts()
+
+    const count = (d.prepare('SELECT COUNT(*) as c FROM files').get() as any).c
+    const ms = Date.now() - start
+
+    indexed = true
+
+    // No chokidar watcher — too heavy on Dropbox folders.
+    // New files are picked up on next index rebuild or via search:addPath.
+
+    console.log(`[SEARCH] Index built: ${count} files in ${ms}ms`)
+    return { count, ms }
+  } catch (err: any) {
+    console.error('[SEARCH] buildIndex failed:', err.message)
+    destroyDb()
+    indexed = false
+    return { count: 0, ms: Date.now() - start }
+  } finally {
+    indexing = false
   }
-
-  // Bookmarks
-  for (const b of bookmarks) {
-    if (existsSync(b)) paths.add(b)
-  }
-
-  // Desktop, Downloads
-  const desktop = join(home, 'Desktop')
-  const downloads = join(home, 'Downloads')
-  if (existsSync(desktop)) paths.add(desktop)
-  if (existsSync(downloads)) paths.add(downloads)
-
-  // Scan all paths
-  for (const p of paths) {
-    await scanDirectory(p)
-  }
-
-  // Rebuild FTS index
-  rebuildFts()
-
-  const count = (d.prepare('SELECT COUNT(*) as c FROM files').get() as any).c
-  const ms = Date.now() - start
-
-  indexing = false
-  indexed = true
-
-  // Start file watcher
-  startWatcher([...paths])
-
-  return { count, ms }
 }
 
-async function startWatcher(paths: string[]): Promise<void> {
-  if (watcher) watcher.close()
-
-  const { watch } = await import('chokidar')
-  watcher = watch(paths, {
-    ignored: /(^|[\/\\])(\.|node_modules|\.git|Thumbs\.db|desktop\.ini|\$RECYCLE\.BIN)/,
-    persistent: true,
-    ignoreInitial: true,
-    depth: 6,
-    awaitWriteFinish: { stabilityThreshold: 500 }
-  })
-
-  const d = getDb()
-  const insertStmt = d.prepare(`
-    INSERT OR REPLACE INTO files (path, name, name_lower, dir, ext, size, modified, is_dir)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `)
-  const deleteStmt = d.prepare('DELETE FROM files WHERE path = ?')
-
-  const updateFts = (path: string, name: string, remove = false) => {
-    try {
-      if (remove) {
-        d.exec(`DELETE FROM files_fts WHERE path = '${path.replace(/'/g, "''")}'`)
-      } else {
-        // Remove then re-insert
-        d.exec(`DELETE FROM files_fts WHERE path = '${path.replace(/'/g, "''")}'`)
-        d.exec(`INSERT INTO files_fts(name, path) VALUES ('${name.replace(/'/g, "''")}', '${path.replace(/'/g, "''")}')`)
-      }
-    } catch {}
-  }
-
-  watcher.on('add', (filePath: string) => {
-    try {
-      const s = require('fs').statSync(filePath)
-      const name = basename(filePath)
-      const dir = join(filePath, '..')
-      const ext = extname(name).toLowerCase()
-      insertStmt.run(filePath, name, tokenize(name), dir, ext, s.size, Math.floor(s.mtimeMs), 0)
-      updateFts(filePath, name)
-    } catch {}
-  })
-
-  watcher.on('addDir', (dirPath: string) => {
-    try {
-      const name = basename(dirPath)
-      const dir = join(dirPath, '..')
-      insertStmt.run(dirPath, name, tokenize(name), dir, '', 0, Date.now(), 1)
-      updateFts(dirPath, name)
-    } catch {}
-  })
-
-  watcher.on('unlink', (filePath: string) => {
-    try {
-      deleteStmt.run(filePath)
-      updateFts(filePath, '', true)
-    } catch {}
-  })
-
-  watcher.on('unlinkDir', (dirPath: string) => {
-    try {
-      // Delete dir and all children
-      d.prepare("DELETE FROM files WHERE path LIKE ? || '%'").run(dirPath)
-      deleteStmt.run(dirPath)
-      updateFts(dirPath, '', true)
-    } catch {}
-  })
-}
 
 function search(query: string, limit = 30): any[] {
   const d = getDb()
   const q = query.trim().toLowerCase()
   if (!q) return []
 
-  // Strategy 1: FTS5 match (fast, tokenized)
+  const results: any[] = []
+  const seen = new Set<string>()
+
+  // Strategy 1: FTS5 prefix match
   try {
-    const ftsQuery = q.split(/\s+/).map(t => `"${t}"*`).join(' AND ')
+    const ftsQuery = q.split(/\s+/).filter(Boolean).map(t => `"${t}"*`).join(' AND ')
     const ftsResults = d.prepare(`
       SELECT f.path, f.name, f.dir, f.ext, f.size, f.modified, f.is_dir
       FROM files_fts ft
@@ -257,40 +254,48 @@ function search(query: string, limit = 30): any[] {
       ORDER BY rank
       LIMIT ?
     `).all(ftsQuery, limit) as any[]
-
-    if (ftsResults.length > 0) return ftsResults
+    for (const r of ftsResults) {
+      if (!seen.has(r.path)) { results.push(r); seen.add(r.path) }
+    }
   } catch {}
 
-  // Strategy 2: LIKE fallback (slower but catches everything)
-  const words = q.split(/\s+/).filter(Boolean)
-  const conditions = words.map(() => 'name_lower LIKE ?').join(' AND ')
-  const params = words.map(w => `%${w}%`)
+  // Strategy 2: LIKE on actual name (forgiving substring match)
+  if (results.length < limit) {
+    try {
+      const words = q.split(/\s+/).filter(Boolean)
+      const conditions = words.map(() => 'LOWER(name) LIKE ?').join(' AND ')
+      const params = words.map(w => `%${w}%`)
 
-  return d.prepare(`
-    SELECT path, name, dir, ext, size, modified, is_dir
-    FROM files
-    WHERE ${conditions}
-    ORDER BY is_dir DESC, name ASC
-    LIMIT ?
-  `).all(...params, limit) as any[]
+      const likeResults = d.prepare(`
+        SELECT path, name, dir, ext, size, modified, is_dir
+        FROM files
+        WHERE ${conditions}
+        ORDER BY is_dir DESC, name ASC
+        LIMIT ?
+      `).all(...params, limit) as any[]
+
+      for (const r of likeResults) {
+        if (!seen.has(r.path)) { results.push(r); seen.add(r.path) }
+      }
+    } catch {}
+  }
+
+  return results.slice(0, limit)
 }
 
 export function registerSearchHandlers(ipcMain: IpcMain): void {
-  // Build/rebuild index
   ipcMain.handle('search:buildIndex', async () => {
     return buildIndex()
   })
 
-  // Search
   ipcMain.handle('search:query', async (_e, query: string, limit?: number) => {
-    if (!indexed) {
-      // First time — build index, then search
-      await buildIndex()
+    // Don't block on index build — search whatever is available
+    if (!indexed && !indexing) {
+      buildIndex().catch(() => {})
     }
     return search(query, limit || 30)
   })
 
-  // Get index stats
   ipcMain.handle('search:stats', async () => {
     try {
       const d = getDb()
@@ -301,12 +306,10 @@ export function registerSearchHandlers(ipcMain: IpcMain): void {
     }
   })
 
-  // Add path to index (e.g. when customer folder is set)
   ipcMain.handle('search:addPath', async (_e, dirPath: string) => {
     if (!existsSync(dirPath)) return { ok: false }
     await scanDirectory(dirPath)
     rebuildFts()
-    if (watcher) watcher.add(dirPath)
     return { ok: true }
   })
 }

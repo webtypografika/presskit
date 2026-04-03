@@ -1,18 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
-  ExternalLink, FolderOpen, Eye, Columns, Rows, Calculator
+  ExternalLink, FolderOpen, Eye, Columns, Rows, Calculator,
+  RectangleHorizontal, Pencil
 } from 'lucide-react'
 import { useAppStore } from '@/stores/app-store'
 import { FileBrowser } from '../browser/FileBrowser'
 import { PdfPreview } from './PdfPreview'
 import { ImagePreview } from './ImagePreview'
+import { BleedOverlay } from './BleedOverlay'
 import { CostingDialog } from '../presscal/CostingDialog'
+import { AnnotationOverlay } from '../tools/AnnotationOverlay'
 
 export function PreviewPanel() {
   const { selectedFile, previewOpen } = useAppStore()
   const [layout, setLayout] = useState<'side' | 'bottom'>('side')
   const [previewSize, setPreviewSize] = useState(50) // percentage
   const resizingRef = useRef<boolean>(false)
+  const [showBleed, setShowBleed] = useState(false)
+  const [showAnnotations, setShowAnnotations] = useState(false)
 
   const hasPreview = previewOpen && selectedFile && !selectedFile.isDirectory
 
@@ -27,6 +32,7 @@ export function PreviewPanel() {
     if (!container) return
 
     setIsResizing(true)
+    resizingRef.current = true
     const containerRect = container.getBoundingClientRect()
     const totalSize = layout === 'side' ? containerRect.width : containerRect.height
 
@@ -40,6 +46,7 @@ export function PreviewPanel() {
 
     const onMouseUp = () => {
       setIsResizing(false)
+      resizingRef.current = false
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
       document.body.style.cursor = ''
@@ -80,9 +87,9 @@ export function PreviewPanel() {
           onMouseLeave={e => { if (!resizingRef.current) e.currentTarget.style.background = 'transparent' }}
         />
         <div className="flex flex-col overflow-hidden" style={{ flex: `0 0 ${previewSize}%`, minWidth: 200 }}>
-          <PreviewToolbar layout={layout} onToggleLayout={() => setLayout('bottom')} />
+          <PreviewToolbar layout={layout} onToggleLayout={() => setLayout('bottom')} showBleed={showBleed} onToggleBleed={() => setShowBleed(!showBleed)} showAnnotations={showAnnotations} onToggleAnnotations={() => setShowAnnotations(!showAnnotations)} />
           <div className="flex-1 overflow-hidden">
-            <PreviewContent />
+            <PreviewContent showBleed={showBleed} showAnnotations={showAnnotations} />
           </div>
         </div>
       </div>
@@ -103,18 +110,25 @@ export function PreviewPanel() {
         onMouseLeave={e => { if (!resizingRef.current) e.currentTarget.style.background = 'transparent' }}
       />
       <div className="flex flex-col overflow-hidden" style={{ flex: `0 0 ${previewSize}%`, minHeight: 100 }}>
-        <PreviewToolbar layout={layout} onToggleLayout={() => setLayout('side')} />
+        <PreviewToolbar layout={layout} onToggleLayout={() => setLayout('side')} showBleed={showBleed} onToggleBleed={() => setShowBleed(!showBleed)} showAnnotations={showAnnotations} onToggleAnnotations={() => setShowAnnotations(!showAnnotations)} />
         <div className="flex-1 overflow-hidden">
-          <PreviewContent />
+          <PreviewContent showBleed={showBleed} showAnnotations={showAnnotations} />
         </div>
       </div>
     </div>
   )
 }
 
-function PreviewToolbar({ layout, onToggleLayout }: { layout: 'side' | 'bottom'; onToggleLayout: () => void }) {
-  const { selectedFile, presscalConnected } = useAppStore()
+function PreviewToolbar({ layout, onToggleLayout, showBleed, onToggleBleed, showAnnotations, onToggleAnnotations }: {
+  layout: 'side' | 'bottom'; onToggleLayout: () => void
+  showBleed: boolean; onToggleBleed: () => void
+  showAnnotations: boolean; onToggleAnnotations: () => void
+}) {
+  const { selectedFile, presscalConnected, metadata } = useAppStore()
   const [showCosting, setShowCosting] = useState(false)
+
+  const isPdf = selectedFile && ['.pdf', '.ai'].includes(selectedFile.extension?.toLowerCase() || '')
+  const hasTrimBox = metadata?.trimBox != null
 
   return (
     <>
@@ -125,6 +139,38 @@ function PreviewToolbar({ layout, onToggleLayout }: { layout: 'side' | 'bottom';
         </div>
 
         <div className="flex items-center" style={{ gap: 4 }}>
+          {/* Bleed overlay toggle — only for PDFs with TrimBox */}
+          {isPdf && hasTrimBox && (
+            <button
+              onClick={onToggleBleed}
+              title="Trim / Bleed / Safe overlay"
+              className="flex items-center rounded"
+              style={{
+                gap: 4, padding: '4px 8px', fontSize: 11, border: 'none', cursor: 'pointer', borderRadius: 4,
+                background: showBleed ? 'rgba(239,68,68,0.15)' : 'transparent',
+                color: showBleed ? '#ef4444' : '#64748b',
+              }}
+            >
+              <RectangleHorizontal size={13} />
+              Bleed
+            </button>
+          )}
+
+          {/* Annotation toggle */}
+          <button
+            onClick={onToggleAnnotations}
+            title="Annotations / Markup"
+            className="flex items-center rounded"
+            style={{
+              gap: 4, padding: '4px 8px', fontSize: 11, border: 'none', cursor: 'pointer', borderRadius: 4,
+              background: showAnnotations ? 'rgba(245,130,32,0.15)' : 'transparent',
+              color: showAnnotations ? '#f58220' : '#64748b',
+            }}
+          >
+            <Pencil size={13} />
+            Markup
+          </button>
+
           {/* Layout toggle */}
           <button
             onClick={onToggleLayout}
@@ -188,8 +234,22 @@ function PreviewToolbar({ layout, onToggleLayout }: { layout: 'side' | 'bottom';
   )
 }
 
-function PreviewContent() {
+function PreviewContent({ showBleed, showAnnotations }: { showBleed?: boolean; showAnnotations?: boolean }) {
   const { preview, previewLoading, selectedFile, metadata } = useAppStore()
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
+
+  useEffect(() => {
+    if (!containerRef.current) return
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[0]
+      if (entry) {
+        setContainerSize({ w: entry.contentRect.width, h: entry.contentRect.height })
+      }
+    })
+    observer.observe(containerRef.current)
+    return () => observer.disconnect()
+  }, [])
 
   if (previewLoading) {
     return (
@@ -225,20 +285,52 @@ function PreviewContent() {
     )
   }
 
+  // Estimate canvas size for overlays (based on container and aspect ratio)
+  const canvasW = containerSize.w || 600
+  const canvasH = containerSize.h || 400
+
   if (preview.type === 'pdf-page') {
-    return <PdfPreview data={preview.data} />
+    return (
+      <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
+        <PdfPreview data={preview.data} />
+        {showBleed && metadata && (
+          <BleedOverlay
+            metadata={metadata}
+            containerWidth={canvasW}
+            containerHeight={canvasH}
+            canvasWidth={canvasW}
+            canvasHeight={canvasH}
+            visible={showBleed}
+          />
+        )}
+        {showAnnotations && (
+          <AnnotationOverlay previewWidth={canvasW} previewHeight={canvasH} />
+        )}
+      </div>
+    )
   }
 
   if (preview.type === 'image') {
-    return <ImagePreview data={preview.data} layers={preview.layers} />
+    return (
+      <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
+        <ImagePreview data={preview.data} layers={preview.layers} />
+        {showAnnotations && (
+          <AnnotationOverlay previewWidth={canvasW} previewHeight={canvasH} />
+        )}
+      </div>
+    )
   }
 
   if (preview.type === 'svg') {
     return (
-      <div className="w-full h-full flex items-center justify-center overflow-hidden bg-bg-primary"
-        style={{ padding: 16 }}
-        dangerouslySetInnerHTML={{ __html: preview.data }}
-      />
+      <div ref={containerRef} className="w-full h-full flex items-center justify-center overflow-hidden bg-bg-primary"
+        style={{ padding: 16, position: 'relative' }}
+      >
+        <div dangerouslySetInnerHTML={{ __html: preview.data }} />
+        {showAnnotations && (
+          <AnnotationOverlay previewWidth={canvasW} previewHeight={canvasH} />
+        )}
+      </div>
     )
   }
 
@@ -257,13 +349,14 @@ function FontPreviewInline() {
   useEffect(() => {
     if (!selectedFile?.path) return
     let cancelled = false
+    let blobUrl: string | null = null
 
     window.api.fs.readFile(selectedFile.path).then((buffer: any) => {
       if (cancelled) return
       const blob = new Blob([buffer])
-      const url = URL.createObjectURL(blob)
+      blobUrl = URL.createObjectURL(blob)
       const familyName = `preview-${Date.now()}`
-      const face = new FontFace(familyName, `url(${url})`)
+      const face = new FontFace(familyName, `url(${blobUrl})`)
       face.load().then(loaded => {
         if (cancelled) return
         ;(document.fonts as any).add(loaded)
@@ -271,7 +364,10 @@ function FontPreviewInline() {
       }).catch(() => {})
     }).catch(() => {})
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      if (blobUrl) URL.revokeObjectURL(blobUrl)
+    }
   }, [selectedFile?.path])
 
   return (

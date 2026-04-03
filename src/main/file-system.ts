@@ -1,5 +1,5 @@
 import { IpcMain, BrowserWindow } from 'electron'
-import { readdir, stat, readFile } from 'fs/promises'
+import { readdir, stat, readFile, rm, access, mkdir } from 'fs/promises'
 import { join, extname, basename, dirname } from 'path'
 import { existsSync } from 'fs'
 
@@ -354,6 +354,16 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
     return existsSync(filePath)
   })
 
+  // Create a new directory
+  ipcMain.handle('fs:createDirectory', async (_e, dirPath: string) => {
+    try {
+      await mkdir(dirPath, { recursive: false })
+      return { ok: true, path: dirPath }
+    } catch (e: any) {
+      return { ok: false, error: e.message }
+    }
+  })
+
   // Move files/folders to a target directory
   ipcMain.handle('fs:move', async (_e, sourcePaths: string[], targetDir: string) => {
     const { rename, copyFile, mkdir, readdir, stat: fsStat } = await import('fs/promises')
@@ -455,14 +465,61 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('fs:trash', async (_e, paths: string[]) => {
     const { shell } = await import('electron')
     const results: { path: string; ok: boolean; error?: string }[] = []
-    for (const p of paths) {
-      try {
-        await shell.trashItem(p)
-        results.push({ path: p, ok: true })
-      } catch (err: any) {
-        results.push({ path: p, ok: false, error: err.message })
-      }
+
+    // Stop watcher temporarily to avoid file locks on Windows
+    if (watcher) {
+      try { await watcher.close() } catch {}
+      watcher = null
     }
+
+    // Small delay after closing watcher to release file handles
+    await new Promise(r => setTimeout(r, 100))
+
+    for (const p of paths) {
+      let ok = false
+      let lastError = ''
+
+      // First check if file exists
+      try {
+        await access(p)
+      } catch {
+        // File doesn't exist — consider it already deleted
+        results.push({ path: p, ok: true })
+        continue
+      }
+
+      // Method 1: shell.trashItem (moves to Recycle Bin)
+      for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+        try {
+          await shell.trashItem(p)
+          ok = true
+        } catch (err: any) {
+          lastError = err.message || String(err)
+          console.error(`[DELETE] trashItem attempt ${attempt + 1} failed for "${p}":`, lastError)
+          if (attempt < 2) {
+            await new Promise(r => setTimeout(r, 300 * (attempt + 1)))
+          }
+        }
+      }
+
+      // Method 2: fallback to fs.rm if trashItem fails (permanent delete)
+      if (!ok) {
+        console.log(`[DELETE] Falling back to fs.rm for "${p}"`)
+        try {
+          const fileStat = await stat(p)
+          await rm(p, { recursive: fileStat.isDirectory(), force: true })
+          ok = true
+          lastError = ''
+        } catch (err: any) {
+          lastError = `trashItem failed, rm also failed: ${err.message || String(err)}`
+          console.error(`[DELETE] fs.rm also failed for "${p}":`, lastError)
+        }
+      }
+
+      results.push({ path: p, ok, error: ok ? undefined : lastError })
+    }
+
+    console.log(`[DELETE] Results:`, results.map(r => `${basename(r.path)}: ${r.ok ? 'OK' : r.error}`).join(', '))
     return results
   })
 

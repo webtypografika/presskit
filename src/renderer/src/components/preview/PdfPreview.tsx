@@ -11,10 +11,12 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 export function PdfPreview({ data }: { data: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [pdf, setPdf] = useState<any>(null)
+  const pdfRef = useRef<any>(null)
+  const renderingRef = useRef(false)
+  const pendingRenderRef = useRef(false)
+  const renderIdRef = useRef(0)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(0)
-  const [rendering, setRendering] = useState(false)
 
   // Load PDF
   useEffect(() => {
@@ -25,7 +27,7 @@ export function PdfPreview({ data }: { data: string }) {
       try {
         const doc = await pdfjsLib.getDocument(data).promise
         if (cancelled) return
-        setPdf(doc)
+        pdfRef.current = doc
         setTotalPages(doc.numPages)
         setPage(1)
       } catch (e) {
@@ -34,74 +36,132 @@ export function PdfPreview({ data }: { data: string }) {
     }
 
     loadPdf()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      pdfRef.current = null
+    }
   }, [data])
 
-  // Render page — fit to container
+  // Render page — fit to container, DPR-aware
   const renderPage = useCallback(async () => {
-    if (!pdf || !canvasRef.current || !containerRef.current || rendering) return
-    setRendering(true)
+    const pdf = pdfRef.current
+    const canvas = canvasRef.current
+    const container = containerRef.current
+    if (!pdf || !canvas || !container) return
+
+    // Prevent overlapping renders — use ref (synchronous) not state
+    if (renderingRef.current) {
+      pendingRenderRef.current = true
+      return
+    }
+    renderingRef.current = true
+    const thisRenderId = ++renderIdRef.current
 
     try {
       const pg = await pdf.getPage(page)
-      const container = containerRef.current
+
+      // Check if this render is still relevant
+      if (thisRenderId !== renderIdRef.current) return
+
       const containerW = container.clientWidth
       const containerH = container.clientHeight
+      if (containerW <= 0 || containerH <= 0) return
 
       // Get natural page size
       const baseViewport = pg.getViewport({ scale: 1 })
 
-      // Calculate scale to fit container (both width and height)
+      // Calculate scale to fit container
       const scaleW = containerW / baseViewport.width
       const scaleH = containerH / baseViewport.height
-      const fitScale = Math.min(scaleW, scaleH)
+      const fitScale = Math.min(scaleW, scaleH) * 0.95 // 5% padding
 
-      // Render at 2x for sharpness, display at 1x
-      const renderScale = fitScale * 2
-      const viewport = pg.getViewport({ scale: renderScale })
+      // Use devicePixelRatio for sharp rendering
+      const dpr = window.devicePixelRatio || 1
+      const displayViewport = pg.getViewport({ scale: fitScale })
+      const renderViewport = pg.getViewport({ scale: fitScale * dpr })
 
-      const canvas = canvasRef.current
+      // Set canvas buffer size (actual pixels)
+      canvas.width = Math.floor(renderViewport.width)
+      canvas.height = Math.floor(renderViewport.height)
+
+      // Set canvas display size (CSS pixels)
+      canvas.style.width = `${Math.floor(displayViewport.width)}px`
+      canvas.style.height = `${Math.floor(displayViewport.height)}px`
+
       const ctx = canvas.getContext('2d')!
-      canvas.width = viewport.width
-      canvas.height = viewport.height
-      canvas.style.width = `${viewport.width / 2}px`
-      canvas.style.height = `${viewport.height / 2}px`
 
-      // White background for the page
+      // Reset any previous transform
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+
+      // White background
       ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, viewport.width, viewport.height)
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-      await pg.render({ canvasContext: ctx, viewport }).promise
+      // Check if still relevant before expensive render
+      if (thisRenderId !== renderIdRef.current) return
+
+      await pg.render({
+        canvasContext: ctx,
+        viewport: renderViewport,
+      }).promise
+
     } catch (e) {
-      console.error('PDF render error:', e)
+      // Cancelled render is expected, only log real errors
+      if (thisRenderId === renderIdRef.current) {
+        console.error('PDF render error:', e)
+      }
     } finally {
-      setRendering(false)
+      renderingRef.current = false
+
+      // If a render was requested while we were busy, do it now
+      if (pendingRenderRef.current) {
+        pendingRenderRef.current = false
+        renderPage()
+      }
     }
-  }, [pdf, page])
+  }, [page])
 
+  // Render when page changes or PDF loads
   useEffect(() => {
-    renderPage()
-  }, [renderPage])
+    if (pdfRef.current) {
+      renderPage()
+    }
+  }, [renderPage, totalPages])
 
-  // Re-render on resize
+  // Re-render on resize with debounce
   useEffect(() => {
-    if (!containerRef.current) return
-    const observer = new ResizeObserver(() => { renderPage() })
-    observer.observe(containerRef.current)
-    return () => observer.disconnect()
+    const container = containerRef.current
+    if (!container) return
+
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null
+
+    const observer = new ResizeObserver(() => {
+      // Debounce: wait for resize to settle
+      if (resizeTimer) clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => {
+        renderPage()
+      }, 100)
+    })
+
+    observer.observe(container)
+    return () => {
+      observer.disconnect()
+      if (resizeTimer) clearTimeout(resizeTimer)
+    }
   }, [renderPage])
 
   return (
     <div className="h-full flex flex-col">
-      {/* Canvas — fills entire area */}
+      {/* Canvas container — fills entire area */}
       <div
         ref={containerRef}
         className="flex-1 overflow-hidden flex items-center justify-center"
+        style={{ background: '#525659' }}
       >
-        <canvas ref={canvasRef} />
+        <canvas ref={canvasRef} style={{ display: 'block' }} />
       </div>
 
-      {/* Page nav — only if multi-page, small bar at bottom */}
+      {/* Page nav — only if multi-page */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center flex-shrink-0 bg-bg-secondary border-t border-border" style={{ height: 32, gap: 8 }}>
           <button

@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Folder, FileText, Image, Type, FileSpreadsheet,
-  Archive, File, Layers
+  Archive, File, Layers, FolderPlus, Clipboard
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { FileEntry, FileType } from '@/lib/file-types'
@@ -81,9 +81,23 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   onOpen: (file: FileEntry) => void
 }) {
   const thumbnailSize = useAppStore(s => s.thumbnailSize)
-  const { runPreflight, setInspectorTab, toggleFileSelection, selectedFiles, clearSelection, selectFileRange, copyFiles, cutFiles, pasteFiles } = useAppStore()
+  const { runPreflight, setInspectorTab, toggleFileSelection, selectedFiles, clearSelection, selectFileRange, copyFiles, cutFiles, pasteFiles, pickedFiles, togglePick, newFolderPending, requestNewFolder, clearNewFolder, createNewFolder, clipboard } = useAppStore()
   const [ctxMenu, setCtxMenu] = useState<{ file: FileEntry; x: number; y: number } | null>(null)
+  const [bgCtxMenu, setBgCtxMenu] = useState<{ x: number; y: number } | null>(null)
   const lastClickedIndexRef = useRef<number>(-1)
+
+  // Right-click on empty space (background)
+  const handleBgContextMenu = useCallback((e: React.MouseEvent) => {
+    // Only trigger if the click target is the container itself, not a file item
+    if (e.target === e.currentTarget || (e.currentTarget as HTMLElement).contains(e.target as Node)) {
+      // Check if click was on a file item - if so, let the file context menu handle it
+      const target = e.target as HTMLElement
+      if (target.closest('[data-file-item]')) return
+      e.preventDefault()
+      clearSelection()
+      setBgCtxMenu({ x: e.clientX, y: e.clientY })
+    }
+  }, [clearSelection])
 
   const handleClick = useCallback((e: React.MouseEvent, file: FileEntry, index: number) => {
     if (e.shiftKey && lastClickedIndexRef.current >= 0) {
@@ -101,13 +115,21 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
       onSelect(file)
       lastClickedIndexRef.current = index
     }
-  }, [files, toggleFileSelection, selectFileRange, clearSelection, onSelect])
+  }, [files, toggleFileSelection, selectFileRange, onSelect])
 
   const handleContextMenu = useCallback((e: React.MouseEvent, file: FileEntry) => {
     e.preventDefault()
-    onSelect(file)
+    e.stopPropagation()
+    // If the right-clicked file is already in multi-selection, keep the selection intact
+    // Otherwise select just this file (same as single-click)
+    const isInSelection = selectedFiles.some(f => f.path === file.path)
+    if (!isInSelection) {
+      selectFileRange([file])
+      onSelect(file)
+    }
+    setBgCtxMenu(null)
     setCtxMenu({ file, x: e.clientX, y: e.clientY })
-  }, [onSelect])
+  }, [onSelect, selectedFiles, selectFileRange])
 
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const { refreshDirectory } = useAppStore()
@@ -161,21 +183,76 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     setDropTarget(null)
     if (!targetFolder.isDirectory) return
 
+    // Internal drag (from FileHelper)
     const data = e.dataTransfer.getData('application/x-filehelper-paths')
-    if (!data) return
+    if (data) {
+      const paths: string[] = JSON.parse(data)
+      const validPaths = paths.filter(p => p !== targetFolder.path && !targetFolder.path.startsWith(p + '/') && !targetFolder.path.startsWith(p + '\\'))
+      if (!validPaths.length) return
 
-    const paths: string[] = JSON.parse(data)
-    // Don't drop into itself
-    const validPaths = paths.filter(p => p !== targetFolder.path && !targetFolder.path.startsWith(p + '/') && !targetFolder.path.startsWith(p + '\\'))
-    if (!validPaths.length) return
-
-    if (e.ctrlKey) {
-      await window.api.fs.copy(validPaths, targetFolder.path)
-    } else {
-      await window.api.fs.move(validPaths, targetFolder.path)
+      if (e.ctrlKey) {
+        await window.api.fs.copy(validPaths, targetFolder.path)
+      } else {
+        await window.api.fs.move(validPaths, targetFolder.path)
+      }
+      refreshDirectory()
+      return
     }
-    refreshDirectory()
+
+    // External drag (from Windows Explorer)
+    if (e.dataTransfer.files.length > 0) {
+      const externalPaths = Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
+      if (externalPaths.length > 0) {
+        await window.api.fs.copy(externalPaths, targetFolder.path)
+        refreshDirectory()
+      }
+    }
   }, [refreshDirectory])
+
+  // Drop on background (empty space) — copies to current directory
+  const handleBgDrop = useCallback(async (e: React.DragEvent) => {
+    // Don't handle if dropped on a file item
+    const target = e.target as HTMLElement
+    if (target.closest('[data-file-item]')) return
+
+    e.preventDefault()
+    e.stopPropagation()
+
+    const { currentPath } = useAppStore.getState()
+    if (!currentPath) return
+
+    // Internal drag
+    const data = e.dataTransfer.getData('application/x-filehelper-paths')
+    if (data) {
+      const paths: string[] = JSON.parse(data)
+      const validPaths = paths.filter(p => {
+        const dir = p.replace(/[/\\][^/\\]+$/, '')
+        return dir !== currentPath // don't move to same folder
+      })
+      if (!validPaths.length) return
+      if (e.ctrlKey) {
+        await window.api.fs.copy(validPaths, currentPath)
+      } else {
+        await window.api.fs.move(validPaths, currentPath)
+      }
+      refreshDirectory()
+      return
+    }
+
+    // External drag (from Windows Explorer)
+    if (e.dataTransfer.files.length > 0) {
+      const externalPaths = Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
+      if (externalPaths.length > 0) {
+        await window.api.fs.copy(externalPaths, currentPath)
+        refreshDirectory()
+      }
+    }
+  }, [refreshDirectory])
+
+  const handleBgDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }, [])
 
   const handleCtxAction = useCallback((action: string) => {
     const file = ctxMenu?.file
@@ -183,6 +260,9 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     if (!file) return
 
     switch (action) {
+      case 'togglePick':
+        togglePick(file.name)
+        break
       case 'preview':
         onSelect(file)
         break
@@ -223,17 +303,35 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
       case 'pasteFile':
         pasteFiles()
         break
-      case 'delete':
-        if (confirm(`Διαγραφή "${file.name}";`)) {
-          window.api.fs.trash([file.path]).then(() => refreshDirectory())
+      case 'newFolder':
+        requestNewFolder()
+        break
+      case 'delete': {
+        // Collect all files to delete: multi-selected or just the right-clicked one
+        const filesToDelete = selectedFiles.length > 1 && selectedFiles.some(f => f.path === file.path)
+          ? selectedFiles
+          : [file]
+        const names = filesToDelete.length === 1
+          ? `"${filesToDelete[0].name}"`
+          : `${filesToDelete.length} αρχεία`
+        if (confirm(`Διαγραφή ${names};`)) {
+          window.api.fs.trash(filesToDelete.map(f => f.path)).then((results) => {
+            const failed = results.filter((r: any) => !r.ok)
+            if (failed.length > 0) {
+              alert(`Αποτυχία διαγραφής ${failed.length} αρχείων:\n${failed.map((f: any) => f.error).join('\n')}`)
+            }
+            clearSelection()
+            setTimeout(() => refreshDirectory(), 200)
+          })
         }
         break
+      }
     }
-  }, [ctxMenu, onSelect, runPreflight, setInspectorTab, refreshDirectory, copyFiles, cutFiles, pasteFiles])
+  }, [ctxMenu, onSelect, runPreflight, setInspectorTab, refreshDirectory, copyFiles, cutFiles, pasteFiles, selectedFiles, clearSelection, togglePick, requestNewFolder])
 
   if (viewMode === 'list') {
     return (
-      <div className="h-full overflow-y-auto">
+      <div className="h-full overflow-y-auto" onContextMenu={handleBgContextMenu} onDrop={handleBgDrop} onDragOver={handleBgDragOver}>
         {/* List header */}
         <div className="sticky top-0 z-10 flex items-center gap-2 bg-bg-tertiary border-b border-border text-sm text-text-muted font-medium uppercase tracking-wider" style={{ padding: '10px 20px' }}>
           <span className="w-6" />
@@ -247,6 +345,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         {files.map((file, index) => (
           <div
             key={file.path}
+            data-file-item
             className={clsx(
               'flex items-center gap-2 cursor-pointer transition-colors',
               (selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path))
@@ -273,6 +372,29 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
               outlineOffset: -2,
             }}
           >
+            {/* Pick indicator for list view */}
+            {!file.isDirectory && pickedFiles.has(file.name) && (
+              <span
+                onClick={(e) => { e.stopPropagation(); togglePick(file.name) }}
+                style={{
+                  width: 0, height: 0, flexShrink: 0,
+                  cursor: 'pointer',
+                  borderStyle: 'solid',
+                  borderWidth: '6px 6px 0 0',
+                  borderColor: '#f58220 #f58220 transparent transparent',
+                  borderRadius: '2px 0 0 0',
+                }}
+                title="Unpick"
+              />
+            )}
+            {!file.isDirectory && !pickedFiles.has(file.name) && (
+              <span
+                onClick={(e) => { e.stopPropagation(); togglePick(file.name) }}
+                style={{ width: 6, height: 6, flexShrink: 0, cursor: 'pointer' }}
+                title="Pick"
+              />
+            )}
+            {file.isDirectory && <span style={{ width: 6, flexShrink: 0 }} />}
             <span className="w-6 flex-shrink-0 flex justify-center" style={{ position: 'relative' }}>
               <FileTypeIcon type={file.type} size={16} />
               {file.cloudStatus === 'cloud' && (
@@ -300,6 +422,16 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
           </div>
         ))}
 
+        {/* New folder inline input (list view) */}
+        {newFolderPending && (
+          <NewFolderInput
+            defaultName="Νέος Φάκελος"
+            onSubmit={createNewFolder}
+            onCancel={clearNewFolder}
+            viewMode="list"
+          />
+        )}
+
         {/* Context menu (list view) */}
         {ctxMenu && (
           <ContextMenu
@@ -310,6 +442,18 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
             onAction={handleCtxAction}
           />
         )}
+
+        {/* Background context menu (list view) */}
+        {bgCtxMenu && (
+          <BackgroundContextMenu
+            x={bgCtxMenu.x}
+            y={bgCtxMenu.y}
+            onClose={() => setBgCtxMenu(null)}
+            onPaste={() => { setBgCtxMenu(null); pasteFiles() }}
+            onNewFolder={() => { setBgCtxMenu(null); requestNewFolder() }}
+            hasClipboard={!!clipboard}
+          />
+        )}
       </div>
     )
   }
@@ -318,7 +462,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   const cellSize = thumbnailSize + 24
 
   return (
-    <div className="h-full overflow-y-auto" style={{ padding: 10 }}>
+    <div className="h-full overflow-y-auto" style={{ padding: 10 }} onContextMenu={handleBgContextMenu} onDrop={handleBgDrop} onDragOver={handleBgDragOver}>
       <div
         className="grid"
         style={{
@@ -329,6 +473,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         {files.map((file, index) => (
           <div
             key={file.path}
+            data-file-item
             className={clsx(
               'flex flex-col items-center rounded-lg cursor-pointer transition-colors'
             )}
@@ -362,6 +507,17 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
               {file.cloudStatus && (
                 <CloudBadge status={file.cloudStatus} />
               )}
+              {/* Pick badge */}
+              {!file.isDirectory && (
+                <PickBadge
+                  picked={pickedFiles.has(file.name)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    togglePick(file.name)
+                  }}
+                  size={thumbnailSize}
+                />
+              )}
             </div>
 
             {/* File name */}
@@ -379,6 +535,17 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         ))}
       </div>
 
+      {/* New folder inline input (grid view) */}
+      {newFolderPending && (
+        <NewFolderInput
+          defaultName="Νέος Φάκελος"
+          onSubmit={createNewFolder}
+          onCancel={clearNewFolder}
+          viewMode="grid"
+          thumbnailSize={thumbnailSize}
+        />
+      )}
+
       {/* Context menu */}
       {ctxMenu && (
         <ContextMenu
@@ -389,6 +556,171 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
           onAction={handleCtxAction}
         />
       )}
+
+      {/* Background context menu (grid view) */}
+      {bgCtxMenu && (
+        <BackgroundContextMenu
+          x={bgCtxMenu.x}
+          y={bgCtxMenu.y}
+          onClose={() => setBgCtxMenu(null)}
+          onPaste={() => { setBgCtxMenu(null); pasteFiles() }}
+          onNewFolder={() => { setBgCtxMenu(null); requestNewFolder() }}
+          hasClipboard={!!clipboard}
+        />
+      )}
+    </div>
+  )
+}
+
+function BackgroundContextMenu({ x, y, onClose, onPaste, onNewFolder, hasClipboard }: {
+  x: number; y: number; onClose: () => void; onPaste: () => void; onNewFolder: () => void; hasClipboard: boolean
+}) {
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose()
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [onClose])
+
+  const adjustedX = Math.max(8, Math.min(x, window.innerWidth - 200))
+  const adjustedY = Math.max(8, Math.min(y, window.innerHeight - 120))
+
+  return (
+    <div
+      ref={menuRef}
+      className="fixed z-50 bg-bg-tertiary border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-100"
+      style={{ left: adjustedX, top: adjustedY, minWidth: 180, padding: 6 }}
+    >
+      {hasClipboard && (
+        <button
+          className="w-full flex items-center text-left hover:bg-bg-hover transition-colors text-text-secondary"
+          style={{ gap: 10, padding: '7px 12px', fontSize: 12, borderRadius: 4 }}
+          onClick={onPaste}
+        >
+          <Clipboard size={13} />
+          <span style={{ flex: 1 }}>Paste</span>
+          <span style={{ fontSize: 10, color: 'var(--th-text-muted)', opacity: 0.6 }}>Ctrl+V</span>
+        </button>
+      )}
+      <button
+        className="w-full flex items-center text-left hover:bg-bg-hover transition-colors text-text-secondary"
+        style={{ gap: 10, padding: '7px 12px', fontSize: 12, borderRadius: 4 }}
+        onClick={onNewFolder}
+      >
+        <FolderPlus size={13} />
+        Νέος Φάκελος
+      </button>
+    </div>
+  )
+}
+
+function NewFolderInput({ defaultName, onSubmit, onCancel, viewMode, thumbnailSize }: {
+  defaultName: string
+  onSubmit: (name: string) => void
+  onCancel: () => void
+  viewMode: 'grid' | 'list'
+  thumbnailSize?: number
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    // Auto-focus and select all text
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus()
+        inputRef.current.select()
+      }
+    }, 50)
+  }, [])
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      onSubmit(inputRef.current?.value || '')
+    } else if (e.key === 'Escape') {
+      onCancel()
+    }
+  }
+
+  if (viewMode === 'list') {
+    return (
+      <div className="flex items-center gap-2" style={{ padding: '8px 20px', background: 'rgba(245,130,32,0.08)', borderLeft: '2px solid #f58220' }}>
+        <span className="w-6 flex-shrink-0 flex justify-center">
+          <Folder size={16} color="#f58220" fill="#f58220" fillOpacity={0.15} strokeWidth={1.5} />
+        </span>
+        <input
+          ref={inputRef}
+          defaultValue={defaultName}
+          onKeyDown={handleKeyDown}
+          onBlur={() => onSubmit(inputRef.current?.value || '')}
+          style={{
+            flex: 1, border: '1px solid #f58220', borderRadius: 4,
+            padding: '4px 8px', fontSize: 12, outline: 'none',
+            background: 'var(--th-bg-primary)', color: 'var(--th-text-primary)',
+          }}
+        />
+      </div>
+    )
+  }
+
+  // Grid view
+  const size = thumbnailSize || 128
+  return (
+    <div className="flex flex-col items-center" style={{ padding: 4, border: '1px solid #f58220', borderRadius: 10, background: 'rgba(245,130,32,0.08)' }}>
+      <div className="flex items-center justify-center" style={{ width: size, height: size }}>
+        <FolderPlus size={size * 0.4} color="#f58220" strokeWidth={1.5} />
+      </div>
+      <div className="mt-1.5 w-full text-center">
+        <input
+          ref={inputRef}
+          defaultValue={defaultName}
+          onKeyDown={handleKeyDown}
+          onBlur={() => onSubmit(inputRef.current?.value || '')}
+          style={{
+            width: '100%', border: '1px solid #f58220', borderRadius: 4,
+            padding: '2px 6px', fontSize: 12, outline: 'none', textAlign: 'center',
+            background: 'var(--th-bg-primary)', color: 'var(--th-text-primary)',
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
+function PickBadge({ picked, onClick }: { picked: boolean; onClick: (e: React.MouseEvent) => void; size: number }) {
+  return (
+    <div
+      onClick={onClick}
+      title={picked ? 'Unpick' : 'Pick'}
+      className="pick-badge"
+      style={{
+        position: 'absolute', top: -1, right: -1,
+        width: 22, height: 22,
+        cursor: 'pointer',
+        zIndex: 2,
+        opacity: picked ? 1 : 0,
+        transition: 'opacity 0.15s ease',
+        overflow: 'hidden',
+        borderRadius: '0 6px 0 0',
+      }}
+    >
+      {/* Triangle ribbon */}
+      <div style={{
+        position: 'absolute', top: 0, right: 0,
+        width: 0, height: 0,
+        borderStyle: 'solid',
+        borderWidth: '0 22px 22px 0',
+        borderColor: `transparent ${picked ? '#f58220' : 'rgba(100,100,100,0.5)'} transparent transparent`,
+      }} />
     </div>
   )
 }

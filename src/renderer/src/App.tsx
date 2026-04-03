@@ -9,10 +9,13 @@ export default function App() {
 
   useEffect(() => {
     loadSettings()
-    // Build search index in background on startup
-    window.api.search.buildIndex().then(r => {
-      if (r.count > 0) console.log(`Search index: ${r.count} files in ${r.ms}ms`)
-    }).catch(() => {})
+    // Build search index in background after 3s delay (let UI load first)
+    const timer = setTimeout(() => {
+      window.api.search.buildIndex().then(r => {
+        if (r.count > 0) console.log(`Search index: ${r.count} files in ${r.ms}ms`)
+      }).catch(() => {})
+    }, 3000)
+    return () => clearTimeout(timer)
   }, [loadSettings])
 
   // Tab keyboard shortcuts
@@ -23,11 +26,12 @@ export default function App() {
         useAppStore.setState({ fullscreenPreview: false })
         return
       }
-      if (e.ctrlKey && e.key === 't') {
+      // Use e.code for shortcuts — works regardless of keyboard layout (EN/GR)
+      if (e.ctrlKey && e.code === 'KeyT') {
         e.preventDefault()
         useAppStore.getState().addTab()
       }
-      if (e.ctrlKey && e.key === 'w') {
+      if (e.ctrlKey && e.code === 'KeyW') {
         e.preventDefault()
         const { tabs, activeTabId, closeTab } = useAppStore.getState()
         if (tabs.length > 1) closeTab(activeTabId)
@@ -44,7 +48,7 @@ export default function App() {
       // File operations — only when not typing in an input
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
-      if (e.key === ' ') {
+      if (e.code === 'Space') {
         e.preventDefault()
         const { fullscreenPreview, selectedFile } = useAppStore.getState()
         if (fullscreenPreview) {
@@ -53,21 +57,49 @@ export default function App() {
           useAppStore.setState({ fullscreenPreview: true })
         }
       }
-      if (e.ctrlKey && e.key === 'c') {
+      if (e.ctrlKey && e.code === 'KeyC') {
         e.preventDefault()
         useAppStore.getState().copyFiles()
       }
-      if (e.ctrlKey && e.key === 'x') {
+      if (e.ctrlKey && e.code === 'KeyX') {
         e.preventDefault()
         useAppStore.getState().cutFiles()
       }
-      if (e.ctrlKey && e.key === 'v') {
+      if (e.ctrlKey && e.code === 'KeyV') {
         e.preventDefault()
         useAppStore.getState().pasteFiles()
       }
-      if (e.ctrlKey && e.key === 'a') {
+      if (e.ctrlKey && e.code === 'KeyA') {
         e.preventDefault()
         useAppStore.getState().selectAll()
+      }
+      // P key — toggle pick on selected files
+      if (e.code === 'KeyP' && !e.ctrlKey) {
+        e.preventDefault()
+        useAppStore.getState().togglePickSelected()
+      }
+      // Delete key — trash selected files
+      if (e.key === 'Delete') {
+        const { selectedFiles, selectedFile, clearSelection, refreshDirectory } = useAppStore.getState()
+        const filesToDelete = selectedFiles.length > 0
+          ? selectedFiles
+          : selectedFile ? [selectedFile] : []
+        if (filesToDelete.length === 0) return
+        e.preventDefault()
+        const names = filesToDelete.length === 1
+          ? `"${filesToDelete[0].name}"`
+          : `${filesToDelete.length} αρχεία`
+        if (confirm(`Διαγραφή ${names};`)) {
+          window.api.fs.trash(filesToDelete.map(f => f.path)).then((results: any[]) => {
+            const failed = results.filter((r: any) => !r.ok)
+            if (failed.length > 0) {
+              alert(`Αποτυχία διαγραφής ${failed.length} αρχείων:\n${failed.map((f: any) => f.error).join('\n')}`)
+            }
+            // Small delay before refresh — let filesystem settle (Dropbox, indexer, etc.)
+            clearSelection()
+            setTimeout(() => refreshDirectory(), 200)
+          })
+        }
       }
     }
     window.addEventListener('keydown', handler)

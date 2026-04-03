@@ -2,7 +2,9 @@ import {
   ArrowLeft, ArrowRight, ArrowUp, RefreshCw,
   LayoutGrid, List, Scan,
   HardDrive, Cloud, Layers, RefreshCcw, Search, Send,
-  PanelLeft, PanelRight, Eye, EyeOff
+  PanelLeft, PanelRight, Eye, EyeOff,
+  Columns, Pencil, Package, RectangleHorizontal,
+  FolderPlus
 } from 'lucide-react'
 import { useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
@@ -10,6 +12,8 @@ import { useAppStore } from '@/stores/app-store'
 import { Breadcrumb } from '../browser/Breadcrumb'
 import { BatchPreflightPanel } from '../batch/BatchPreflightPanel'
 import { ConvertDialog } from '../convert/ConvertDialog'
+import { CompareView } from '../tools/CompareView'
+import { FilePackager } from '../tools/FilePackager'
 
 export type OverlayMode = 'none' | 'batch' | 'convert'
 
@@ -20,11 +24,14 @@ export function Toolbar() {
     selectedFile, selectedFiles, pathHistory, historyIndex,
     showSidebar, setShowSidebar, showInspector, setShowInspector,
     previewOpen, togglePreview,
-    thumbnailSize, setThumbnailSize
+    thumbnailSize, setThumbnailSize,
+    requestNewFolder
   } = useAppStore()
 
   const [overlay, setOverlay] = useState<OverlayMode>('none')
   const [showSendEmail, setShowSendEmail] = useState(false)
+  const [showCompare, setShowCompare] = useState(false)
+  const [showPackager, setShowPackager] = useState(false)
 
   // Files to send = multi-selected or single selected
   const filesToSend = selectedFiles.length > 0
@@ -51,6 +58,7 @@ export function Toolbar() {
           <ToolbarButton icon={<ArrowRight size={18} />} onClick={navigateForward} disabled={!canGoForward} title="Forward" />
           <ToolbarButton icon={<ArrowUp size={18} />} onClick={navigateUp} title="Up" />
           <ToolbarButton icon={<RefreshCw size={18} />} onClick={refreshDirectory} title="Refresh" />
+          <ToolbarButton icon={<FolderPlus size={18} />} onClick={requestNewFolder} title="Νέος Φάκελος" />
         </div>
 
         <div className="w-px h-7 bg-border flex-shrink-0" style={{ margin: '0 14px' }} />
@@ -67,6 +75,8 @@ export function Toolbar() {
           <LabeledButton icon={<Scan size={16} />} label="Preflight" onClick={runPreflight} disabled={!canPreflight} accent />
           <LabeledButton icon={<Layers size={16} />} label="Batch" onClick={() => setOverlay(overlay === 'batch' ? 'none' : 'batch')} active={overlay === 'batch'} />
           <LabeledButton icon={<RefreshCcw size={16} />} label="Convert" onClick={() => setOverlay(overlay === 'convert' ? 'none' : 'convert')} active={overlay === 'convert'} disabled={!canPreflight} />
+          <LabeledButton icon={<Columns size={16} />} label="Compare" onClick={() => setShowCompare(true)} disabled={!canPreflight} />
+          <LabeledButton icon={<Package size={16} />} label="Collect" onClick={() => setShowPackager(true)} />
         </div>
 
         {/* Send email */}
@@ -186,6 +196,8 @@ export function Toolbar() {
       )}
 
       {showSendEmail && <SendEmailDialog files={filesToSend} onClose={() => setShowSendEmail(false)} />}
+      {showCompare && <CompareView onClose={() => setShowCompare(false)} />}
+      {showPackager && <FilePackager onClose={() => setShowPackager(false)} />}
     </>
   )
 }
@@ -429,7 +441,7 @@ function SearchBox() {
   const handleChange = useCallback((val: string) => {
     setQuery(val)
     if (timerRef.current) clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => doSearch(val), 300)
+    timerRef.current = setTimeout(() => doSearch(val), 150)
   }, [doSearch])
 
   const handleSelect = useCallback((file: any) => {
