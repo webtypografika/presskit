@@ -1,10 +1,19 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAppStore } from '@/stores/app-store'
+import { useShallow } from 'zustand/react/shallow'
 import { FileGrid } from './FileGrid'
 import { Loader2, Link2, X, CheckCircle, FolderPlus, Clipboard } from 'lucide-react'
 
 export function FileBrowser() {
-  const { files, loading, viewMode, selectedFile, selectFile, navigateTo, pickFileMode, pickedFiles, picksFilter } = useAppStore()
+  const files = useAppStore(s => s.files)
+  const loading = useAppStore(s => s.loading)
+  const viewMode = useAppStore(s => s.viewMode)
+  const selectedFile = useAppStore(s => s.selectedFile)
+  const pickFileMode = useAppStore(s => s.pickFileMode)
+  const pickedFiles = useAppStore(s => s.pickedFiles)
+  const picksFilter = useAppStore(s => s.picksFilter)
+  const selectFile = useAppStore(s => s.selectFile)
+  const navigateTo = useAppStore(s => s.navigateTo)
   const [linking, setLinking] = useState(false)
   const [linked, setLinked] = useState(false)
 
@@ -115,7 +124,14 @@ export function FileBrowser() {
 }
 
 function EmptyFolderView() {
-  const { clipboard, pasteFiles, requestNewFolder, newFolderPending, clearNewFolder, createNewFolder } = useAppStore()
+  const clipboard = useAppStore(s => s.clipboard)
+  const newFolderPending = useAppStore(s => s.newFolderPending)
+  const { pasteFiles, requestNewFolder, clearNewFolder, createNewFolder } = useAppStore(useShallow(s => ({
+    pasteFiles: s.pasteFiles,
+    requestNewFolder: s.requestNewFolder,
+    clearNewFolder: s.clearNewFolder,
+    createNewFolder: s.createNewFolder,
+  })))
   const [bgCtx, setBgCtx] = useState<{ x: number; y: number } | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 

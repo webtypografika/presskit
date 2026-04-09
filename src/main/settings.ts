@@ -1,25 +1,25 @@
 import { IpcMain } from 'electron'
 import Store from 'electron-store'
 
-export const store = new Store({
-  defaults: {
-    'ui.sidebarWidth': 280,
-    'ui.inspectorWidth': 320,
-    'ui.viewMode': 'grid',
-    'ui.thumbnailSize': 128,
-    'ui.showHiddenFiles': false,
-    'paths.recent': [] as string[],
-    'paths.bookmarks': [] as string[],
-    'preflight.minDpi': 300,
-    'preflight.maxTac': 300,
-    'preflight.requireCmyk': true,
-    'preflight.requireBleed': true,
-    'preflight.bleedMm': 3,
-    'presscal.url': '',
-    'presscal.apiKey': '',
-    'dropbox.clientId': ''
+export const store = new Store()
+
+// Migrate: remove flat dot-keys that conflict with nested values
+const FLAT_KEYS = [
+  'ui.sidebarWidth', 'ui.inspectorWidth', 'ui.viewMode', 'ui.thumbnailSize', 'ui.showHiddenFiles',
+  'paths.recent', 'paths.bookmarks',
+  'preflight.minDpi', 'preflight.maxTac', 'preflight.requireCmyk', 'preflight.requireBleed', 'preflight.bleedMm',
+  'presscal.url', 'presscal.apiKey', 'dropbox.clientId'
+]
+if (store.has('presscal.url' as any) && typeof store.store['presscal.url'] === 'string') {
+  // Config has flat dot-keys — migrate nested values and delete flat ones
+  const raw = store.store as Record<string, any>
+  for (const key of FLAT_KEYS) {
+    if (key in raw && typeof raw[key] !== 'object') {
+      delete raw[key]
+    }
   }
-})
+  store.store = raw
+}
 
 export function registerSettingsHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('settings:get', async (_e, key: string) => {

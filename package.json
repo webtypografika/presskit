@@ -1,7 +1,7 @@
 {
-  "name": "presscal-filehelper",
+  "name": "presskit",
   "version": "1.0.0",
-  "description": "PressCal File Helper - Print & Design File Manager",
+  "description": "PressKit - Print & Design File Manager",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -46,17 +46,37 @@
     "zustand": "^5.0.12"
   },
   "build": {
-    "appId": "com.presscal.filehelper",
-    "productName": "PressCal File Helper",
+    "appId": "com.presscal.presskit",
+    "productName": "PressKit",
+    "copyright": "Copyright © 2026 PressCal",
     "directories": {
       "buildResources": "resources",
       "output": "dist"
     },
+    "files": [
+      "out/**/*",
+      "resources/**/*"
+    ],
     "win": {
       "target": [
         "nsis"
       ],
-      "icon": "resources/icon.ico"
+      "icon": "resources/icon.png",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PressKit",
+      "include": "resources/installer.nsh"
+    },
+    "protocols": {
+      "name": "PressCal File Helper",
+      "schemes": [
+        "presscal-fh"
+      ]
     }
   }
 }

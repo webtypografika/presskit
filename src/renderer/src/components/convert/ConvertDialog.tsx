@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useAppStore } from '@/stores/app-store'
 import {
   RefreshCw, ArrowRight, Loader2, CheckCircle, XCircle,
-  FileImage, Palette, Maximize, Layers, X, FolderOpen
+  FileImage, Palette, Maximize, Layers, X, FolderOpen, Scissors
 } from 'lucide-react'
 import { formatFileSize } from '@/lib/file-types'
 
@@ -14,6 +14,7 @@ interface ConvertOptions {
   dpi: number
   quality: number
   flatten: boolean
+  useTrimBox: boolean
 }
 
 interface ConvertResult {
@@ -32,7 +33,8 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
     colorSpace: 'cmyk',
     dpi: 300,
     quality: 95,
-    flatten: true
+    flatten: true,
+    useTrimBox: true
   })
   const [converting, setConverting] = useState(false)
   const [result, setResult] = useState<ConvertResult | null>(null)
@@ -84,8 +86,20 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
       <div className="h-full flex flex-col">
         <PanelHeader onClose={onClose} />
         <div style={{ padding: 24 }}>
-          <div style={{ fontSize: 13, color: 'var(--th-text-muted)' }}>
-            PDF conversion requires Ghostscript which was not found on this system.
+          <div style={{ fontSize: 13, color: 'var(--th-text-muted)', lineHeight: 1.6 }}>
+            Η μετατροπή PDF χρειάζεται το Ghostscript που δεν βρέθηκε στο σύστημα.
+            <br /><br />
+            <a
+              href="#"
+              onClick={(e) => { e.preventDefault(); window.open('https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10050/gs10050w64.exe') }}
+              style={{ color: 'var(--th-accent)', textDecoration: 'underline', cursor: 'pointer' }}
+            >
+              Κατέβασε το Ghostscript (64-bit)
+            </a>
+            <br />
+            <span style={{ fontSize: 11, color: 'var(--th-text-muted)' }}>
+              Μετά την εγκατάσταση, κάνε επανεκκίνηση το PressKit.
+            </span>
           </div>
         </div>
       </div>
@@ -199,6 +213,29 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
             />
             <Layers size={16} style={{ color: 'var(--th-text-muted)', flexShrink: 0 }} />
             <span style={{ fontSize: 13, color: 'var(--th-text-secondary)' }}>Flatten transparency</span>
+          </label>
+        </Section>
+      )}
+
+      {/* Use TrimBox (PDF/AI/EPS only) */}
+      {isPdfInput && (
+        <Section>
+          <label className="flex items-center cursor-pointer" style={{
+            gap: 10, padding: '8px 12px', borderRadius: 8,
+            background: options.useTrimBox ? 'rgba(245,130,32,0.06)' : 'transparent',
+          }}>
+            <input
+              type="checkbox" checked={options.useTrimBox}
+              onChange={e => setOptions(o => ({ ...o, useTrimBox: e.target.checked }))}
+              style={{ width: 18, height: 18, accentColor: '#f58220', flexShrink: 0 }}
+            />
+            <Scissors size={16} style={{ color: 'var(--th-text-muted)', flexShrink: 0 }} />
+            <div>
+              <span style={{ fontSize: 13, color: 'var(--th-text-secondary)' }}>Crop στο TrimBox</span>
+              <div style={{ fontSize: 11, color: 'var(--th-text-muted)', marginTop: 2 }}>
+                Αφαιρεί bleed και cropmarks
+              </div>
+            </div>
           </label>
         </Section>
       )}

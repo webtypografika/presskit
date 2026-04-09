@@ -61,7 +61,7 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
 
   const isFile = !file.isDirectory
   const isPrint = isFile && ['pdf', 'ai', 'psd', 'eps', 'indd', 'tiff'].includes(file.type)
-  const { pickedFiles } = useAppStore()
+  const pickedFiles = useAppStore(s => s.pickedFiles)
   const isPicked = isFile && pickedFiles.has(file.name)
 
   return (

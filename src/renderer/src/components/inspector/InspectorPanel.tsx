@@ -45,7 +45,7 @@ export function InspectorPanel() {
   const hasFile = selectedFile && !selectedFile.isDirectory
 
   return (
-    <div className="h-full flex flex-col bg-bg-secondary">
+    <div className="h-full flex flex-col bg-bg-secondary" style={{ minWidth: 0 }}>
       {/* Tab bar */}
       <div className="flex items-center border-b border-border flex-shrink-0">
         {TABS.map(tab => {
@@ -60,7 +60,7 @@ export function InspectorPanel() {
                     ? 'text-text-muted border-transparent cursor-default'
                     : 'text-text-secondary border-transparent hover:text-text-primary hover:bg-bg-hover'
               }`}
-              style={{ padding: '12px 14px', opacity: disabled ? 0.4 : 1 }}
+              style={{ padding: '12px 10px', opacity: disabled ? 0.4 : 1, whiteSpace: 'nowrap' }}
               onClick={() => !disabled && setInspectorTab(tab.id)}
             >
               {tab.icon}
@@ -71,7 +71,7 @@ export function InspectorPanel() {
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" style={{ overflowX: 'hidden', minWidth: 0 }}>
         {inspectorTab === 'metadata' && hasFile && <FileMetadata />}
         {inspectorTab === 'preflight' && hasFile && <PreflightReport />}
         {inspectorTab === 'presscal' && <PresscalPanel />}

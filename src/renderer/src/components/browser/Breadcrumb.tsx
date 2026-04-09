@@ -2,7 +2,9 @@ import { ChevronRight } from 'lucide-react'
 import { useAppStore } from '@/stores/app-store'
 
 export function Breadcrumb() {
-  const { currentPath, navigateTo, source } = useAppStore()
+  const currentPath = useAppStore(s => s.currentPath)
+  const navigateTo = useAppStore(s => s.navigateTo)
+  const source = useAppStore(s => s.source)
 
   if (!currentPath) {
     return (

@@ -86,7 +86,7 @@ export function PreviewPanel() {
           onMouseEnter={e => (e.currentTarget.style.background = '#f58220')}
           onMouseLeave={e => { if (!resizingRef.current) e.currentTarget.style.background = 'transparent' }}
         />
-        <div className="flex flex-col overflow-hidden" style={{ flex: `0 0 ${previewSize}%`, minWidth: 200 }}>
+        <div className="flex flex-col overflow-hidden" style={{ flex: `0 0 ${previewSize}%`, minWidth: 360 }}>
           <PreviewToolbar layout={layout} onToggleLayout={() => setLayout('bottom')} showBleed={showBleed} onToggleBleed={() => setShowBleed(!showBleed)} showAnnotations={showAnnotations} onToggleAnnotations={() => setShowAnnotations(!showAnnotations)} />
           <div className="flex-1 overflow-hidden">
             <PreviewContent showBleed={showBleed} showAnnotations={showAnnotations} />
@@ -132,95 +132,99 @@ function PreviewToolbar({ layout, onToggleLayout, showBleed, onToggleBleed, show
 
   return (
     <>
-      <div className="flex items-center justify-between bg-bg-secondary border-b border-border flex-shrink-0" style={{ height: 40, padding: '0 16px' }}>
-        <div className="flex items-center" style={{ gap: 8, fontSize: 13, color: '#94a3b8' }}>
-          <Eye size={15} style={{ color: '#64748b' }} />
-          <span className="truncate" style={{ maxWidth: 200 }}>{selectedFile?.name}</span>
+      {/* Row 1: filename */}
+      <div className="flex items-center bg-bg-secondary border-b border-border flex-shrink-0" style={{ height: 32, padding: '0 12px' }}>
+        <div className="flex items-center min-w-0" style={{ gap: 6, fontSize: 12, color: '#94a3b8' }}>
+          <Eye size={13} style={{ color: '#64748b', flexShrink: 0 }} />
+          <span className="truncate">{selectedFile?.name}</span>
         </div>
+      </div>
 
-        <div className="flex items-center" style={{ gap: 4 }}>
-          {/* Bleed overlay toggle — only for PDFs with TrimBox */}
-          {isPdf && hasTrimBox && (
-            <button
-              onClick={onToggleBleed}
-              title="Trim / Bleed / Safe overlay"
-              className="flex items-center rounded"
-              style={{
-                gap: 4, padding: '4px 8px', fontSize: 11, border: 'none', cursor: 'pointer', borderRadius: 4,
-                background: showBleed ? 'rgba(239,68,68,0.15)' : 'transparent',
-                color: showBleed ? '#ef4444' : '#64748b',
-              }}
-            >
-              <RectangleHorizontal size={13} />
-              Bleed
-            </button>
-          )}
-
-          {/* Annotation toggle */}
+      {/* Row 2: action buttons */}
+      <div className="flex items-center bg-bg-secondary border-b border-border flex-shrink-0" style={{ height: 34, padding: '0 8px', gap: 2, overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none' }}>
+        {/* Bleed overlay toggle — only for PDFs with TrimBox */}
+        {isPdf && hasTrimBox && (
           <button
-            onClick={onToggleAnnotations}
-            title="Annotations / Markup"
+            onClick={onToggleBleed}
+            title="Trim / Bleed / Safe"
             className="flex items-center rounded"
             style={{
-              gap: 4, padding: '4px 8px', fontSize: 11, border: 'none', cursor: 'pointer', borderRadius: 4,
-              background: showAnnotations ? 'rgba(245,130,32,0.15)' : 'transparent',
-              color: showAnnotations ? '#f58220' : '#64748b',
+              gap: 4, padding: '3px 8px', fontSize: 11, border: 'none', cursor: 'pointer', borderRadius: 4, flexShrink: 0,
+              background: showBleed ? 'rgba(239,68,68,0.15)' : 'transparent',
+              color: showBleed ? '#ef4444' : '#64748b',
             }}
           >
-            <Pencil size={13} />
-            Markup
+            <RectangleHorizontal size={13} />
+            Bleed
           </button>
+        )}
 
-          {/* Layout toggle */}
+        {/* Annotation toggle */}
+        <button
+          onClick={onToggleAnnotations}
+          title="Markup"
+          className="flex items-center rounded"
+          style={{
+            gap: 4, padding: '3px 8px', fontSize: 11, border: 'none', cursor: 'pointer', borderRadius: 4, flexShrink: 0,
+            background: showAnnotations ? 'rgba(245,130,32,0.15)' : 'transparent',
+            color: showAnnotations ? '#f58220' : '#64748b',
+          }}
+        >
+          <Pencil size={13} />
+          Markup
+        </button>
+
+        {/* Layout toggle */}
+        <button
+          onClick={onToggleLayout}
+          title={layout === 'side' ? 'Preview bottom' : 'Preview side'}
+          style={{
+            padding: '3px 6px', border: 'none', background: 'transparent',
+            color: '#64748b', cursor: 'pointer', borderRadius: 4, flexShrink: 0,
+          }}
+        >
+          {layout === 'side' ? <Rows size={14} /> : <Columns size={14} />}
+        </button>
+
+        <div style={{ flex: 1 }} />
+
+        {/* Costing — only when PressCal connected */}
+        {presscalConnected && selectedFile && (
           <button
-            onClick={onToggleLayout}
-            title={layout === 'side' ? 'Preview bottom' : 'Preview side'}
-            style={{
-              padding: '4px 8px', border: 'none', background: 'transparent',
-              color: '#64748b', cursor: 'pointer', borderRadius: 4,
-            }}
+            className="flex items-center rounded"
+            style={{ gap: 5, padding: '3px 10px', fontSize: 11, color: '#f58220', border: '1px solid rgba(245,130,32,0.3)', background: 'rgba(245,130,32,0.06)', flexShrink: 0 }}
+            onClick={() => setShowCosting(true)}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(245,130,32,0.15)'; e.currentTarget.style.borderColor = '#f58220' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245,130,32,0.06)'; e.currentTarget.style.borderColor = 'rgba(245,130,32,0.3)' }}
           >
-            {layout === 'side' ? <Rows size={15} /> : <Columns size={15} />}
+            <Calculator size={13} />
+            <span>Κοστολόγηση</span>
           </button>
+        )}
 
-          {/* Costing — only when PressCal connected */}
-          {presscalConnected && selectedFile && (
-            <button
-              className="flex items-center rounded"
-              style={{ gap: 5, padding: '4px 10px', fontSize: 12, color: '#f58220', border: '1px solid rgba(245,130,32,0.3)', background: 'rgba(245,130,32,0.06)' }}
-              onClick={() => setShowCosting(true)}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(245,130,32,0.15)'; e.currentTarget.style.borderColor = '#f58220' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245,130,32,0.06)'; e.currentTarget.style.borderColor = 'rgba(245,130,32,0.3)' }}
-            >
-              <Calculator size={13} />
-              <span>Κοστολόγηση</span>
-            </button>
-          )}
+        {/* Open in app */}
+        <button
+          className="flex items-center rounded hover:bg-bg-hover"
+          style={{ gap: 4, padding: '3px 8px', fontSize: 11, color: '#94a3b8', border: '1px solid var(--th-border, #1e293b)', flexShrink: 0, whiteSpace: 'nowrap' }}
+          onClick={() => selectedFile && window.api.shell.openPath(selectedFile.path)}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = '#f58220'; e.currentTarget.style.color = '#f58220' }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--th-border, #1e293b)'; e.currentTarget.style.color = '#94a3b8' }}
+        >
+          <ExternalLink size={12} />
+          Open
+        </button>
 
-          {/* Open in app */}
-          <button
-            className="flex items-center rounded hover:bg-bg-hover"
-            style={{ gap: 5, padding: '4px 10px', fontSize: 12, color: '#94a3b8', border: '1px solid #1e293b' }}
-            onClick={() => selectedFile && window.api.shell.openPath(selectedFile.path)}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = '#f58220'; e.currentTarget.style.color = '#f58220' }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
-          >
-            <ExternalLink size={13} />
-            <span>Open</span>
-          </button>
-
-          {/* Show in folder */}
-          <button
-            className="flex items-center rounded hover:bg-bg-hover"
-            style={{ gap: 5, padding: '4px 10px', fontSize: 12, color: '#94a3b8', border: '1px solid #1e293b' }}
-            onClick={() => selectedFile && window.api.shell.showInFolder(selectedFile.path)}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = '#f58220'; e.currentTarget.style.color = '#f58220' }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = '#1e293b'; e.currentTarget.style.color = '#94a3b8' }}
-          >
-            <FolderOpen size={13} />
-            <span>Folder</span>
-          </button>
-        </div>
+        {/* Show in folder */}
+        <button
+          className="flex items-center rounded hover:bg-bg-hover"
+          style={{ gap: 4, padding: '3px 8px', fontSize: 11, color: '#94a3b8', border: '1px solid var(--th-border, #1e293b)', flexShrink: 0, whiteSpace: 'nowrap' }}
+          onClick={() => selectedFile && window.api.shell.showInFolder(selectedFile.path)}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = '#f58220'; e.currentTarget.style.color = '#f58220' }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--th-border, #1e293b)'; e.currentTarget.style.color = '#94a3b8' }}
+        >
+          <FolderOpen size={12} />
+          Folder
+        </button>
       </div>
 
       {showCosting && selectedFile && (

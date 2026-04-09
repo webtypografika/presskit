@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAppStore } from '@/stores/app-store'
 import { formatFileSize, getFileTypeLabel, isPreviewable } from '@/lib/file-types'
-import { Loader2 } from 'lucide-react'
-import { ColorPalette } from '../tools/ColorPalette'
+import { Loader2, StickyNote } from 'lucide-react'
+
 import { renderPdfThumbnail } from '@/lib/pdf-thumbnail'
 
 export function FileMetadata() {
@@ -25,7 +25,7 @@ export function FileMetadata() {
   }
 
   return (
-    <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 20, overflow: 'hidden', minWidth: 0 }}>
       {/* Mini preview */}
       {selectedFile && !selectedFile.isDirectory && isPreviewable(selectedFile.type) && (
         <MiniPreview file={selectedFile} />
@@ -124,9 +124,63 @@ export function FileMetadata() {
         </MetadataSection>
       )}
 
-      {/* Color palette & ink coverage */}
-      <ColorPalette />
+      {/* Notes */}
+      <FileNotes filePath={selectedFile.path} />
     </div>
+  )
+}
+
+function FileNotes({ filePath }: { filePath: string }) {
+  const [note, setNote] = useState('')
+  const [saved, setSaved] = useState(true)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Load note when file changes
+  useEffect(() => {
+    let cancelled = false
+    setNote('')
+    setSaved(true)
+    window.api.fs.getNotes(filePath)
+      .then(n => { if (!cancelled) setNote(n) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [filePath])
+
+  // Auto-save with debounce
+  const handleChange = useCallback((value: string) => {
+    setNote(value)
+    setSaved(false)
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => {
+      window.api.fs.setNotes(filePath, value)
+        .then(() => setSaved(true))
+        .catch(() => {})
+    }, 500)
+  }, [filePath])
+
+  return (
+    <MetadataSection title="Notes">
+      <div style={{ position: 'relative' }}>
+        <textarea
+          value={note}
+          onChange={e => handleChange(e.target.value)}
+          placeholder="Προσθήκη σημείωσης..."
+          style={{
+            width: '100%', minHeight: 64, padding: '8px 10px', fontSize: 12,
+            background: 'var(--th-bg-primary)', border: '1px solid var(--th-border)',
+            borderRadius: 8, color: 'var(--th-text-primary)', resize: 'vertical',
+            outline: 'none', fontFamily: 'inherit', lineHeight: 1.5,
+          }}
+          onFocus={e => e.currentTarget.style.borderColor = '#f58220'}
+          onBlur={e => e.currentTarget.style.borderColor = 'var(--th-border)'}
+        />
+        {!saved && (
+          <div style={{ position: 'absolute', top: 6, right: 8, fontSize: 10, color: 'var(--th-text-muted)' }}>
+            ...
+          </div>
+        )}
+      </div>
+    </MetadataSection>
   )
 }
 

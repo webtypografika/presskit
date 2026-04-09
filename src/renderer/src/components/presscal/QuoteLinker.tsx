@@ -66,7 +66,7 @@ export function QuoteLinker() {
     }
     if (search.trim()) {
       result = result.filter(q => {
-        const text = [q.number, q.customerName, q.title].filter(Boolean).join(' ')
+        const text = [q.number, q.customerName && q.customerName !== '–' ? q.customerName : null, q.title].filter(Boolean).join(' ')
         return fuzzyMatch(text, search)
       })
     }
@@ -259,7 +259,7 @@ export function QuoteLinker() {
                       </span>
                     </div>
                     <div className="text-sm text-text-secondary truncate leading-relaxed">
-                      {quote.title || quote.customerName || 'Untitled'}
+                      {quote.title || (quote.customerName && quote.customerName !== '–' ? quote.customerName : null) || 'Untitled'}
                     </div>
                     {quote.grandTotal > 0 && (
                       <div className="text-sm text-text-muted">

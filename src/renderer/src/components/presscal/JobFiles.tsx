@@ -37,11 +37,13 @@ export function JobFiles() {
 
   // Extract unique stages dynamically from jobs data
   const stages = useMemo(() => {
-    const stageSet = new Set<string>()
+    const stageMap = new Map<string, string>()
     for (const job of allJobs) {
-      if (job.jobStage) stageSet.add(job.jobStage)
+      if (job.jobStage && !stageMap.has(job.jobStage)) {
+        stageMap.set(job.jobStage, job.jobStageName || job.jobStage)
+      }
     }
-    return Array.from(stageSet)
+    return Array.from(stageMap.entries()).map(([id, name]) => ({ id, name }))
   }, [allJobs])
 
   // Filter & search
@@ -52,7 +54,7 @@ export function JobFiles() {
     }
     if (search.trim()) {
       result = result.filter(j => {
-        const text = [j.number, j.title, j.customerName].filter(Boolean).join(' ')
+        const text = [j.number, j.title, j.customerName && j.customerName !== '–' ? j.customerName : null].filter(Boolean).join(' ')
         return fuzzyMatch(text, search)
       })
     }
@@ -113,16 +115,15 @@ export function JobFiles() {
           </button>
           {stages.map(stage => (
             <button
-              key={stage}
+              key={stage.id}
               style={{
                 padding: '4px 10px', borderRadius: 6, fontSize: 11, border: 'none', cursor: 'pointer',
-                background: filterStage === stage ? 'rgba(245,130,32,0.12)' : 'transparent',
-                color: filterStage === stage ? '#f58220' : 'var(--th-text-muted)',
-                textTransform: 'capitalize',
+                background: filterStage === stage.id ? 'rgba(245,130,32,0.12)' : 'transparent',
+                color: filterStage === stage.id ? '#f58220' : 'var(--th-text-muted)',
               }}
-              onClick={() => setFilterStage(stage)}
+              onClick={() => setFilterStage(stage.id)}
             >
-              {stage}
+              {stage.name}
             </button>
           ))}
         </div>
@@ -153,7 +154,7 @@ export function JobFiles() {
                     {PRIORITY_ICONS[job.jobPriority]}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--th-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {job.title || job.customerName || 'Untitled'}
+                    {job.title || (job.customerName && job.customerName !== '–' ? job.customerName : null) || 'Untitled'}
                   </div>
                 </div>
 
@@ -163,7 +164,7 @@ export function JobFiles() {
                     background: 'var(--th-bg-primary)', color: 'var(--th-text-muted)',
                     textTransform: 'capitalize',
                   }}>
-                    {job.jobStage}
+                    {job.jobStageName || job.jobStage}
                   </span>
                   {linkingTo === job.id ? (
                     <Loader2 size={14} className="animate-spin" style={{ color: '#f58220' }} />

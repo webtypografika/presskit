@@ -58,7 +58,7 @@ export function ColorPalette() {
   }
 
   return (
-    <div className="space-y-3">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, overflow: 'hidden', width: '100%' }}>
       {/* Color palette */}
       {palette.length > 0 && (
         <div>
@@ -83,11 +83,12 @@ export function ColorPalette() {
           </div>
 
           {/* Color swatches */}
-          <div className="grid grid-cols-4 gap-1.5 mt-2">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))', gap: 6, marginTop: 8 }}>
             {palette.map((color, i) => (
               <div
                 key={i}
                 className="flex flex-col items-center cursor-pointer group"
+                style={{ overflow: 'hidden' }}
                 onClick={() => navigator.clipboard.writeText(color.hex)}
                 title="Click to copy"
               >
@@ -95,10 +96,10 @@ export function ColorPalette() {
                   className="w-full h-6 rounded border border-border group-hover:ring-1 ring-accent"
                   style={{ backgroundColor: color.hex }}
                 />
-                <span className="text-xs text-text-muted mt-0.5 font-mono">
+                <span className="text-xs text-text-muted mt-0.5 font-mono" style={{ fontSize: 10 }}>
                   {color.hex}
                 </span>
-                <span className="text-xs text-text-muted">
+                <span className="text-xs text-text-muted" style={{ fontSize: 10 }}>
                   {color.percentage}%
                 </span>
               </div>

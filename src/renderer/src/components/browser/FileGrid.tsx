@@ -8,8 +8,27 @@ import type { FileEntry, FileType } from '@/lib/file-types'
 import { formatFileSize, getFileTypeColor, getFileTypeLabel } from '@/lib/file-types'
 import { renderPdfThumbnail } from '@/lib/pdf-thumbnail'
 import type { ViewMode } from '@/stores/app-store'
+
+// ─── Thumbnail queue (max 3 concurrent) ─────────────────────────────
+const THUMB_CONCURRENCY = 3
+let thumbRunning = 0
+const thumbQueue: Array<() => void> = []
+
+function enqueueThumb(fn: () => Promise<any>): void {
+  const run = () => {
+    thumbRunning++
+    fn().finally(() => {
+      thumbRunning--
+      if (thumbQueue.length > 0) thumbQueue.shift()!()
+    })
+  }
+  if (thumbRunning < THUMB_CONCURRENCY) run()
+  else thumbQueue.push(run)
+}
 import { useAppStore } from '@/stores/app-store'
+import { useShallow } from 'zustand/react/shallow'
 import { ContextMenu } from './ContextMenu'
+import { dragState } from '@/lib/drag-state'
 
 function FileTypeIcon({ type, size = 32 }: { type: FileType; size?: number }) {
   const color = getFileTypeColor(type)
@@ -40,17 +59,14 @@ function FileThumbnail({ file, size }: { file: FileEntry; size: number }) {
 
     const isPdf = file.type === 'pdf' || file.type === 'ai'
 
-    if (isPdf) {
-      // Render PDF/AI thumbnails client-side via pdf.js
-      renderPdfThumbnail(file.path, size)
-        .then(data => { if (!cancelled && data) setThumb(data) })
-        .catch(() => {})
-    } else {
-      // All other files via main process (sharp etc.)
-      window.api.preview.thumbnail(file.path, size)
-        .then(data => { if (!cancelled && data) setThumb(data) })
-        .catch(() => {})
-    }
+    enqueueThumb(async () => {
+      try {
+        const data = isPdf
+          ? await renderPdfThumbnail(file.path, size)
+          : await window.api.preview.thumbnail(file.path, size)
+        if (!cancelled && data) setThumb(data)
+      } catch {}
+    })
 
     return () => { cancelled = true }
   }, [file.path, file.isDirectory, file.type, size])
@@ -81,7 +97,28 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   onOpen: (file: FileEntry) => void
 }) {
   const thumbnailSize = useAppStore(s => s.thumbnailSize)
-  const { runPreflight, setInspectorTab, toggleFileSelection, selectedFiles, clearSelection, selectFileRange, copyFiles, cutFiles, pasteFiles, pickedFiles, togglePick, newFolderPending, requestNewFolder, clearNewFolder, createNewFolder, clipboard } = useAppStore()
+  const selectedFiles = useAppStore(s => s.selectedFiles)
+  const pickedFiles = useAppStore(s => s.pickedFiles)
+  const newFolderPending = useAppStore(s => s.newFolderPending)
+  const clipboard = useAppStore(s => s.clipboard)
+  const {
+    runPreflight, setInspectorTab, toggleFileSelection, clearSelection,
+    selectFileRange, copyFiles, cutFiles, pasteFiles, togglePick,
+    requestNewFolder, clearNewFolder, createNewFolder
+  } = useAppStore(useShallow(s => ({
+    runPreflight: s.runPreflight,
+    setInspectorTab: s.setInspectorTab,
+    toggleFileSelection: s.toggleFileSelection,
+    clearSelection: s.clearSelection,
+    selectFileRange: s.selectFileRange,
+    copyFiles: s.copyFiles,
+    cutFiles: s.cutFiles,
+    pasteFiles: s.pasteFiles,
+    togglePick: s.togglePick,
+    requestNewFolder: s.requestNewFolder,
+    clearNewFolder: s.clearNewFolder,
+    createNewFolder: s.createNewFolder,
+  })))
   const [ctxMenu, setCtxMenu] = useState<{ file: FileEntry; x: number; y: number } | null>(null)
   const [bgCtxMenu, setBgCtxMenu] = useState<{ x: number; y: number } | null>(null)
   const lastClickedIndexRef = useRef<number>(-1)
@@ -132,7 +169,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   }, [onSelect, selectedFiles, selectFileRange])
 
   const [dropTarget, setDropTarget] = useState<string | null>(null)
-  const { refreshDirectory } = useAppStore()
+  const refreshDirectory = useAppStore(s => s.refreshDirectory)
 
   const getDragPaths = useCallback((file: FileEntry) => {
     return selectedFiles.length > 1 && selectedFiles.some(f => f.path === file.path)
@@ -140,29 +177,24 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
       : [file.path]
   }, [selectedFiles])
 
-  const dragPathsRef = useRef<string[]>([])
-
   const handleDragStart = useCallback((e: React.DragEvent, file: FileEntry) => {
+    // Cancel the HTML5 drag and hand off to Electron's native OLE drag.
+    // Running both simultaneously causes Windows to lose track of the drag
+    // session, leaving a "ghost" file path stuck to the cursor until Esc.
+    e.preventDefault()
     const paths = getDragPaths(file)
-    dragPathsRef.current = paths
-    // HTML5 drag for internal drops
-    e.dataTransfer.setData('application/x-filehelper-paths', JSON.stringify(paths))
-    e.dataTransfer.effectAllowed = 'copyMove'
+    dragState.set(paths)
+    // On Windows, this promise resolves when the native drag ends (success
+    // or cancel) because DoDragDrop blocks the main process. Use that as
+    // the signal to clear drag state. Catch any error so a rejected promise
+    // can't become an unhandledrejection and crash the renderer.
+    window.api.drag.start(paths)
+      .catch(err => console.error('drag.start failed:', err))
+      .finally(() => {
+        dragState.clear()
+        setDropTarget(null)
+      })
   }, [getDragPaths])
-
-  // Native drag-out when mouse leaves the window
-  useEffect(() => {
-    const handleDragLeaveWindow = (e: DragEvent) => {
-      // Only fire native drag when leaving the app window entirely
-      if (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
-        if (dragPathsRef.current.length > 0) {
-          window.api.drag.start(dragPathsRef.current)
-        }
-      }
-    }
-    window.addEventListener('dragleave', handleDragLeaveWindow)
-    return () => window.removeEventListener('dragleave', handleDragLeaveWindow)
-  }, [])
 
   const handleDragOver = useCallback((e: React.DragEvent, file: FileEntry) => {
     if (!file.isDirectory) return
@@ -183,33 +215,37 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     setDropTarget(null)
     if (!targetFolder.isDirectory) return
 
-    // Internal drag (from FileHelper)
-    const data = e.dataTransfer.getData('application/x-filehelper-paths')
-    if (data) {
-      const paths: string[] = JSON.parse(data)
-      const validPaths = paths.filter(p => p !== targetFolder.path && !targetFolder.path.startsWith(p + '/') && !targetFolder.path.startsWith(p + '\\'))
-      if (!validPaths.length) return
+    // Internal drag paths come from dragState (set on dragstart), external
+    // drags arrive via dataTransfer.files. We distinguish them because
+    // internal drags default to MOVE (with Ctrl = copy), external always COPY.
+    const internalPaths = dragState.get()
+    const isInternal = internalPaths.length > 0
+    const sourcePaths = isInternal
+      ? [...internalPaths]
+      : Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
 
-      if (e.ctrlKey) {
-        await window.api.fs.copy(validPaths, targetFolder.path)
-      } else {
+    if (!sourcePaths.length) return
+
+    const validPaths = sourcePaths.filter(p =>
+      p !== targetFolder.path &&
+      !targetFolder.path.startsWith(p + '/') &&
+      !targetFolder.path.startsWith(p + '\\')
+    )
+    if (!validPaths.length) return
+
+    try {
+      if (isInternal && !e.ctrlKey) {
         await window.api.fs.move(validPaths, targetFolder.path)
+      } else {
+        await window.api.fs.copy(validPaths, targetFolder.path)
       }
       refreshDirectory()
-      return
-    }
-
-    // External drag (from Windows Explorer)
-    if (e.dataTransfer.files.length > 0) {
-      const externalPaths = Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
-      if (externalPaths.length > 0) {
-        await window.api.fs.copy(externalPaths, targetFolder.path)
-        refreshDirectory()
-      }
+    } catch (err) {
+      console.error('Drop failed:', err)
     }
   }, [refreshDirectory])
 
-  // Drop on background (empty space) — copies to current directory
+  // Drop on background (empty space) — drops into current directory
   const handleBgDrop = useCallback(async (e: React.DragEvent) => {
     // Don't handle if dropped on a file item
     const target = e.target as HTMLElement
@@ -221,31 +257,32 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     const { currentPath } = useAppStore.getState()
     if (!currentPath) return
 
-    // Internal drag
-    const data = e.dataTransfer.getData('application/x-filehelper-paths')
-    if (data) {
-      const paths: string[] = JSON.parse(data)
-      const validPaths = paths.filter(p => {
-        const dir = p.replace(/[/\\][^/\\]+$/, '')
-        return dir !== currentPath // don't move to same folder
-      })
-      if (!validPaths.length) return
-      if (e.ctrlKey) {
-        await window.api.fs.copy(validPaths, currentPath)
-      } else {
+    const internalPaths = dragState.get()
+    const isInternal = internalPaths.length > 0
+    const sourcePaths = isInternal
+      ? [...internalPaths]
+      : Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
+
+    if (!sourcePaths.length) return
+
+    // For internal drags, skip files already in the target directory
+    const validPaths = isInternal
+      ? sourcePaths.filter(p => {
+          const dir = p.replace(/[/\\][^/\\]+$/, '')
+          return dir !== currentPath
+        })
+      : sourcePaths
+    if (!validPaths.length) return
+
+    try {
+      if (isInternal && !e.ctrlKey) {
         await window.api.fs.move(validPaths, currentPath)
+      } else {
+        await window.api.fs.copy(validPaths, currentPath)
       }
       refreshDirectory()
-      return
-    }
-
-    // External drag (from Windows Explorer)
-    if (e.dataTransfer.files.length > 0) {
-      const externalPaths = Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
-      if (externalPaths.length > 0) {
-        await window.api.fs.copy(externalPaths, currentPath)
-        refreshDirectory()
-      }
+    } catch (err) {
+      console.error('Background drop failed:', err)
     }
   }, [refreshDirectory])
 

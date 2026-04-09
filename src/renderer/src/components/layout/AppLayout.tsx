@@ -84,7 +84,7 @@ export function AppLayout() {
               className="resizer"
               onMouseDown={() => onMouseDown('inspector')}
             />
-            <div style={{ width: inspectorWidth, minWidth: 320 }} className="flex-shrink-0 overflow-hidden border-l border-border">
+            <div style={{ width: inspectorWidth, minWidth: 360 }} className="flex-shrink-0 overflow-hidden border-l border-border">
               <InspectorPanel />
             </div>
           </>

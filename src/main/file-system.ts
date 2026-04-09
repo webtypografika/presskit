@@ -1,7 +1,32 @@
 import { IpcMain, BrowserWindow } from 'electron'
-import { readdir, stat, readFile, rm, access, mkdir } from 'fs/promises'
+import { readdir, stat, readFile, writeFile, rm, access, mkdir } from 'fs/promises'
 import { join, extname, basename, dirname } from 'path'
 import { existsSync } from 'fs'
+
+const NOTES_FILE = '.presscal-notes.json'
+
+async function readNotesFile(dirPath: string): Promise<Record<string, string>> {
+  try {
+    const data = await readFile(join(dirPath, NOTES_FILE), 'utf-8')
+    return JSON.parse(data)
+  } catch {
+    return {}
+  }
+}
+
+async function writeNotesFile(dirPath: string, notes: Record<string, string>): Promise<void> {
+  // Remove empty entries
+  const clean: Record<string, string> = {}
+  for (const [k, v] of Object.entries(notes)) {
+    if (v && v.trim()) clean[k] = v
+  }
+  if (Object.keys(clean).length === 0) {
+    // Delete file if no notes left
+    try { await rm(join(dirPath, NOTES_FILE)) } catch {}
+    return
+  }
+  await writeFile(join(dirPath, NOTES_FILE), JSON.stringify(clean, null, 2), 'utf-8')
+}
 
 export interface FileEntry {
   name: string
@@ -404,6 +429,20 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
           }
         }
         results.push({ source: src, dest, ok: true })
+
+        // Move note to new location
+        try {
+          const srcDir = dirname(src)
+          const srcName = basename(src)
+          const srcNotes = await readNotesFile(srcDir)
+          if (srcNotes[srcName]) {
+            const destNotes = await readNotesFile(targetDir)
+            destNotes[name] = srcNotes[srcName]
+            delete srcNotes[srcName]
+            await writeNotesFile(srcDir, srcNotes)
+            await writeNotesFile(targetDir, destNotes)
+          }
+        } catch {}
       } catch (e: any) {
         results.push({ source: src, dest, ok: false, error: e.message })
       }
@@ -578,5 +617,22 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
       await watcher.close()
       watcher = null
     }
+  })
+
+  // ─── File notes ─────────────────────────────────────────────────────
+
+  ipcMain.handle('notes:get', async (_e, filePath: string): Promise<string> => {
+    const dir = dirname(filePath)
+    const name = basename(filePath)
+    const notes = await readNotesFile(dir)
+    return notes[name] || ''
+  })
+
+  ipcMain.handle('notes:set', async (_e, filePath: string, note: string) => {
+    const dir = dirname(filePath)
+    const name = basename(filePath)
+    const notes = await readNotesFile(dir)
+    notes[name] = note
+    await writeNotesFile(dir, notes)
   })
 }

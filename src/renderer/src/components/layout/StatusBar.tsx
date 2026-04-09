@@ -1,16 +1,24 @@
 import { useState } from 'react'
 import { useAppStore } from '@/stores/app-store'
+import { useShallow } from 'zustand/react/shallow'
 import { formatFileSize } from '@/lib/file-types'
 import { HardDrive, Cloud, Link2, Scan, Settings, Sun, Moon, CircleCheck, CircleDashed } from 'lucide-react'
 import { SettingsDialog } from '../tools/SettingsDialog'
 
 export function StatusBar() {
-  const {
-    files, selectedFile, currentPath, source,
-    presscalConnected, dropboxConnected,
-    preflight, theme, setTheme,
-    pickedFiles, picksFilter, setPicksFilter, clearPicks
-  } = useAppStore()
+  const files = useAppStore(s => s.files)
+  const selectedFile = useAppStore(s => s.selectedFile)
+  const currentPath = useAppStore(s => s.currentPath)
+  const source = useAppStore(s => s.source)
+  const presscalConnected = useAppStore(s => s.presscalConnected)
+  const dropboxConnected = useAppStore(s => s.dropboxConnected)
+  const preflight = useAppStore(s => s.preflight)
+  const theme = useAppStore(s => s.theme)
+  const pickedFiles = useAppStore(s => s.pickedFiles)
+  const picksFilter = useAppStore(s => s.picksFilter)
+  const setTheme = useAppStore(s => s.setTheme)
+  const setPicksFilter = useAppStore(s => s.setPicksFilter)
+  const clearPicks = useAppStore(s => s.clearPicks)
 
   const [showSettings, setShowSettings] = useState(false)
   const isDark = theme === 'dark'

@@ -25,11 +25,21 @@ if (process.defaultApp) {
   app.setAsDefaultProtocolClient(PROTOCOL)
 }
 
+// Log to both main process and renderer console
+function deepLog(...args: any[]) {
+  console.log(...args)
+  try {
+    mainWindow?.webContents.executeJavaScript(
+      `console.log(${args.map(a => JSON.stringify(String(a))).join(',')})`
+    )
+  } catch {}
+}
+
 // Handle deep link URL
 async function handleProtocolUrl(url: string): Promise<void> {
   if (!url.startsWith(`${PROTOCOL}://`)) return
 
-  console.log('[DeepLink] Received:', url)
+  deepLog('[DeepLink] Received:', url)
 
   // Always focus the window first
   if (mainWindow) {
@@ -40,6 +50,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
   try {
     const parsed = new URL(url)
+    deepLog('[DeepLink] hostname:', parsed.hostname, 'params:', parsed.searchParams.toString())
     if (parsed.hostname === 'attachment') {
       const messageId = parsed.searchParams.get('messageId')
       const attId = parsed.searchParams.get('attId')
@@ -48,7 +59,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
       const quoteId = parsed.searchParams.get('quoteId') || ''
 
       if (!messageId || !attId) {
-        console.error('[DeepLink] Missing messageId or attId')
+        deepLog('[DeepLink] Missing messageId or attId')
         return
       }
 
@@ -56,34 +67,89 @@ async function handleProtocolUrl(url: string): Promise<void> {
       const { writeFile, mkdir } = await import('fs/promises')
       const { join } = await import('path')
 
-      const Store = (await import('electron-store')).default
-      const store = new Store()
       const presscalUrl = (store.get('presscal.url') as string)?.replace(/\/$/, '')
       const apiKey = store.get('presscal.apiKey') as string
 
       if (!presscalUrl || !apiKey) {
-        console.error('[DeepLink] PressCal not configured')
+        deepLog('[DeepLink] PressCal not configured')
         return
       }
 
-      console.log('[DeepLink] Downloading attachment:', filename)
+      deepLog('[DeepLink] Downloading attachment:', filename)
       const fetchUrl = `${presscalUrl}/api/filehelper/emails/${messageId}/attachments/${attId}?mime=${encodeURIComponent(mime)}&filename=${encodeURIComponent(filename)}`
       const response = await fetch(fetchUrl, {
         headers: { 'Authorization': `Bearer ${apiKey}` }
       })
 
       if (!response.ok) {
-        console.error('[DeepLink] Download failed:', response.status, response.statusText)
+        deepLog('[DeepLink] Download failed:', response.status, response.statusText)
         return
       }
 
       const buffer = Buffer.from(await response.arrayBuffer())
-      const tempDir = join(electronApp.getPath('temp'), 'presscal-filehelper')
+      const tempDir = join(electronApp.getPath('temp'), 'presskit')
       await mkdir(tempDir, { recursive: true })
       const tempPath = join(tempDir, `${Date.now()}_${filename}`)
       await writeFile(tempPath, buffer)
 
-      console.log('[DeepLink] Saved to:', tempPath)
+      deepLog('[DeepLink] Saved to:', tempPath)
+      mainWindow?.webContents.send('open-attachment', { tempPath, filename, mime, quoteId })
+    }
+
+    if (parsed.hostname === 'open-file') {
+      const filePath = parsed.searchParams.get('path')
+      const quoteId = parsed.searchParams.get('quoteId') || ''
+      if (!filePath) {
+        deepLog('[DeepLink] open-file: missing path')
+        return
+      }
+
+      const { app: electronApp } = await import('electron')
+      const { writeFile, mkdir } = await import('fs/promises')
+      const { join: pathJoin, basename: pathBasename, extname: pathExtname } = await import('path')
+
+      const rawUrl = store.get('presscal.url')
+      deepLog('[DeepLink] open-file: store presscal.url =', JSON.stringify(rawUrl))
+      const presscalUrl = (rawUrl as string)?.replace(/\/$/, '')
+
+      if (!presscalUrl) {
+        deepLog('[DeepLink] open-file: PressCal not configured')
+        return
+      }
+
+      const fileUrl = filePath.startsWith('http') ? filePath : `${presscalUrl}${filePath}`
+      const filename = pathBasename(filePath)
+      const ext = pathExtname(filename).toLowerCase()
+
+      deepLog('[DeepLink] open-file: downloading', fileUrl)
+
+      // /storage/ paths are public, others need auth
+      const needsAuth = !filePath.includes('/storage/')
+      const headers: Record<string, string> = {}
+      if (needsAuth) {
+        const apiKey = store.get('presscal.apiKey') as string
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+      }
+
+      const response = await fetch(fileUrl, { headers })
+      if (!response.ok) {
+        deepLog('[DeepLink] open-file: download failed', response.status, response.statusText)
+        return
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer())
+      const tempDir = pathJoin(electronApp.getPath('temp'), 'presskit')
+      await mkdir(tempDir, { recursive: true })
+      const tempPath = pathJoin(tempDir, `${Date.now()}_${filename}`)
+      await writeFile(tempPath, buffer)
+
+      const mime = ext === '.pdf' ? 'application/pdf'
+        : ['.jpg', '.jpeg'].includes(ext) ? 'image/jpeg'
+        : ext === '.png' ? 'image/png'
+        : ext === '.tif' || ext === '.tiff' ? 'image/tiff'
+        : 'application/octet-stream'
+
+      deepLog('[DeepLink] open-file: saved to', tempPath)
       mainWindow?.webContents.send('open-attachment', { tempPath, filename, mime, quoteId })
     }
 
@@ -103,8 +169,6 @@ async function handleProtocolUrl(url: string): Promise<void> {
       const selectedPath = result.filePaths[0]
 
       // Save to PressCal via API
-      const Store = (await import('electron-store')).default
-      const store = new Store()
       const presscalUrl = (store.get('presscal.url') as string)?.replace(/\/$/, '')
       const apiKey = store.get('presscal.apiKey') as string
 
@@ -141,23 +205,223 @@ async function handleProtocolUrl(url: string): Promise<void> {
       mainWindow?.webContents.send('pick-file-mode', { quoteId, itemId })
     }
 
+    if (parsed.hostname === 'pick-file-dialog') {
+      // Native Windows file picker — bypasses PressKit's file browser entirely.
+      // Useful for browsing to arbitrary locations (Downloads, Desktop, etc.)
+      const quoteId = parsed.searchParams.get('quoteId')
+      const itemId = parsed.searchParams.get('itemId')
+      const startFolder = parsed.searchParams.get('folder') || undefined
+
+      if (!quoteId || !itemId) return
+
+      const { dialog } = await import('electron')
+      const result = await dialog.showOpenDialog(mainWindow!, {
+        title: 'Επιλογή αρχείου για κοστολόγηση',
+        defaultPath: startFolder,
+        properties: ['openFile'],
+        filters: [
+          { name: 'Design files', extensions: ['pdf', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'psd', 'ai', 'eps'] },
+          { name: 'All files', extensions: ['*'] },
+        ],
+      })
+      if (result.canceled || result.filePaths.length === 0) return
+
+      try {
+        const { linkFileToQuoteItem } = await import('./presscal-client')
+        await linkFileToQuoteItem(quoteId, itemId, result.filePaths[0])
+        // Refresh the PressCal quote detail tab
+        const { store: s } = await import('./settings')
+        const url = s.get('presscal.url') as string
+        if (url) {
+          const { shell } = await import('electron')
+          shell.openExternal(`${url.replace(/\/$/, '')}/quotes/${quoteId}?refresh=${Date.now()}`)
+        }
+      } catch (e) {
+        const { dialog: dlg } = await import('electron')
+        dlg.showErrorBox('Σύνδεση αρχείου απέτυχε', (e as Error).message)
+      }
+    }
+
     if (parsed.hostname === 'open-folder') {
       const folderPath = parsed.searchParams.get('path')
       const email = parsed.searchParams.get('email') || ''
+      let quoteId = parsed.searchParams.get('quoteId') || ''
       if (!folderPath) return
 
-      const { existsSync } = await import('fs')
+      const { existsSync, readFileSync } = await import('fs')
+      const { join: pathJoin } = await import('path')
       if (!existsSync(folderPath)) {
         const { dialog } = await import('electron')
         dialog.showErrorBox('Φάκελος δεν βρέθηκε', `Ο φάκελος δεν υπάρχει:\n${folderPath}`)
         return
       }
 
-      mainWindow?.focus()
-      mainWindow?.webContents.send('navigate-to-folder', { path: folderPath, email })
+      // Auto-detect quoteId from .presskit file if not provided in deep link
+      if (!quoteId) {
+        try {
+          const meta = JSON.parse(readFileSync(pathJoin(folderPath, '.presskit'), 'utf-8'))
+          quoteId = meta.quoteId || ''
+        } catch {}
+      }
+
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.show()
+        mainWindow.focus()
+        mainWindow.webContents.send('navigate-to-folder', { path: folderPath, email, quoteId })
+      }
+    }
+
+    if (parsed.hostname === 'download-to-folder') {
+      const quoteId = parsed.searchParams.get('quoteId')
+      const target = parsed.searchParams.get('target') || 'global'
+      if (!quoteId) return
+
+      const { writeFile, mkdir } = await import('fs/promises')
+      const { join: pathJoin, basename } = await import('path')
+      const { tmpdir } = await import('os')
+
+      const presscalUrl = (store.get('presscal.url') as string)?.replace(/\/$/, '')
+      const apiKey = store.get('presscal.apiKey') as string
+
+      if (!presscalUrl || !apiKey) {
+        deepLog('[DeepLink] PressCal not configured')
+        return
+      }
+
+      console.log('[DeepLink] download-to-folder for quote:', quoteId, 'target:', target)
+      deepLog('[DeepLink] Fetching file list from:', presscalUrl)
+
+      const sendProgress = (step: string, current: number, total: number, done = false) => {
+        mainWindow?.webContents.send('deeplink-progress', { step, current, total, done })
+      }
+      sendProgress('Λήψη λίστας αρχείων...', 0, 0)
+
+      // 1. Fetch file list for this quote (target=global|customer determines folderPath)
+      const listRes = await fetch(
+        `${presscalUrl}/api/filehelper/files?quoteId=${encodeURIComponent(quoteId)}&target=${encodeURIComponent(target)}`,
+        { headers: { 'Authorization': `Bearer ${apiKey}` } }
+      )
+      if (!listRes.ok) {
+        const errBody = await listRes.text().catch(() => '')
+        console.error('[DeepLink] Failed to fetch files:', listRes.status, errBody)
+        deepLog('[DeepLink] API error:', listRes.status, errBody)
+        return
+      }
+
+      const data = await listRes.json()
+      console.log('[DeepLink] API response:', JSON.stringify(data, null, 2))
+
+      const files: Array<{ filePath: string; fileName: string }> = data.files || []
+
+      if (files.length === 0) {
+        console.log('[DeepLink] No files to download')
+        deepLog('[DeepLink] No files to download')
+        return
+      }
+
+      // 2. Use folderPath from API response, fallback to temp with proper name
+      let targetDir = data.folderPath
+      if (!targetDir) {
+        // Fetch quote details for a readable folder name
+        let folderName = quoteId
+        try {
+          const quoteRes = await fetch(`${presscalUrl}/api/filehelper/quotes/${encodeURIComponent(quoteId)}`, {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+          })
+          if (quoteRes.ok) {
+            const quote = await quoteRes.json()
+            const num = quote.number || quoteId
+            const customer = (quote.customerName && quote.customerName !== '–') ? quote.customerName : ''
+            folderName = customer ? `[${num}] ${customer}` : `[${num}]`
+            // Sanitize for filesystem
+            folderName = folderName.replace(/[<>:"/\\|?*]/g, '_')
+          }
+        } catch {}
+        targetDir = pathJoin(tmpdir(), 'PressCal', folderName)
+      }
+      console.log('[DeepLink] Target folder:', targetDir)
+      await mkdir(targetDir, { recursive: true })
+      sendProgress('Δημιουργία φακέλου...', 0, files.length)
+
+      // 3. Download each file
+      let downloaded = 0
+      for (const file of files) {
+        try {
+          const saveName = file.fileName || basename(file.filePath)
+          sendProgress(saveName, downloaded, files.length)
+
+          const fileUrl = file.filePath.startsWith('http')
+            ? file.filePath
+            : `${presscalUrl}${file.filePath}`
+
+          // /storage/ paths are public, others need auth
+          const needsAuth = !file.filePath.includes('/storage/')
+          const headers: Record<string, string> = {}
+          if (needsAuth) {
+            headers['Authorization'] = `Bearer ${apiKey}`
+          }
+
+          const res = await fetch(fileUrl, { headers })
+          if (!res.ok) {
+            console.warn(`[DeepLink] Failed to download ${file.fileName}:`, res.status)
+            continue
+          }
+
+          const buffer = Buffer.from(await res.arrayBuffer())
+          const savePath = pathJoin(targetDir, saveName)
+          await writeFile(savePath, buffer)
+          downloaded++
+          console.log(`[DeepLink] Downloaded: ${saveName}`)
+
+          // Auto-extract ZIP files
+          if (saveName.toLowerCase().endsWith('.zip')) {
+            try {
+              const { execFile: ef } = await import('child_process')
+              const { promisify: prom } = await import('util')
+              const execAsync = prom(ef)
+              await execAsync('powershell', [
+                '-NoProfile', '-Command',
+                `Expand-Archive -Path '${savePath}' -DestinationPath '${targetDir}' -Force`
+              ], { timeout: 60000 })
+              // Remove the zip after extraction
+              const { unlink } = await import('fs/promises')
+              await unlink(savePath)
+              console.log(`[DeepLink] Extracted & removed: ${saveName}`)
+            } catch (zipErr) {
+              console.warn(`[DeepLink] Failed to extract ${saveName}:`, zipErr)
+            }
+          }
+        } catch (dlErr) {
+          console.warn(`[DeepLink] Error downloading ${file.fileName}:`, dlErr)
+        }
+      }
+
+      console.log(`[DeepLink] Downloaded ${downloaded}/${files.length} files to: ${targetDir}`)
+
+      // 4. Save quote context so PressKit knows which job this folder is for
+      try {
+        await writeFile(pathJoin(targetDir, '.presskit'), JSON.stringify({ quoteId }), 'utf-8')
+      } catch {}
+
+      // 5. Navigate PressKit browser to the folder
+      sendProgress('Ολοκληρώθηκε', downloaded, files.length, true)
+      mainWindow?.webContents.send('navigate-to-folder', { path: targetDir, quoteId })
+    }
+    if (parsed.hostname === 'connect') {
+      const url = parsed.searchParams.get('url')
+      const apiKey = parsed.searchParams.get('apiKey')
+      if (url && apiKey) {
+        store.set('presscal.url', url.replace(/\/$/, ''))
+        store.set('presscal.apiKey', apiKey)
+        deepLog('[DeepLink] Connected to PressCal:', url)
+        const { dialog: dlgConnect } = await import('electron')
+        dlgConnect.showMessageBox({ message: `Συνδέθηκε στο PressCal!\n${url}`, type: 'info' })
+        mainWindow?.webContents.send('presscal-connected', { url, apiKey })
+      }
     }
   } catch (e) {
-    console.error('Protocol handler error:', e)
+    deepLog('[DeepLink] ERROR:', String(e))
   }
 }
 
@@ -193,9 +457,53 @@ function createWindow(): void {
     mainWindow?.show()
   })
 
+  // Fallback: show window after 5s even if renderer didn't fire ready-to-show
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isVisible()) {
+      mainWindow.show()
+    }
+  }, 5000)
+
   mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
     console.error('Window failed to load:', code, desc)
     mainWindow?.show()
+  })
+
+  // Detect renderer process crashes (e.g. out-of-memory, native module failure).
+  // This is the cause of blank/grey windows when React itself isn't running.
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    console.error('[render-process-gone]', details.reason, 'exitCode:', details.exitCode)
+    // Offer the user a chance to reload rather than leaving a dead window
+    if (details.reason !== 'clean-exit' && mainWindow && !mainWindow.isDestroyed()) {
+      const { dialog: d } = require('electron') as typeof import('electron')
+      d.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'Σφάλμα εφαρμογής',
+        message: 'Το παράθυρο κόλλησε απρόσμενα',
+        detail: `Reason: ${details.reason}\nExit code: ${details.exitCode}`,
+        buttons: ['Reload', 'Κλείσιμο'],
+        defaultId: 0,
+        cancelId: 1
+      }).then(result => {
+        if (result.response === 0) mainWindow?.webContents.reload()
+        else mainWindow?.close()
+      })
+    }
+  })
+
+  mainWindow.webContents.on('unresponsive', () => {
+    console.warn('[webContents] renderer became unresponsive')
+  })
+
+  // Enable F12 / Ctrl+Shift+I for DevTools regardless of dev/prod, so we can
+  // diagnose issues in production builds.
+  mainWindow.webContents.on('before-input-event', (_e, input) => {
+    if (input.type !== 'keyDown') return
+    const isF12 = input.key === 'F12'
+    const isCtrlShiftI = input.control && input.shift && input.key.toLowerCase() === 'i'
+    if (isF12 || isCtrlShiftI) {
+      mainWindow?.webContents.toggleDevTools()
+    }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -232,12 +540,71 @@ function startFileServer(): void {
   const server = http.createServer((req: any, res: any) => {
     // CORS headers for browser access
     res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', '*')
 
     if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return }
 
     const parsed = urlMod.parse(req.url, true)
+
+    // POST /?save=C:\path\to\file.pdf — save uploaded file to disk
+    if (req.method === 'POST' && parsed.query.save) {
+      const savePath = parsed.query.save as string
+      const chunks: Buffer[] = []
+      req.on('data', (chunk: Buffer) => chunks.push(chunk))
+      req.on('end', async () => {
+        try {
+          const dir = pathMod.dirname(savePath)
+          await require('fs/promises').mkdir(dir, { recursive: true })
+          await require('fs/promises').writeFile(savePath, Buffer.concat(chunks))
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, path: savePath }))
+        } catch (e: any) {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: e.message }))
+        }
+      })
+      return
+    }
+
+    // Pick folder dialog: GET /?pickFolder=1 → opens native folder picker,
+    // returns { path: "..." } or { canceled: true }. Used by PressCal forms
+    // (e.g. "Νέα εταιρεία") to set a folder without typing a path.
+    if (parsed.query.pickFolder) {
+      ;(async () => {
+        try {
+          const { dialog } = await import('electron')
+          mainWindow?.focus()
+          const result = await dialog.showOpenDialog(mainWindow!, {
+            title: 'Επιλογή Φακέλου Πελάτη',
+            properties: ['openDirectory'],
+          })
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          if (result.canceled || result.filePaths.length === 0) {
+            res.end(JSON.stringify({ canceled: true }))
+          } else {
+            res.end(JSON.stringify({ path: result.filePaths[0] }))
+          }
+        } catch (e: any) {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: e.message }))
+        }
+      })()
+      return
+    }
+
+    // Directory listing: GET /?list=C:\path\to\folder → returns JSON array of PDF filenames
+    const listDir = parsed.query.list as string
+    if (listDir) {
+      if (!fs.existsSync(listDir)) { res.writeHead(404); res.end('[]'); return }
+      try {
+        const entries = fs.readdirSync(listDir).filter((f: string) => /\.(pdf|jpg|jpeg|png|tif|tiff|ai|psd|eps)$/i.test(f))
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(entries))
+      } catch { res.writeHead(500); res.end('[]') }
+      return
+    }
+
     const filePath = parsed.query.path as string
 
     if (!filePath || !fs.existsSync(filePath)) {
@@ -251,7 +618,7 @@ function startFileServer(): void {
     res.writeHead(200, {
       'Content-Type': mime,
       'Content-Length': stat.size,
-      'Content-Disposition': `inline; filename="${pathMod.basename(filePath)}"`,
+      'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(pathMod.basename(filePath))}`,
     })
 
     fs.createReadStream(filePath).pipe(res)
@@ -467,12 +834,27 @@ function registerHandlers(): void {
     return true
   })
 
-  // Native file drag-out (like Windows Explorer)
-  ipcMain.on('drag:start', (event, filePaths: string[]) => {
+  // Native file drag-out (like Windows Explorer).
+  // Uses `handle` (not `on`) because on Windows `startDrag` invokes
+  // `DoDragDrop` which blocks until the drag completes — returning from the
+  // handler then resolves the renderer's invoke promise, which is the signal
+  // used to clear the renderer's drag-state ref. A proper file icon is
+  // required: Windows drag sessions get stuck with a 1x1 or empty icon.
+  ipcMain.handle('drag:start', async (event, filePaths: string[]) => {
     if (!filePaths.length) return
     const { nativeImage } = require('electron')
-    // Use a small transparent icon — the OS shows the file icon automatically
-    const icon = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
+
+    let icon: Electron.NativeImage
+    try {
+      icon = await app.getFileIcon(filePaths[0], { size: 'normal' })
+      if (icon.isEmpty()) throw new Error('empty icon')
+    } catch {
+      // 32x32 transparent PNG fallback
+      icon = nativeImage.createFromDataURL(
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAH0lEQVRYhe3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAvg0hAAABmmDh1QAAAABJRU5ErkJggg=='
+      )
+    }
+
     if (filePaths.length === 1) {
       event.sender.startDrag({ file: filePaths[0], icon })
     } else {
@@ -568,7 +950,7 @@ if (!gotTheLock) {
   app.on('before-quit', async () => {
     try {
       const { rm } = await import('fs/promises')
-      const tempDir = join(app.getPath('temp'), 'presscal-filehelper')
+      const tempDir = join(app.getPath('temp'), 'presskit')
       await rm(tempDir, { recursive: true, force: true })
     } catch {}
   })

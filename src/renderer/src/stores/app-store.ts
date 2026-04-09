@@ -86,6 +86,10 @@ interface AppState {
   presscalConnected: boolean
   presscalOrgName: string
   lastCustomerEmail: string
+  // All known email options for the currently detected customer. First
+  // entry is usually the company email; the rest are individual contacts.
+  // Populated by the folder → customer autofill logic in App.tsx.
+  lastCustomerEmailOptions: Array<{ label: string; email: string; kind: 'company' | 'contact' }>
   pickFileMode: { quoteId: string; itemId: string } | null
   attachmentQuoteId: string
 
@@ -233,6 +237,7 @@ export const useAppStore = create<AppState>((set, get) => {
     presscalConnected: false,
     presscalOrgName: '',
     lastCustomerEmail: '',
+    lastCustomerEmailOptions: [],
     pickFileMode: null,
     attachmentQuoteId: '',
     dropboxConnected: false,
@@ -535,7 +540,44 @@ export const useAppStore = create<AppState>((set, get) => {
 
     refreshDirectory: async () => {
       const tab = get().tabs.find(t => t.id === get().activeTabId)
-      if (tab) await get().navigateTo(tab.currentPath)
+      if (!tab) return
+      const { activeTabId } = get()
+      const prevSelected = tab.selectedFile
+      const prevSelectedFiles = tab.selectedFiles
+
+      try {
+        let files: FileEntry[]
+        if (tab.source === 'local') {
+          files = await window.api.fs.listDirectory(tab.currentPath)
+        } else {
+          const entries = await window.api.dropbox.listFolder(tab.currentPath)
+          files = entries.map((e: any) => ({
+            name: e.name,
+            path: e.path,
+            isDirectory: e.isDirectory,
+            size: e.size,
+            modified: e.modified || '',
+            created: '',
+            extension: e.isDirectory ? '' : ('.' + e.name.split('.').pop()?.toLowerCase()),
+            type: e.isDirectory ? 'folder' : 'unknown'
+          }))
+        }
+
+        if (get().activeTabId !== activeTabId) return
+
+        // Preserve selection if the file still exists
+        const selectedFile = prevSelected
+          ? files.find(f => f.path === prevSelected.path) || null
+          : null
+        const selectedFiles = prevSelectedFiles.filter(
+          sf => files.some(f => f.path === sf.path)
+        )
+
+        updateActiveTab({ files, selectedFile, selectedFiles })
+      } catch {
+        // Fallback to full navigateTo
+        await get().navigateTo(tab.currentPath)
+      }
     },
 
     runPreflight: async () => {

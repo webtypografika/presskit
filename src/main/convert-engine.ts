@@ -21,6 +21,8 @@ export interface ConvertOptions {
   // Resize
   maxWidth?: number
   maxHeight?: number
+  // Use TrimBox instead of MediaBox (crops bleed/cropmarks)
+  useTrimBox?: boolean
 }
 
 // ─── Ghostscript detection ───────────────────────────────────────────
@@ -51,6 +53,81 @@ function findGhostscript(): string | null {
   return null
 }
 
+// ─── PDF box reading ────────────────────────────────────────────────
+
+async function getPdfBoxes(inputPath: string): Promise<{ mediaBox: number[], trimBox: number[] } | null> {
+  try {
+    const { PDFDocument } = await import('pdf-lib')
+    const data = await readFile(inputPath)
+    const pdf = await PDFDocument.load(data, { ignoreEncryption: true })
+    const page = pdf.getPage(0)
+    const media = page.getMediaBox()
+    const trim = page.getTrimBox()
+    return {
+      mediaBox: [media.x, media.y, media.width, media.height],
+      trimBox: [trim.x, trim.y, trim.width, trim.height]
+    }
+  } catch {
+    return null
+  }
+}
+
+// ─── Crop image to TrimBox ──────────────────────────────────────────
+
+async function cropToTrimBox(
+  imagePath: string,
+  boxes: { mediaBox: number[], trimBox: number[] },
+  options: ConvertOptions
+): Promise<void> {
+  const [mx, my, mw, mh] = boxes.mediaBox
+  const [tx, ty, tw, th] = boxes.trimBox
+
+  // If TrimBox equals MediaBox, nothing to crop
+  if (Math.abs(tw - mw) < 0.5 && Math.abs(th - mh) < 0.5) return
+
+  const sharp = (await import('sharp')).default
+  const meta = await sharp(imagePath).metadata()
+  if (!meta.width || !meta.height) return
+
+  // Convert PDF points to pixel coordinates
+  const scaleX = meta.width / mw
+  const scaleY = meta.height / mh
+
+  // TrimBox origin is bottom-left in PDF, but pixels are top-left
+  const left = Math.round((tx - mx) * scaleX)
+  const top = Math.round((my + mh - ty - th) * scaleY)
+  const width = Math.round(tw * scaleX)
+  const height = Math.round(th * scaleY)
+
+  // Clamp to image bounds
+  const cropLeft = Math.max(0, left)
+  const cropTop = Math.max(0, top)
+  const cropWidth = Math.min(width, meta.width - cropLeft)
+  const cropHeight = Math.min(height, meta.height - cropTop)
+
+  if (cropWidth <= 0 || cropHeight <= 0) return
+
+  let pipeline = sharp(imagePath).extract({
+    left: cropLeft, top: cropTop, width: cropWidth, height: cropHeight
+  })
+
+  // Re-encode in the same format
+  switch (options.format) {
+    case 'tiff':
+      pipeline = pipeline.tiff({ compression: 'lzw' })
+      break
+    case 'png':
+      pipeline = pipeline.png({ compressionLevel: 6 })
+      break
+    case 'jpg':
+      pipeline = pipeline.jpeg({ quality: options.quality || 95 })
+      break
+  }
+
+  const buf = await pipeline.toBuffer()
+  await writeFile(imagePath, buf)
+}
+
 // ─── Ghostscript PDF conversion ──────────────────────────────────────
 
 async function convertPdfWithGs(inputPath: string, outputPath: string, options: ConvertOptions): Promise<ConvertResult> {
@@ -72,6 +149,10 @@ async function convertPdfWithGs(inputPath: string, outputPath: string, options: 
       '-dCompatibilityLevel=1.4',
       '-dHaveTransparency=false',
     )
+    // UseTrimBox is well-supported with pdfwrite
+    if (options.useTrimBox) {
+      args.push('-dUseTrimBox')
+    }
     if (options.colorSpace === 'cmyk') {
       args.push(
         '-sColorConversionStrategy=CMYK',
@@ -106,8 +187,26 @@ async function convertPdfWithGs(inputPath: string, outputPath: string, options: 
 
   args.push(`-sOutputFile=${outputPath}`, inputPath)
 
+  console.log('[CONVERT] GS command:', gs, args.join(' '))
+
   try {
-    await execFileAsync(gs, args, { timeout: 120000 })
+    const gsResult = await execFileAsync(gs, args, { timeout: 120000 })
+    if (gsResult.stderr) console.warn('[CONVERT] GS stderr:', gsResult.stderr)
+    console.log('[CONVERT] GS done, checking output:', outputPath)
+
+    // For raster output, crop to TrimBox using sharp (more reliable than GS flag)
+    if (options.useTrimBox && options.format !== 'pdf') {
+      try {
+        const boxes = await getPdfBoxes(inputPath)
+        if (boxes) {
+          await cropToTrimBox(outputPath, boxes, options)
+        }
+      } catch (cropErr) {
+        // Crop failed — still return the full-page image
+        console.warn('TrimBox crop failed, keeping full page:', cropErr)
+      }
+    }
+
     const outputStats = await stat(outputPath)
     return {
       success: true,

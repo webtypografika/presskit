@@ -9,6 +9,7 @@ import {
 import { useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useAppStore } from '@/stores/app-store'
+import { useShallow } from 'zustand/react/shallow'
 import { Breadcrumb } from '../browser/Breadcrumb'
 import { BatchPreflightPanel } from '../batch/BatchPreflightPanel'
 import { ConvertDialog } from '../convert/ConvertDialog'
@@ -18,15 +19,35 @@ import { FilePackager } from '../tools/FilePackager'
 export type OverlayMode = 'none' | 'batch' | 'convert'
 
 export function Toolbar() {
+  const viewMode = useAppStore(s => s.viewMode)
+  const source = useAppStore(s => s.source)
+  const selectedFile = useAppStore(s => s.selectedFile)
+  const selectedFiles = useAppStore(s => s.selectedFiles)
+  const pathHistory = useAppStore(s => s.pathHistory)
+  const historyIndex = useAppStore(s => s.historyIndex)
+  const showSidebar = useAppStore(s => s.showSidebar)
+  const showInspector = useAppStore(s => s.showInspector)
+  const previewOpen = useAppStore(s => s.previewOpen)
+  const thumbnailSize = useAppStore(s => s.thumbnailSize)
   const {
     navigateBack, navigateForward, navigateUp, refreshDirectory,
-    viewMode, setViewMode, source, setSource, runPreflight,
-    selectedFile, selectedFiles, pathHistory, historyIndex,
-    showSidebar, setShowSidebar, showInspector, setShowInspector,
-    previewOpen, togglePreview,
-    thumbnailSize, setThumbnailSize,
-    requestNewFolder
-  } = useAppStore()
+    setViewMode, setSource, runPreflight,
+    setShowSidebar, setShowInspector,
+    togglePreview, setThumbnailSize, requestNewFolder
+  } = useAppStore(useShallow(s => ({
+    navigateBack: s.navigateBack,
+    navigateForward: s.navigateForward,
+    navigateUp: s.navigateUp,
+    refreshDirectory: s.refreshDirectory,
+    setViewMode: s.setViewMode,
+    setSource: s.setSource,
+    runPreflight: s.runPreflight,
+    setShowSidebar: s.setShowSidebar,
+    setShowInspector: s.setShowInspector,
+    togglePreview: s.togglePreview,
+    setThumbnailSize: s.setThumbnailSize,
+    requestNewFolder: s.requestNewFolder,
+  })))
 
   const [overlay, setOverlay] = useState<OverlayMode>('none')
   const [showSendEmail, setShowSendEmail] = useState(false)
@@ -260,14 +281,65 @@ function LabeledButton({ icon, label, onClick, disabled, active, accent }: {
   )
 }
 
+// Map raw PressCal / Gmail API errors to user-friendly Greek messages.
+// The raw errors are long JSON blobs that aren't useful in a dialog.
+function friendlyEmailError(e: any): string {
+  const raw = String(e?.message || e || '')
+
+  // Gmail OAuth expired / invalid — user must reconnect Gmail in PressCal
+  if (
+    raw.includes('UNAUTHENTICATED') ||
+    raw.includes('Invalid Credentials') ||
+    raw.includes('invalid authentication credentials') ||
+    /Gmail send failed[\s\S]*401/.test(raw)
+  ) {
+    return 'Το Gmail του PressCal χρειάζεται επανασύνδεση. Πήγαινε στο PressCal → Settings → Gmail και κάνε reconnect.'
+  }
+
+  // Gmail quota / rate limit
+  if (raw.includes('quotaExceeded') || raw.includes('rateLimitExceeded')) {
+    return 'Το όριο αποστολής email του Gmail έχει εξαντληθεί. Δοκίμασε σε λίγα λεπτά.'
+  }
+
+  // Invalid recipient
+  if (raw.includes('Invalid To header') || raw.includes('invalid recipient')) {
+    return 'Μη έγκυρη διεύθυνση παραλήπτη.'
+  }
+
+  // PressCal not configured
+  if (raw.includes('PressCal not configured')) {
+    return 'Το PressCal δεν είναι ρυθμισμένο. Πήγαινε στις ρυθμίσεις.'
+  }
+
+  // Attachment too large
+  if (raw.includes('too large') || raw.includes('Message size')) {
+    return 'Το αρχείο είναι πολύ μεγάλο για αποστολή μέσω email. Δοκίμασε WeTransfer ή Dropbox link.'
+  }
+
+  // Generic 500 — strip the stack and keep a short line
+  const m = raw.match(/PressCal API error: \d+ [^—]+(?:— (.+))?/)
+  if (m) {
+    const detail = m[1]?.split('\n')[0]?.slice(0, 200) || 'Άγνωστο σφάλμα από τον server'
+    return `Αποτυχία αποστολής: ${detail}`
+  }
+
+  return raw || 'Αποτυχία αποστολής email'
+}
+
 function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void }) {
-  const { presscalConnected, lastCustomerEmail } = useAppStore()
+  const presscalConnected = useAppStore(s => s.presscalConnected)
+  const lastCustomerEmail = useAppStore(s => s.lastCustomerEmail)
+  const lastCustomerEmailOptions = useAppStore(s => s.lastCustomerEmailOptions)
+  const attachmentQuoteId = useAppStore(s => s.attachmentQuoteId)
+  const pickFileQuoteId = useAppStore(s => s.pickFileMode?.quoteId)
+  const currentQuoteId = attachmentQuoteId || pickFileQuoteId || ''
   const [to, setTo] = useState(lastCustomerEmail || '')
   const [subject, setSubject] = useState('Αρχεία για έγκριση')
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
+  const [emailMenuOpen, setEmailMenuOpen] = useState(false)
 
   const totalSize = files.reduce((s, f) => s + (f.size || 0), 0)
 
@@ -282,13 +354,14 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
         to: to.trim(),
         subject: subject.trim(),
         body: body.trim(),
-        filePaths: files.map((f: any) => ({ path: f.path, name: f.name, ext: f.extension }))
+        filePaths: files.map((f: any) => ({ path: f.path, name: f.name, ext: f.extension })),
+        quoteId: currentQuoteId || undefined
       })
 
       setSent(true)
       setTimeout(onClose, 1500)
     } catch (e: any) {
-      setError(e.message || 'Αποτυχία αποστολής')
+      setError(friendlyEmailError(e))
     } finally {
       setSending(false)
     }
@@ -296,8 +369,8 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
 
   if (!presscalConnected) {
     return createPortal(
-      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }} onClick={onClose}>
-        <div onClick={e => e.stopPropagation()} style={{ width: 400, background: 'var(--th-bg-secondary)', borderRadius: 14, border: '1px solid var(--th-border)', padding: 32, textAlign: 'center' }}>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }}>
+        <div style={{ width: 400, background: 'var(--th-bg-secondary)', borderRadius: 14, border: '1px solid var(--th-border)', padding: 32, textAlign: 'center' }}>
           <div style={{ fontSize: 14, color: 'var(--th-text-muted)', marginBottom: 16 }}>Συνδεθείτε πρώτα στο PressCal (Settings → PressCal)</div>
           <button onClick={onClose} style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid var(--th-border)', background: 'transparent', color: 'var(--th-text-muted)', cursor: 'pointer' }}>OK</button>
         </div>
@@ -313,8 +386,8 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
   }
 
   return createPortal(
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 500, maxHeight: '80vh', display: 'flex', flexDirection: 'column', background: 'var(--th-bg-secondary)', borderRadius: 14, border: '1px solid var(--th-border)', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }}>
+      <div style={{ width: 500, maxHeight: '80vh', display: 'flex', flexDirection: 'column', background: 'var(--th-bg-secondary)', borderRadius: 14, border: '1px solid var(--th-border)', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
 
         {/* Header */}
         <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--th-border)', display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -342,9 +415,76 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
 
         {/* Form */}
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12, flex: 1, overflow: 'auto' }}>
-          <div>
+          <div style={{ position: 'relative' }}>
             <label style={{ fontSize: 12, color: 'var(--th-text-muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Προς</label>
-            <input value={to} onChange={e => setTo(e.target.value)} placeholder="email@example.com" type="email" style={inp} autoFocus />
+            <div style={{ position: 'relative' }}>
+              <input
+                value={to}
+                onChange={e => setTo(e.target.value)}
+                onFocus={() => lastCustomerEmailOptions.length > 0 && setEmailMenuOpen(true)}
+                onBlur={() => setTimeout(() => setEmailMenuOpen(false), 200)}
+                placeholder="email@example.com"
+                type="email"
+                style={{ ...inp, paddingRight: lastCustomerEmailOptions.length > 1 ? 36 : 14 }}
+                autoFocus
+              />
+              {lastCustomerEmailOptions.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setEmailMenuOpen(o => !o)}
+                  title="Διαθέσιμα emails πελάτη"
+                  style={{
+                    position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                    width: 26, height: 26, borderRadius: 6, border: 'none', cursor: 'pointer',
+                    background: 'transparent', color: 'var(--th-text-muted)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  ▾
+                </button>
+              )}
+              {emailMenuOpen && lastCustomerEmailOptions.length > 0 && (
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 100,
+                  background: 'var(--th-bg-tertiary, var(--th-bg-secondary))',
+                  border: '1px solid var(--th-border)', borderRadius: 8,
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.3)', overflow: 'hidden',
+                }}>
+                  {lastCustomerEmailOptions.map((opt, i) => (
+                    <button
+                      key={opt.email + i}
+                      type="button"
+                      onMouseDown={e => {
+                        e.preventDefault()
+                        setTo(opt.email)
+                        setEmailMenuOpen(false)
+                      }}
+                      style={{
+                        width: '100%', padding: '10px 14px', border: 'none', cursor: 'pointer',
+                        background: to === opt.email ? 'rgba(245,130,32,0.12)' : 'transparent',
+                        textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 2,
+                        borderBottom: i < lastCustomerEmailOptions.length - 1 ? '1px solid var(--th-border)' : 'none',
+                      }}
+                      onMouseEnter={e => { if (to !== opt.email) e.currentTarget.style.background = 'var(--th-bg-hover)' }}
+                      onMouseLeave={e => { if (to !== opt.email) e.currentTarget.style.background = 'transparent' }}
+                    >
+                      <span style={{ fontSize: 13, color: 'var(--th-text-primary)', fontWeight: 500 }}>
+                        {opt.label}
+                        <span style={{
+                          marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                          background: opt.kind === 'company' ? 'rgba(245,130,32,0.15)' : 'rgba(100,116,139,0.15)',
+                          color: opt.kind === 'company' ? '#f58220' : 'var(--th-text-muted)',
+                          fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.04em',
+                        }}>
+                          {opt.kind === 'company' ? 'εταιρεία' : 'επαφή'}
+                        </span>
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--th-text-muted)' }}>{opt.email}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <div>
             <label style={{ fontSize: 12, color: 'var(--th-text-muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Θέμα</label>
@@ -400,7 +540,9 @@ function formatSize(bytes: number): string {
 }
 
 function SearchBox() {
-  const { selectFile, navigateTo, currentPath } = useAppStore()
+  const selectFile = useAppStore(s => s.selectFile)
+  const navigateTo = useAppStore(s => s.navigateTo)
+  const currentPath = useAppStore(s => s.currentPath)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<any[]>([])
   const [open, setOpen] = useState(false)

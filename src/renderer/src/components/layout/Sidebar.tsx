@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '@/stores/app-store'
 import { getFileTypeColor } from '@/lib/file-types'
+import { dragState } from '@/lib/drag-state'
 
 interface UserPaths {
   desktop: string
@@ -15,7 +16,11 @@ interface UserPaths {
 }
 
 export function Sidebar() {
-  const { navigateTo, source, setSource, presscalConnected, dropboxConnected } = useAppStore()
+  const source = useAppStore(s => s.source)
+  const presscalConnected = useAppStore(s => s.presscalConnected)
+  const dropboxConnected = useAppStore(s => s.dropboxConnected)
+  const navigateTo = useAppStore(s => s.navigateTo)
+  const setSource = useAppStore(s => s.setSource)
   const [drives, setDrives] = useState<string[]>([])
   const [bookmarks, setBookmarks] = useState<string[]>([])
   const [recentPaths, setRecentPaths] = useState<string[]>([])
@@ -209,7 +214,7 @@ function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath
   dropPath?: string
 }) {
   const [dragOver, setDragOver] = useState(false)
-  const { refreshDirectory } = useAppStore()
+  const refreshDirectory = useAppStore(s => s.refreshDirectory)
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (!dropPath) return
@@ -222,15 +227,18 @@ function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath
     e.preventDefault()
     setDragOver(false)
     if (!dropPath) return
-    const data = e.dataTransfer.getData('application/x-filehelper-paths')
-    if (!data) return
-    const paths: string[] = JSON.parse(data)
-    const validPaths = paths.filter(p => p !== dropPath && !dropPath.startsWith(p + '/') && !dropPath.startsWith(p + '\\'))
+    const internalPaths = dragState.get()
+    const isInternal = internalPaths.length > 0
+    const sourcePaths = isInternal
+      ? [...internalPaths]
+      : Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
+    if (!sourcePaths.length) return
+    const validPaths = sourcePaths.filter(p => p !== dropPath && !dropPath.startsWith(p + '/') && !dropPath.startsWith(p + '\\'))
     if (!validPaths.length) return
-    if (e.ctrlKey) {
-      await window.api.fs.copy(validPaths, dropPath)
-    } else {
+    if (isInternal && !e.ctrlKey) {
       await window.api.fs.move(validPaths, dropPath)
+    } else {
+      await window.api.fs.copy(validPaths, dropPath)
     }
     refreshDirectory()
   }, [dropPath, refreshDirectory])
@@ -267,7 +275,10 @@ function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath
 }
 
 function SidebarFolders() {
-  const { files, navigateTo, currentPath, refreshDirectory } = useAppStore()
+  const files = useAppStore(s => s.files)
+  const currentPath = useAppStore(s => s.currentPath)
+  const navigateTo = useAppStore(s => s.navigateTo)
+  const refreshDirectory = useAppStore(s => s.refreshDirectory)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
 
   if (!currentPath) return null
@@ -286,15 +297,20 @@ function SidebarFolders() {
   const handleDrop = async (e: React.DragEvent, targetPath: string) => {
     e.preventDefault()
     setDropTarget(null)
-    const data = e.dataTransfer.getData('application/x-filehelper-paths')
-    if (!data) return
-    const paths: string[] = JSON.parse(data)
-    const validPaths = paths.filter(p => p !== targetPath && !targetPath.startsWith(p + '/') && !targetPath.startsWith(p + '\\'))
+    // Internal drags carry their paths via dragState (see drag-state.ts).
+    // External drags (from Explorer) can also be dropped onto sibling folders.
+    const internalPaths = dragState.get()
+    const isInternal = internalPaths.length > 0
+    const sourcePaths = isInternal
+      ? [...internalPaths]
+      : Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
+    if (!sourcePaths.length) return
+    const validPaths = sourcePaths.filter(p => p !== targetPath && !targetPath.startsWith(p + '/') && !targetPath.startsWith(p + '\\'))
     if (!validPaths.length) return
-    if (e.ctrlKey) {
-      await window.api.fs.copy(validPaths, targetPath)
-    } else {
+    if (isInternal && !e.ctrlKey) {
       await window.api.fs.move(validPaths, targetPath)
+    } else {
+      await window.api.fs.copy(validPaths, targetPath)
     }
     refreshDirectory()
   }

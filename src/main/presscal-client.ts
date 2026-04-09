@@ -1,9 +1,7 @@
 import { IpcMain, app } from 'electron'
-import Store from 'electron-store'
 import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
-
-const store = new Store()
+import { store } from './settings'
 
 const STORE_KEYS = {
   presscalUrl: 'presscal.url',
@@ -36,10 +34,108 @@ async function presscalFetch<T>(endpoint: string, options?: RequestInit): Promis
   })
 
   if (!response.ok) {
-    throw new Error(`PressCal API error: ${response.status} ${response.statusText}`)
+    // Surface the server's error body — PressCal typically returns JSON
+    // like { error: "..." } which is far more useful than just the status.
+    let detail = ''
+    try {
+      const text = await response.text()
+      if (text) {
+        try {
+          const json = JSON.parse(text)
+          detail = json.error || json.message || text
+        } catch {
+          detail = text.length > 500 ? text.slice(0, 500) + '…' : text
+        }
+      }
+    } catch {}
+    console.error(`[PressCal] ${options?.method || 'GET'} ${endpoint} → ${response.status}`, detail)
+    throw new Error(`PressCal API error: ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`)
   }
 
   return response.json()
+}
+
+// Extract file metadata (images + PDFs) and POST to PressCal's link-file endpoint.
+// Shared by the IPC handler and the pick-file-dialog deep link handler.
+export async function linkFileToQuoteItem(quoteId: string, itemId: string, filePath: string): Promise<any> {
+  const { stat: fsStat } = await import('fs/promises')
+  const { basename, extname } = await import('path')
+
+  const stats = await fsStat(filePath)
+  const ext = extname(filePath).toLowerCase()
+  const name = basename(filePath)
+
+  const fileData: Record<string, any> = {
+    path: filePath,
+    name,
+    type: ext.replace('.', ''),
+    size: stats.size,
+  }
+
+  // Extract metadata for images
+  if (['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.psd', '.ai', '.eps'].includes(ext)) {
+    try {
+      const sharp = (await import('sharp')).default
+      const meta = await sharp(filePath).metadata()
+      if (meta.width && meta.height && meta.density) {
+        fileData.width = Math.round((meta.width / meta.density) * 25.4)
+        fileData.height = Math.round((meta.height / meta.density) * 25.4)
+        fileData.dpi = meta.density
+      } else if (meta.width && meta.height) {
+        fileData.dpi = 300
+        fileData.width = Math.round((meta.width / 300) * 25.4)
+        fileData.height = Math.round((meta.height / 300) * 25.4)
+      }
+      if (meta.space) {
+        fileData.colors = meta.space.toUpperCase() === 'CMYK' ? 'CMYK' : meta.space.toUpperCase()
+      }
+    } catch {}
+  }
+
+  if (ext === '.pdf') {
+    try {
+      const { readFile: rf } = await import('fs/promises')
+      const pdfData = await rf(filePath)
+      const text = pdfData.toString('latin1')
+
+      const pageMatches = text.match(/\/Type\s*\/Page[^s]/g)
+      if (pageMatches) fileData.pages = pageMatches.length
+
+      const boxRegex = (n: string) => {
+        const re = new RegExp(`\\/${n}\\s*\\[\\s*([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)\\s*\\]`, 'g')
+        const matches = [...text.matchAll(re)]
+        return matches.length > 0 ? matches[0] : null
+      }
+
+      const trimBox = boxRegex('TrimBox')
+      const cropBox = boxRegex('CropBox')
+      const mediaBox = boxRegex('MediaBox')
+      const box = trimBox || cropBox || mediaBox
+
+      if (box) {
+        const w = parseFloat(box[3]) - parseFloat(box[1])
+        const h = parseFloat(box[4]) - parseFloat(box[2])
+        fileData.width = Math.round(w * 0.3528)
+        fileData.height = Math.round(h * 0.3528)
+
+        if (trimBox && mediaBox) {
+          const mw = parseFloat(mediaBox[3]) - parseFloat(mediaBox[1])
+          const tw = parseFloat(trimBox[3]) - parseFloat(trimBox[1])
+          const bleed = Math.round(((mw - tw) / 2) * 0.3528)
+          if (bleed > 0 && bleed <= 10) fileData.bleed = bleed
+        }
+      }
+
+      if (fileData.pages === 2) {
+        fileData.colors = '4/4'
+      }
+    } catch {}
+  }
+
+  return presscalFetch<any>(`/quotes/${quoteId}/items/${itemId}/link-file`, {
+    method: 'POST',
+    body: JSON.stringify(fileData)
+  })
 }
 
 export function registerPresscalHandlers(ipcMain: IpcMain): void {
@@ -165,93 +261,7 @@ export function registerPresscalHandlers(ipcMain: IpcMain): void {
 
   // Link file to a quote item (with metadata extraction)
   ipcMain.handle('presscal:linkFileToItem', async (_e, quoteId: string, itemId: string, filePath: string) => {
-    const { stat: fsStat } = await import('fs/promises')
-    const { basename, extname } = await import('path')
-
-    const stats = await fsStat(filePath)
-    const ext = extname(filePath).toLowerCase()
-    const name = basename(filePath)
-
-    const fileData: Record<string, any> = {
-      path: filePath,
-      name,
-      type: ext.replace('.', ''),
-      size: stats.size,
-    }
-
-    // Extract metadata for images/PDFs
-    if (['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.psd', '.ai', '.eps'].includes(ext)) {
-      try {
-        const sharp = (await import('sharp')).default
-        const meta = await sharp(filePath).metadata()
-        if (meta.width && meta.height && meta.density) {
-          fileData.width = Math.round((meta.width / meta.density) * 25.4)
-          fileData.height = Math.round((meta.height / meta.density) * 25.4)
-          fileData.dpi = meta.density
-        } else if (meta.width && meta.height) {
-          fileData.dpi = 300 // assume
-          fileData.width = Math.round((meta.width / 300) * 25.4)
-          fileData.height = Math.round((meta.height / 300) * 25.4)
-        }
-        if (meta.space) {
-          fileData.colors = meta.space.toUpperCase() === 'CMYK' ? 'CMYK' : meta.space.toUpperCase()
-        }
-      } catch {}
-    }
-
-    if (ext === '.pdf') {
-      try {
-        const { readFile: rf } = await import('fs/promises')
-        const pdfData = await rf(filePath)
-        const text = pdfData.toString('latin1')
-
-        // Page count: count /Type /Page (not /Pages) occurrences
-        const pageMatches = text.match(/\/Type\s*\/Page[^s]/g)
-        if (pageMatches) fileData.pages = pageMatches.length
-
-        // Dimensions: prefer TrimBox > CropBox > MediaBox
-        // TrimBox = final trimmed size (what we want for print)
-        // CropBox = visible area
-        // MediaBox = full page including bleed
-        const boxRegex = (name: string) => {
-          const re = new RegExp(`\\/${name}\\s*\\[\\s*([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)\\s*\\]`, 'g')
-          const matches = [...text.matchAll(re)]
-          return matches.length > 0 ? matches[0] : null
-        }
-
-        const trimBox = boxRegex('TrimBox')
-        const cropBox = boxRegex('CropBox')
-        const mediaBox = boxRegex('MediaBox')
-        const box = trimBox || cropBox || mediaBox
-
-        if (box) {
-          const w = parseFloat(box[3]) - parseFloat(box[1])
-          const h = parseFloat(box[4]) - parseFloat(box[2])
-          // PDF points to mm (1 point = 0.3528mm)
-          fileData.width = Math.round(w * 0.3528)
-          fileData.height = Math.round(h * 0.3528)
-
-          // If we have both TrimBox and MediaBox, calculate bleed
-          if (trimBox && mediaBox) {
-            const mw = parseFloat(mediaBox[3]) - parseFloat(mediaBox[1])
-            const tw = parseFloat(trimBox[3]) - parseFloat(trimBox[1])
-            const bleed = Math.round(((mw - tw) / 2) * 0.3528)
-            if (bleed > 0 && bleed <= 10) fileData.bleed = bleed
-          }
-        }
-
-        // 2 pages in a business card = front/back = 2 sides
-        if (fileData.pages === 2) {
-          fileData.colors = '4/4' // assume full color both sides
-        }
-      } catch {}
-    }
-
-    // Send to PressCal API
-    return presscalFetch<any>(`/quotes/${quoteId}/items/${itemId}/link-file`, {
-      method: 'POST',
-      body: JSON.stringify(fileData)
-    })
+    return linkFileToQuoteItem(quoteId, itemId, filePath)
   })
 
   // Send email with local file attachments (reads files + base64 in main process)
@@ -280,6 +290,14 @@ export function registerPresscalHandlers(ipcMain: IpcMain): void {
       })
     )
 
+    const totalBase64 = attachments.reduce((sum, a) => sum + a.content.length, 0)
+    console.log('[PressCal] sendEmailWithFiles →',
+      `to=${data.to},`,
+      `attachments=${attachments.length},`,
+      `base64 size=${(totalBase64 / 1024 / 1024).toFixed(2)} MB,`,
+      `quoteId=${data.quoteId || '(none)'}`
+    )
+
     return presscalFetch<any>('/email', {
       method: 'POST',
       body: JSON.stringify({
@@ -292,7 +310,7 @@ export function registerPresscalHandlers(ipcMain: IpcMain): void {
     })
   })
 
-  // Upload file for costing (multipart/form-data)
+  // Send file metadata for costing (file stays local, served via localhost:17824)
   ipcMain.handle('presscal:uploadFileForCosting', async (_e, data: {
     filePath: string
     fileName: string
@@ -304,25 +322,26 @@ export function registerPresscalHandlers(ipcMain: IpcMain): void {
     const config = getConfig()
     if (!config) throw new Error('PressCal not configured')
 
-    const { readFile: rf } = await import('fs/promises')
+    const { stat } = await import('fs/promises')
     const { basename } = await import('path')
 
-    const fileBuffer = await rf(data.filePath)
-    const blob = new Blob([fileBuffer])
-
-    const formData = new FormData()
-    formData.append('file', blob, data.fileName || basename(data.filePath))
-    formData.append('target', data.target)
-    formData.append('targetId', data.targetId)
-    if (data.quoteId) formData.append('quoteId', data.quoteId)
-    if (data.itemId) formData.append('itemId', data.itemId)
+    const fileSize = (await stat(data.filePath)).size
 
     const response = await fetch(`${config.url}/api/filehelper/files/upload`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${config.apiKey}`
+        'Authorization': `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json'
       },
-      body: formData
+      body: JSON.stringify({
+        fileName: data.fileName || basename(data.filePath),
+        filePath: data.filePath,
+        fileSize,
+        target: data.target,
+        targetId: data.targetId,
+        quoteId: data.quoteId || undefined,
+        itemId: data.itemId || undefined
+      })
     })
 
     if (!response.ok) {
@@ -354,7 +373,7 @@ export function registerPresscalHandlers(ipcMain: IpcMain): void {
     const buffer = Buffer.from(await response.arrayBuffer())
 
     // Save to temp directory
-    const tempDir = join(app.getPath('temp'), 'presscal-filehelper')
+    const tempDir = join(app.getPath('temp'), 'presskit')
     await mkdir(tempDir, { recursive: true })
     const tempPath = join(tempDir, `${Date.now()}_${filename}`)
     await writeFile(tempPath, buffer)

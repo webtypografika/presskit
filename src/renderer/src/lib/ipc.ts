@@ -39,6 +39,7 @@ export interface PresscalJob {
   title: string | null
   customerName: string | null
   jobStage: string
+  jobStageName: string | null
   jobPriority: string
   deadline: string | null
   items: any[]

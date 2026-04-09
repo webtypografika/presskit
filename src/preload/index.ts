@@ -34,6 +34,8 @@ const api = {
     copy: (sourcePaths: string[], targetDir: string) => ipcRenderer.invoke('fs:copy', sourcePaths, targetDir),
     trash: (paths: string[]) => ipcRenderer.invoke('fs:trash', paths),
     createDirectory: (dirPath: string) => ipcRenderer.invoke('fs:createDirectory', dirPath),
+    getNotes: (filePath: string) => ipcRenderer.invoke('notes:get', filePath) as Promise<string>,
+    setNotes: (filePath: string, note: string) => ipcRenderer.invoke('notes:set', filePath, note),
     watch: (dirPath: string) => ipcRenderer.invoke('fs:watch', dirPath),
     unwatch: () => ipcRenderer.invoke('fs:unwatch'),
     onChanged: (callback: (dirPath: string) => void) => {
@@ -142,7 +144,7 @@ const api = {
     isInstalled: (fontPath: string) => ipcRenderer.invoke('font:isInstalled', fontPath),
   },
 
-  // Deep link events (from PressCal "Open in FileHelper")
+  // Deep link events (from PressCal "Open in PressKit")
   deepLink: {
     onOpenAttachment: (callback: (data: { tempPath: string; filename: string; mime: string; quoteId?: string }) => void) => {
       ipcRenderer.on('open-attachment', (_e, data) => callback(data))
@@ -152,9 +154,13 @@ const api = {
       ipcRenderer.on('pick-file-mode', (_e, data) => callback(data))
       return () => ipcRenderer.removeAllListeners('pick-file-mode')
     },
-    onNavigateToFolder: (callback: (data: { path: string; email?: string }) => void) => {
+    onNavigateToFolder: (callback: (data: { path: string; email?: string; quoteId?: string }) => void) => {
       ipcRenderer.on('navigate-to-folder', (_e, data) => callback(data))
       return () => ipcRenderer.removeAllListeners('navigate-to-folder')
+    },
+    onProgress: (callback: (data: { step: string; current: number; total: number; done: boolean }) => void) => {
+      ipcRenderer.on('deeplink-progress', (_e, data) => callback(data))
+      return () => ipcRenderer.removeAllListeners('deeplink-progress')
     }
   },
 
@@ -164,9 +170,11 @@ const api = {
     openWith: (appPath: string, filePath: string) => ipcRenderer.invoke('apps:openWith', appPath, filePath)
   },
 
-  // Native drag
+  // Native drag. Uses `invoke` because on Windows the main-side handler
+  // blocks on `DoDragDrop` until the drag ends — the returned promise
+  // resolves at that point, letting the renderer clean up drag state.
   drag: {
-    start: (filePaths: string[]) => ipcRenderer.send('drag:start', filePaths)
+    start: (filePaths: string[]) => ipcRenderer.invoke('drag:start', filePaths)
   },
 
   // Color tools
