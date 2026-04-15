@@ -30,17 +30,35 @@ import { useShallow } from 'zustand/react/shallow'
 import { ContextMenu } from './ContextMenu'
 import { dragState } from '@/lib/drag-state'
 
+// Adobe-style badge icon: rounded square with 2-letter abbreviation
+function AdobeBadge({ label, bg, size }: { label: string; bg: string; size: number }) {
+  const r = Math.round(size * 0.18)
+  const fontSize = size <= 18 ? 9 : size <= 24 ? 11 : Math.round(size * 0.44)
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <rect x={0} y={0} width={size} height={size} rx={r} ry={r} fill={bg} />
+      <text
+        x={size / 2} y={size / 2}
+        textAnchor="middle" dominantBaseline="central"
+        fill="#fff" fontFamily="system-ui, sans-serif" fontWeight={700} fontSize={fontSize}
+      >
+        {label}
+      </text>
+    </svg>
+  )
+}
+
 function FileTypeIcon({ type, size = 32 }: { type: FileType; size?: number }) {
   const color = getFileTypeColor(type)
   const iconProps = { size, color, strokeWidth: 1.5 }
 
   switch (type) {
     case 'folder': return <Folder {...iconProps} fill={color} fillOpacity={0.15} />
-    case 'pdf': return <FileText {...iconProps} />
-    case 'ai': return <Layers {...iconProps} />
-    case 'psd': return <Layers {...iconProps} />
-    case 'eps': return <FileText {...iconProps} />
-    case 'indd': return <FileText {...iconProps} />
+    case 'pdf': return <AdobeBadge label="Pdf" bg="#e2574c" size={size} />
+    case 'ai': return <AdobeBadge label="Ai" bg="#ff7c00" size={size} />
+    case 'psd': return <AdobeBadge label="Ps" bg="#31a8ff" size={size} />
+    case 'eps': return <AdobeBadge label="Ep" bg="#ff7c00" size={size} />
+    case 'indd': return <AdobeBadge label="Id" bg="#ff3366" size={size} />
     case 'tiff': case 'png': case 'jpg': case 'svg': case 'raw':
       return <Image {...iconProps} />
     case 'font': return <Type {...iconProps} />
@@ -121,7 +139,38 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   })))
   const [ctxMenu, setCtxMenu] = useState<{ file: FileEntry; x: number; y: number } | null>(null)
   const [bgCtxMenu, setBgCtxMenu] = useState<{ x: number; y: number } | null>(null)
+  const [renamingPath, setRenamingPath] = useState<string | null>(null)
+  const refreshDirectory = useAppStore(s => s.refreshDirectory)
   const lastClickedIndexRef = useRef<number>(-1)
+
+  // F2 to rename selected file
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2' && selectedFile && !renamingPath) {
+        e.preventDefault()
+        setRenamingPath(selectedFile.path)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedFile, renamingPath])
+
+  const handleRename = useCallback(async (file: FileEntry, newName: string) => {
+    const trimmed = newName.trim()
+    console.log('[RENAME] called:', { oldName: file.name, newName: trimmed, path: file.path })
+    if (!trimmed || trimmed === file.name) {
+      console.log('[RENAME] skipped — same name or empty')
+      setRenamingPath(null)
+      return
+    }
+    const result = await window.api.fs.rename(file.path, trimmed)
+    console.log('[RENAME] result:', result)
+    setRenamingPath(null)
+    if (!result.ok) {
+      alert(result.error || 'Αποτυχία μετονομασίας')
+    }
+    setTimeout(() => refreshDirectory(), 200)
+  }, [refreshDirectory])
 
   // Right-click on empty space (background)
   const handleBgContextMenu = useCallback((e: React.MouseEvent) => {
@@ -169,7 +218,6 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   }, [onSelect, selectedFiles, selectFileRange])
 
   const [dropTarget, setDropTarget] = useState<string | null>(null)
-  const refreshDirectory = useAppStore(s => s.refreshDirectory)
 
   const getDragPaths = useCallback((file: FileEntry) => {
     return selectedFiles.length > 1 && selectedFiles.some(f => f.path === file.path)
@@ -177,109 +225,174 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
       : [file.path]
   }, [selectedFiles])
 
-  const handleDragStart = useCallback((e: React.DragEvent, file: FileEntry) => {
-    // Cancel the HTML5 drag and hand off to Electron's native OLE drag.
-    // Running both simultaneously causes Windows to lose track of the drag
-    // session, leaving a "ghost" file path stuck to the cursor until Esc.
-    e.preventDefault()
+  // ─── Custom drag: mousedown/mousemove/mouseup ─────────────────────
+  // Internal moves use custom tracking; when cursor leaves the window,
+  // we switch to native OLE drag for external apps (Illustrator, etc.)
+  const customDragRef = useRef<{
+    file: FileEntry
+    paths: string[]
+    startX: number
+    startY: number
+    active: boolean        // drag threshold exceeded
+    nativeStarted: boolean // handed off to native OLE drag
+  } | null>(null)
+  const [dragGhost, setDragGhost] = useState<{ x: number; y: number; name: string; count: number } | null>(null)
+
+  const handleItemMouseDown = useCallback((e: React.MouseEvent, file: FileEntry) => {
+    // Only left button, ignore on inputs and context menus
+    if (e.button !== 0) return
+    if ((e.target as HTMLElement).closest('input, button, .pick-badge')) return
+
     const paths = getDragPaths(file)
-    dragState.set(paths)
-    // On Windows, this promise resolves when the native drag ends (success
-    // or cancel) because DoDragDrop blocks the main process. Use that as
-    // the signal to clear drag state. Catch any error so a rejected promise
-    // can't become an unhandledrejection and crash the renderer.
-    window.api.drag.start(paths)
-      .catch(err => console.error('drag.start failed:', err))
-      .finally(() => {
-        dragState.clear()
-        setDropTarget(null)
-      })
+    customDragRef.current = {
+      file, paths,
+      startX: e.clientX, startY: e.clientY,
+      active: false, nativeStarted: false,
+    }
   }, [getDragPaths])
 
-  const handleDragOver = useCallback((e: React.DragEvent, file: FileEntry) => {
+  useEffect(() => {
+    const THRESHOLD = 6
+
+    const onMouseMove = (e: MouseEvent) => {
+      const drag = customDragRef.current
+      if (!drag || drag.nativeStarted) return
+
+      const dx = e.clientX - drag.startX
+      const dy = e.clientY - drag.startY
+
+      // Activation threshold
+      if (!drag.active) {
+        if (Math.abs(dx) < THRESHOLD && Math.abs(dy) < THRESHOLD) return
+        drag.active = true
+        dragState.set(drag.paths)
+      }
+
+      // Check if cursor left the window → switch to native OLE drag
+      if (e.clientX <= 0 || e.clientY <= 0 ||
+          e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
+        drag.nativeStarted = true
+        setDragGhost(null)
+        setDropTarget(null)
+        window.api.drag.start(drag.paths).finally(() => {
+          dragState.clear()
+          customDragRef.current = null
+        })
+        return
+      }
+
+      // Show ghost
+      setDragGhost({
+        x: e.clientX, y: e.clientY,
+        name: drag.file.name,
+        count: drag.paths.length,
+      })
+
+      // Hit-test folders for drop target
+      const el = document.elementFromPoint(e.clientX, e.clientY)
+      const folderEl = el?.closest('[data-folder-path]') as HTMLElement | null
+      setDropTarget(folderEl?.dataset.folderPath || null)
+    }
+
+    const onMouseUp = async (e: MouseEvent) => {
+      const drag = customDragRef.current
+      if (!drag) return
+      customDragRef.current = null
+      setDragGhost(null)
+
+      if (!drag.active || drag.nativeStarted) {
+        dragState.clear()
+        setDropTarget(null)
+        return
+      }
+
+      // Check if dropped on a folder
+      const el = document.elementFromPoint(e.clientX, e.clientY)
+      const folderEl = el?.closest('[data-folder-path]') as HTMLElement | null
+      const targetPath = folderEl?.dataset.folderPath
+
+      setDropTarget(null)
+      dragState.clear()
+
+      if (!targetPath) return
+
+      const validPaths = drag.paths.filter(p =>
+        p !== targetPath &&
+        !targetPath.startsWith(p + '/') &&
+        !targetPath.startsWith(p + '\\')
+      )
+      if (!validPaths.length) return
+
+      try {
+        if (e.ctrlKey) {
+          await window.api.fs.copy(validPaths, targetPath)
+        } else {
+          await window.api.fs.move(validPaths, targetPath)
+        }
+        refreshDirectory()
+      } catch (err) {
+        console.error('Drop failed:', err)
+      }
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [refreshDirectory])
+
+  // External file drops (from Explorer/other apps INTO PressKit) — keep HTML5 handlers
+  const handleExternalDragOver = useCallback((e: React.DragEvent, file: FileEntry) => {
     if (!file.isDirectory) return
+    // Only handle actual external drops (not our custom drag)
+    if (dragState.isActive()) return
     e.preventDefault()
     e.stopPropagation()
-    e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move'
+    e.dataTransfer.dropEffect = 'copy'
     setDropTarget(file.path)
   }, [])
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
+  const handleExternalDragLeave = useCallback((e: React.DragEvent) => {
+    if (dragState.isActive()) return
     e.preventDefault()
     setDropTarget(null)
   }, [])
 
-  const handleDrop = useCallback(async (e: React.DragEvent, targetFolder: FileEntry) => {
+  const handleExternalDrop = useCallback(async (e: React.DragEvent, targetFolder: FileEntry) => {
+    if (dragState.isActive()) return
     e.preventDefault()
     e.stopPropagation()
     setDropTarget(null)
     if (!targetFolder.isDirectory) return
 
-    // Internal drag paths come from dragState (set on dragstart), external
-    // drags arrive via dataTransfer.files. We distinguish them because
-    // internal drags default to MOVE (with Ctrl = copy), external always COPY.
-    const internalPaths = dragState.get()
-    const isInternal = internalPaths.length > 0
-    const sourcePaths = isInternal
-      ? [...internalPaths]
-      : Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
-
+    const sourcePaths = Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
     if (!sourcePaths.length) return
 
-    const validPaths = sourcePaths.filter(p =>
-      p !== targetFolder.path &&
-      !targetFolder.path.startsWith(p + '/') &&
-      !targetFolder.path.startsWith(p + '\\')
-    )
-    if (!validPaths.length) return
-
     try {
-      if (isInternal && !e.ctrlKey) {
-        await window.api.fs.move(validPaths, targetFolder.path)
-      } else {
-        await window.api.fs.copy(validPaths, targetFolder.path)
-      }
+      await window.api.fs.copy(sourcePaths, targetFolder.path)
       refreshDirectory()
     } catch (err) {
-      console.error('Drop failed:', err)
+      console.error('External drop failed:', err)
     }
   }, [refreshDirectory])
 
-  // Drop on background (empty space) — drops into current directory
   const handleBgDrop = useCallback(async (e: React.DragEvent) => {
-    // Don't handle if dropped on a file item
+    if (dragState.isActive()) return
     const target = e.target as HTMLElement
     if (target.closest('[data-file-item]')) return
-
     e.preventDefault()
     e.stopPropagation()
 
     const { currentPath } = useAppStore.getState()
     if (!currentPath) return
 
-    const internalPaths = dragState.get()
-    const isInternal = internalPaths.length > 0
-    const sourcePaths = isInternal
-      ? [...internalPaths]
-      : Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
-
+    const sourcePaths = Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
     if (!sourcePaths.length) return
 
-    // For internal drags, skip files already in the target directory
-    const validPaths = isInternal
-      ? sourcePaths.filter(p => {
-          const dir = p.replace(/[/\\][^/\\]+$/, '')
-          return dir !== currentPath
-        })
-      : sourcePaths
-    if (!validPaths.length) return
-
     try {
-      if (isInternal && !e.ctrlKey) {
-        await window.api.fs.move(validPaths, currentPath)
-      } else {
-        await window.api.fs.copy(validPaths, currentPath)
-      }
+      await window.api.fs.copy(sourcePaths, currentPath)
       refreshDirectory()
     } catch (err) {
       console.error('Background drop failed:', err)
@@ -287,6 +400,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   }, [refreshDirectory])
 
   const handleBgDragOver = useCallback((e: React.DragEvent) => {
+    if (dragState.isActive()) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
   }, [])
@@ -299,6 +413,9 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     switch (action) {
       case 'togglePick':
         togglePick(file.name)
+        break
+      case 'rename':
+        setRenamingPath(file.path)
         break
       case 'preview':
         onSelect(file)
@@ -366,98 +483,135 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     }
   }, [ctxMenu, onSelect, runPreflight, setInspectorTab, refreshDirectory, copyFiles, cutFiles, pasteFiles, selectedFiles, clearSelection, togglePick, requestNewFolder])
 
+  // ─── Resizable column widths (list view) ─────────────────────────
+  const colWidthsRef = useRef({ type: 80, date: 100, size: 80 })
+  const [colWidths, setColWidths] = useState({ type: 80, date: 100, size: 80 })
+
+  const onResizeStart = useCallback((e: React.MouseEvent, col: 'type' | 'date' | 'size') => {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startW = colWidthsRef.current[col]
+
+    const onMove = (ev: MouseEvent) => {
+      // Handle is on the LEFT edge: drag left = column wider (negative delta = bigger)
+      const delta = ev.clientX - startX
+      const newW = Math.max(40, startW - delta)
+      colWidthsRef.current = { ...colWidthsRef.current, [col]: newW }
+      setColWidths({ ...colWidthsRef.current })
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [])
+
   if (viewMode === 'list') {
+    const colTemplate = `8px 22px 1fr ${colWidths.type}px ${colWidths.date}px ${colWidths.size}px`
+
     return (
       <div className="h-full overflow-y-auto" onContextMenu={handleBgContextMenu} onDrop={handleBgDrop} onDragOver={handleBgDragOver}>
         {/* List header */}
-        <div className="sticky top-0 z-10 flex items-center gap-2 bg-bg-tertiary border-b border-border text-sm text-text-muted font-medium uppercase tracking-wider" style={{ padding: '10px 20px' }}>
-          <span className="w-6" />
-          <span className="flex-1">Name</span>
-          <span className="w-20 text-right">Size</span>
-          <span className="w-20 text-center">Type</span>
-          <span className="w-32 text-right">Modified</span>
+        <div
+          className="sticky top-0 z-10 bg-bg-tertiary border-b border-border text-text-muted font-medium uppercase tracking-wider select-none"
+          style={{ display: 'grid', gridTemplateColumns: colTemplate, alignItems: 'center', padding: '8px 16px', fontSize: 11 }}
+        >
+          <span />
+          <span />
+          <span>Name</span>
+          <ResizableHeader label="Type" onResize={(e) => onResizeStart(e, 'type')} />
+          <ResizableHeader label="Modified" onResize={(e) => onResizeStart(e, 'date')} align="right" />
+          <ResizableHeader label="Size" onResize={(e) => onResizeStart(e, 'size')} align="right" />
         </div>
 
         {/* List items */}
-        {files.map((file, index) => (
-          <div
-            key={file.path}
-            data-file-item
-            className={clsx(
-              'flex items-center gap-2 cursor-pointer transition-colors',
-              (selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path))
-                ? 'text-text-primary'
-                : 'hover:bg-bg-hover text-text-secondary'
-            )}
-            draggable
-            onDragStart={(e) => handleDragStart(e, file)}
-            onDragOver={(e) => handleDragOver(e, file)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, file)}
-            onClick={(e) => handleClick(e, file, index)}
-            onDoubleClick={() => onOpen(file)}
-            onContextMenu={(e) => handleContextMenu(e, file)}
-            style={{
-              padding: '8px 20px',
-              borderLeft: (selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path))
-                ? '2px solid #f58220' : '2px solid transparent',
-              background: dropTarget === file.path
-                ? 'rgba(245,130,32,0.15)'
-                : (selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path))
-                  ? 'rgba(245,130,32,0.08)' : undefined,
-              outline: dropTarget === file.path ? '2px dashed #f58220' : undefined,
-              outlineOffset: -2,
-            }}
-          >
-            {/* Pick indicator for list view */}
-            {!file.isDirectory && pickedFiles.has(file.name) && (
+        {files.map((file, index) => {
+          const isSelected = selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path)
+          return (
+            <div
+              key={file.path}
+              data-file-item
+              className={clsx(
+                'cursor-pointer transition-colors',
+                isSelected ? 'text-text-primary' : 'hover:bg-bg-hover text-text-secondary'
+              )}
+              onMouseDown={(e) => handleItemMouseDown(e, file)}
+              onDragOver={(e) => handleExternalDragOver(e, file)}
+              onDragLeave={handleExternalDragLeave}
+              onDrop={(e) => handleExternalDrop(e, file)}
+              onClick={(e) => handleClick(e, file, index)}
+              onDoubleClick={() => onOpen(file)}
+              onContextMenu={(e) => handleContextMenu(e, file)}
+              {...(file.isDirectory ? { 'data-folder-path': file.path } : {})}
+              style={{
+                display: 'grid', gridTemplateColumns: colTemplate, alignItems: 'center',
+                padding: '6px 16px',
+                borderLeft: isSelected ? '2px solid #f58220' : '2px solid transparent',
+                background: dropTarget === file.path
+                  ? 'rgba(245,130,32,0.15)'
+                  : isSelected ? 'rgba(245,130,32,0.08)' : undefined,
+                outline: dropTarget === file.path ? '2px dashed #f58220' : undefined,
+                outlineOffset: -2,
+              }}
+            >
+              {/* Pick indicator */}
               <span
-                onClick={(e) => { e.stopPropagation(); togglePick(file.name) }}
+                onClick={(e) => { e.stopPropagation(); if (!file.isDirectory) togglePick(file.name) }}
                 style={{
                   width: 0, height: 0, flexShrink: 0,
-                  cursor: 'pointer',
-                  borderStyle: 'solid',
-                  borderWidth: '6px 6px 0 0',
-                  borderColor: '#f58220 #f58220 transparent transparent',
-                  borderRadius: '2px 0 0 0',
+                  cursor: file.isDirectory ? 'default' : 'pointer',
+                  ...((!file.isDirectory && pickedFiles.has(file.name)) ? {
+                    borderStyle: 'solid', borderWidth: '6px 6px 0 0',
+                    borderColor: '#f58220 #f58220 transparent transparent',
+                    borderRadius: '2px 0 0 0',
+                  } : {}),
                 }}
-                title="Unpick"
+                title={file.isDirectory ? undefined : pickedFiles.has(file.name) ? 'Unpick' : 'Pick'}
               />
-            )}
-            {!file.isDirectory && !pickedFiles.has(file.name) && (
-              <span
-                onClick={(e) => { e.stopPropagation(); togglePick(file.name) }}
-                style={{ width: 6, height: 6, flexShrink: 0, cursor: 'pointer' }}
-                title="Pick"
-              />
-            )}
-            {file.isDirectory && <span style={{ width: 6, flexShrink: 0 }} />}
-            <span className="w-6 flex-shrink-0 flex justify-center" style={{ position: 'relative' }}>
-              <FileTypeIcon type={file.type} size={16} />
-              {file.cloudStatus === 'cloud' && (
-                <span style={{ position: 'absolute', bottom: -2, right: -2, fontSize: 7, color: '#3b82f6' }}>☁</span>
-              )}
-            </span>
-            <span className="flex-1 truncate text-xs">
-              {file.name}
-              {file.cloudStatus === 'cloud' && (
-                <span style={{ marginLeft: 6, fontSize: 10, color: '#3b82f6', fontWeight: 500 }}>cloud</span>
-              )}
-            </span>
-            <span className="w-20 text-right text-sm text-text-muted">
-              {file.isDirectory ? '' : formatFileSize(file.size)}
-            </span>
-            <span
-              className="w-20 text-center text-sm"
-              style={{ color: getFileTypeColor(file.type) }}
-            >
-              {getFileTypeLabel(file.type)}
-            </span>
-            <span className="w-32 text-right text-sm text-text-muted">
-              {file.modified ? new Date(file.modified).toLocaleDateString('el-GR') : ''}
-            </span>
-          </div>
-        ))}
+
+              {/* Icon */}
+              <span className="flex justify-center" style={{ position: 'relative' }}>
+                <FileTypeIcon type={file.type} size={16} />
+                {file.cloudStatus === 'cloud' && (
+                  <span style={{ position: 'absolute', bottom: -2, right: -2, fontSize: 7, color: '#3b82f6' }}>☁</span>
+                )}
+              </span>
+
+              {/* Name — takes all remaining space */}
+              <span className="truncate text-xs" style={{ minWidth: 0, paddingRight: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
+                {renamingPath === file.path ? (
+                  <RenameInput name={file.name} onSubmit={(n) => handleRename(file, n)} onCancel={() => setRenamingPath(null)} />
+                ) : (
+                  <>
+                    <span className="truncate">{file.name}</span>
+                    {file.cloudStatus === 'cloud' && (
+                      <span style={{ marginLeft: 6, fontSize: 10, color: '#3b82f6', fontWeight: 500, flexShrink: 0 }}>cloud</span>
+                    )}
+
+
+                  </>
+                )}
+              </span>
+
+              {/* Type */}
+              <span className="text-xs truncate" style={{ color: getFileTypeColor(file.type) }}>
+                {getFileTypeLabel(file.type)}
+              </span>
+
+              {/* Modified */}
+              <span className="text-xs text-text-muted text-right truncate">
+                {file.modified ? new Date(file.modified).toLocaleDateString('el-GR') : ''}
+              </span>
+
+              {/* Size */}
+              <span className="text-xs text-text-muted text-right truncate">
+                {file.isDirectory ? '' : formatFileSize(file.size)}
+              </span>
+            </div>
+          )
+        })}
 
         {/* New folder inline input (list view) */}
         {newFolderPending && (
@@ -491,6 +645,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
             hasClipboard={!!clipboard}
           />
         )}
+        {dragGhost && <DragGhost {...dragGhost} />}
       </div>
     )
   }
@@ -514,14 +669,14 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
             className={clsx(
               'flex flex-col items-center rounded-lg cursor-pointer transition-colors'
             )}
-            draggable
-            onDragStart={(e) => handleDragStart(e, file)}
-            onDragOver={(e) => handleDragOver(e, file)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, file)}
+            onMouseDown={(e) => handleItemMouseDown(e, file)}
+            onDragOver={(e) => handleExternalDragOver(e, file)}
+            onDragLeave={handleExternalDragLeave}
+            onDrop={(e) => handleExternalDrop(e, file)}
             onClick={(e) => handleClick(e, file, index)}
             onDoubleClick={() => onOpen(file)}
             onContextMenu={(e) => handleContextMenu(e, file)}
+            {...(file.isDirectory ? { 'data-folder-path': file.path } : {})}
             style={{
               padding: 4,
               border: dropTarget === file.path
@@ -555,12 +710,16 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
                   size={thumbnailSize}
                 />
               )}
+
+
             </div>
 
             {/* File name */}
             <div className="mt-1.5 w-full text-center">
               <div className="text-sm leading-tight truncate text-text-primary px-1">
-                {file.name}
+                {renamingPath === file.path ? (
+                  <RenameInput name={file.name} onSubmit={(n) => handleRename(file, n)} onCancel={() => setRenamingPath(null)} />
+                ) : file.name}
               </div>
               {!file.isDirectory && (
                 <div className="text-xs mt-0.5" style={{ color: getFileTypeColor(file.type) }}>
@@ -605,6 +764,23 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
           hasClipboard={!!clipboard}
         />
       )}
+      {dragGhost && <DragGhost {...dragGhost} />}
+    </div>
+  )
+}
+
+function DragGhost({ x, y, name, count }: { x: number; y: number; name: string; count: number }) {
+  return (
+    <div style={{
+      position: 'fixed', left: x + 12, top: y + 12,
+      pointerEvents: 'none', zIndex: 9999,
+      background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
+      color: '#fff', fontSize: 12, fontWeight: 500,
+      padding: '6px 12px', borderRadius: 8,
+      maxWidth: 250, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+    }}>
+      {count > 1 ? `${count} αρχεία` : name}
     </div>
   )
 }
@@ -790,4 +966,89 @@ function CloudBadge({ status }: { status: 'local' | 'cloud' | 'syncing' }) {
     )
   }
   return null
+}
+
+function RenameInput({ name, onSubmit, onCancel }: {
+  name: string
+  onSubmit: (newName: string) => void
+  onCancel: () => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const doneRef = useRef(false)
+
+  useEffect(() => {
+    setTimeout(() => {
+      if (!inputRef.current) return
+      inputRef.current.focus()
+      const dotIdx = name.lastIndexOf('.')
+      inputRef.current.setSelectionRange(0, dotIdx > 0 ? dotIdx : name.length)
+    }, 30)
+  }, [name])
+
+  const submit = useCallback(() => {
+    if (doneRef.current) return
+    doneRef.current = true
+    onSubmit(inputRef.current?.value || name)
+  }, [name, onSubmit])
+
+  const cancel = useCallback(() => {
+    if (doneRef.current) return
+    doneRef.current = true
+    onCancel()
+  }, [onCancel])
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    e.stopPropagation()
+    if (e.key === 'Enter') submit()
+    else if (e.key === 'Escape') cancel()
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      defaultValue={name}
+      onKeyDown={handleKeyDown}
+      onBlur={submit}
+      onClick={e => e.stopPropagation()}
+      onDoubleClick={e => e.stopPropagation()}
+      style={{
+        width: '100%', border: '1px solid #f58220', borderRadius: 4,
+        padding: '2px 6px', fontSize: 12, outline: 'none', textAlign: 'inherit',
+        background: 'var(--th-bg-primary)', color: 'var(--th-text-primary)',
+      }}
+    />
+  )
+}
+
+function ResizableHeader({ label, onResize, align }: {
+  label: string
+  onResize: (e: React.MouseEvent) => void
+  align?: 'right' | 'left'
+}) {
+  return (
+    <span style={{
+      position: 'relative', textAlign: align || 'left', userSelect: 'none',
+      display: 'flex', alignItems: 'center',
+      justifyContent: align === 'right' ? 'flex-end' : 'flex-start',
+    }}>
+      {/* Drag handle on the LEFT edge (border between this column and previous) */}
+      <span
+        onMouseDown={onResize}
+        style={{
+          position: 'absolute', left: -5, top: -8, bottom: -8, width: 10,
+          cursor: 'col-resize', zIndex: 2,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+        onMouseEnter={e => { const line = e.currentTarget.firstElementChild as HTMLElement; if (line) line.style.background = '#f58220' }}
+        onMouseLeave={e => { const line = e.currentTarget.firstElementChild as HTMLElement; if (line) line.style.background = 'var(--th-border)' }}
+      >
+        <span style={{
+          width: 2, height: '50%', borderRadius: 1,
+          background: 'var(--th-border)',
+          transition: 'background 0.15s',
+        }} />
+      </span>
+      {label}
+    </span>
+  )
 }

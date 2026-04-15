@@ -6,7 +6,12 @@ const api = {
     minimize: () => ipcRenderer.invoke('window:minimize'),
     maximize: () => ipcRenderer.invoke('window:maximize'),
     close: () => ipcRenderer.invoke('window:close'),
-    isMaximized: () => ipcRenderer.invoke('window:isMaximized')
+    isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
+    setFullscreenPreview: (open: boolean) => ipcRenderer.send('fullscreen-preview-state', open),
+    onCloseFullscreenPreview: (callback: () => void) => {
+      ipcRenderer.on('close-fullscreen-preview', () => callback())
+      return () => ipcRenderer.removeAllListeners('close-fullscreen-preview')
+    }
   },
 
   // Dialogs
@@ -33,6 +38,7 @@ const api = {
     move: (sourcePaths: string[], targetDir: string) => ipcRenderer.invoke('fs:move', sourcePaths, targetDir),
     copy: (sourcePaths: string[], targetDir: string) => ipcRenderer.invoke('fs:copy', sourcePaths, targetDir),
     trash: (paths: string[]) => ipcRenderer.invoke('fs:trash', paths),
+    rename: (oldPath: string, newName: string) => ipcRenderer.invoke('fs:rename', oldPath, newName) as Promise<{ ok: boolean; newPath?: string; error?: string }>,
     createDirectory: (dirPath: string) => ipcRenderer.invoke('fs:createDirectory', dirPath),
     getNotes: (filePath: string) => ipcRenderer.invoke('notes:get', filePath) as Promise<string>,
     setNotes: (filePath: string, note: string) => ipcRenderer.invoke('notes:set', filePath, note),

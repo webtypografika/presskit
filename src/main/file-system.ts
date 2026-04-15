@@ -62,6 +62,7 @@ const EXTENSION_MAP: Record<string, FileType> = {
   '.jpeg': 'jpg',
   '.webp': 'jpg',
   '.bmp': 'jpg',
+  '.gif': 'jpg',
   '.svg': 'svg',
   '.svgz': 'svg',
   '.cr2': 'raw',
@@ -164,22 +165,25 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
   })
 
   // Recursive search within a path
-  ipcMain.handle('fs:search', async (_e, rootPath: string, query: string, maxResults = 30): Promise<FileEntry[]> => {
+  ipcMain.handle('fs:search', async (_e, rootPath: string, query: string, maxResults = 50): Promise<FileEntry[]> => {
     if (!existsSync(rootPath) || !query.trim()) return []
 
     const q = query.toLowerCase()
     const results: FileEntry[] = []
-    const maxDepth = 4
+    const seen = new Set<string>()
+    const maxDepth = 8
+    const deadline = Date.now() + 5000 // 5s max
 
     async function walk(dir: string, depth: number) {
-      if (depth > maxDepth || results.length >= maxResults) return
+      if (depth > maxDepth || results.length >= maxResults || Date.now() > deadline) return
       try {
         const names = await readdir(dir)
         for (const name of names) {
-          if (results.length >= maxResults) return
-          if (name.startsWith('.') || name === 'node_modules' || name === 'Thumbs.db' || name === 'desktop.ini') continue
+          if (results.length >= maxResults || Date.now() > deadline) return
+          if (name.startsWith('.') || name === 'node_modules' || name === 'Thumbs.db' || name === 'desktop.ini' || name === '$RECYCLE.BIN') continue
 
           const fullPath = join(dir, name)
+          if (seen.has(fullPath)) continue
           let stats
           try {
             stats = await stat(fullPath)
@@ -188,6 +192,7 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
           const isDir = stats.isDirectory()
 
           if (name.toLowerCase().includes(q)) {
+            seen.add(fullPath)
             const ext = isDir ? '' : extname(name)
             results.push({
               name,
@@ -208,7 +213,16 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
       } catch {}
     }
 
+    // Search current directory first
     await walk(rootPath, 0)
+
+    // If few results, also search parent directory
+    if (results.length < 10 && Date.now() < deadline) {
+      const parent = dirname(rootPath)
+      if (parent && parent !== rootPath && existsSync(parent)) {
+        await walk(parent, 0)
+      }
+    }
 
     // Sort: folders first, then by name
     results.sort((a, b) => {
@@ -541,17 +555,20 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
         }
       }
 
-      // Method 2: fallback to fs.rm if trashItem fails (permanent delete)
+      // Method 2: fallback to fs.rm with retries (permanent delete)
       if (!ok) {
         console.log(`[DELETE] Falling back to fs.rm for "${p}"`)
-        try {
-          const fileStat = await stat(p)
-          await rm(p, { recursive: fileStat.isDirectory(), force: true })
-          ok = true
-          lastError = ''
-        } catch (err: any) {
-          lastError = `trashItem failed, rm also failed: ${err.message || String(err)}`
-          console.error(`[DELETE] fs.rm also failed for "${p}":`, lastError)
+        for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+          try {
+            if (attempt > 0) await new Promise(r => setTimeout(r, 500 * attempt))
+            const fileStat = await stat(p)
+            await rm(p, { recursive: fileStat.isDirectory(), force: true, maxRetries: 3, retryDelay: 200 })
+            ok = true
+            lastError = ''
+          } catch (err: any) {
+            lastError = `trashItem failed, rm also failed: ${err.message || String(err)}`
+            console.error(`[DELETE] fs.rm attempt ${attempt + 1} failed for "${p}":`, lastError)
+          }
         }
       }
 
@@ -560,6 +577,27 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
 
     console.log(`[DELETE] Results:`, results.map(r => `${basename(r.path)}: ${r.ok ? 'OK' : r.error}`).join(', '))
     return results
+  })
+
+  // Rename a file or folder
+  ipcMain.handle('fs:rename', async (_e, oldPath: string, newName: string) => {
+    const { rename: fsRename } = await import('fs/promises')
+    const { join, dirname } = await import('path')
+    const newPath = join(dirname(oldPath), newName)
+    if (oldPath === newPath) return { ok: true, newPath }
+    // Check target doesn't already exist
+    try {
+      await access(newPath)
+      return { ok: false, error: 'Υπάρχει ήδη αρχείο με αυτό το όνομα' }
+    } catch {
+      // good — target doesn't exist
+    }
+    try {
+      await fsRename(oldPath, newPath)
+      return { ok: true, newPath }
+    } catch (err: any) {
+      return { ok: false, error: err.message }
+    }
   })
 
   // ─── File watcher ────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  HardDrive, Star, Clock, FolderOpen, Cloud, Link2, ChevronDown, ChevronRight,
+  HardDrive, Star, Clock, FolderOpen, Cloud, ChevronDown, ChevronRight,
   Plus, X, File, Folder, Image, FileText, Type
 } from 'lucide-react'
 import { useAppStore } from '@/stores/app-store'
@@ -15,9 +15,14 @@ interface UserPaths {
   home: string
 }
 
+function normPath(p: string): string {
+  return p.replace(/[\\/]+$/, '').toLowerCase()
+}
+
 export function Sidebar() {
   const source = useAppStore(s => s.source)
-  const presscalConnected = useAppStore(s => s.presscalConnected)
+  const currentPath = useAppStore(s => s.currentPath)
+
   const dropboxConnected = useAppStore(s => s.dropboxConnected)
   const navigateTo = useAppStore(s => s.navigateTo)
   const setSource = useAppStore(s => s.setSource)
@@ -28,8 +33,7 @@ export function Sidebar() {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     locations: true,
     bookmarks: true,
-    recent: false,
-    presscal: true
+    recent: false
   })
 
   useEffect(() => {
@@ -62,6 +66,7 @@ export function Sidebar() {
             icon={<HardDrive size={14} />}
             label={drive}
             onClick={() => navigateTo(drive)}
+            active={normPath(currentPath) === normPath(drive)}
           />
         ))}
 
@@ -73,24 +78,28 @@ export function Sidebar() {
               label="Desktop"
               onClick={() => navigateTo(userPaths.desktop)}
               dropPath={userPaths.desktop}
+              active={normPath(currentPath).startsWith(normPath(userPaths.desktop))}
             />
             <SidebarItem
               icon={<FolderOpen size={14} />}
               label="Documents"
               onClick={() => navigateTo(userPaths.documents)}
               dropPath={userPaths.documents}
+              active={normPath(currentPath).startsWith(normPath(userPaths.documents))}
             />
             <SidebarItem
               icon={<FolderOpen size={14} />}
               label="Downloads"
               onClick={() => navigateTo(userPaths.downloads)}
               dropPath={userPaths.downloads}
+              active={normPath(currentPath).startsWith(normPath(userPaths.downloads))}
             />
             <SidebarItem
               icon={<FolderOpen size={14} />}
               label="Dropbox"
               onClick={() => navigateTo(userPaths.dropbox)}
               dropPath={userPaths.dropbox}
+              active={normPath(currentPath).startsWith(normPath(userPaths.dropbox))}
             />
           </>
         )}
@@ -135,6 +144,7 @@ export function Sidebar() {
             onClick={() => { if (source !== 'local') setSource('local'); navigateTo(path) }}
             onRemove={() => removeBookmark(path)}
             dropPath={path}
+            active={normPath(currentPath).startsWith(normPath(path))}
           />
         ))}
         {bookmarks.length === 0 && (
@@ -155,6 +165,7 @@ export function Sidebar() {
             label={path.split(/[/\\]/).pop() || path}
             sublabel={path}
             onClick={() => { if (source !== 'local') setSource('local'); navigateTo(path) }}
+            active={normPath(currentPath) === normPath(path)}
           />
         ))}
       </SidebarSection>
@@ -162,19 +173,6 @@ export function Sidebar() {
       {/* Folder tree of current path */}
       <SidebarFolders />
 
-      {/* PressCal Integration */}
-      <SidebarSection
-        title="PressCal"
-        expanded={expandedSections.presscal}
-        onToggle={() => toggleSection('presscal')}
-      >
-        <SidebarItem
-          icon={<Link2 size={14} className={presscalConnected ? 'text-success' : 'text-text-muted'} />}
-          label={presscalConnected ? 'Connected' : 'Not Connected'}
-          muted={!presscalConnected}
-          onClick={() => {}}
-        />
-      </SidebarSection>
     </div>
   )
 }
@@ -204,7 +202,7 @@ function SidebarSection({ title, expanded, onToggle, action, children }: {
   )
 }
 
-function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath }: {
+function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath, active }: {
   icon: React.ReactNode
   label: string
   sublabel?: string
@@ -212,6 +210,7 @@ function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath
   onRemove?: () => void
   muted?: boolean
   dropPath?: string
+  active?: boolean
 }) {
   const [dragOver, setDragOver] = useState(false)
   const refreshDirectory = useAppStore(s => s.refreshDirectory)
@@ -246,13 +245,16 @@ function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath
   return (
     <div
       className={`group flex items-center gap-3 cursor-pointer hover:bg-bg-hover ${
-        muted ? 'text-text-muted' : 'text-text-secondary'
+        muted ? 'text-text-muted' : active ? 'text-text-primary' : 'text-text-secondary'
       }`}
       style={{
         padding: '12px 32px',
-        background: dragOver ? 'rgba(245,130,32,0.15)' : undefined,
+        background: dragOver ? 'rgba(245,130,32,0.15)' : active ? 'var(--th-bg-hover)' : undefined,
+        borderLeft: active ? '3px solid #f58220' : '3px solid transparent',
+        paddingLeft: active ? 29 : 29,
         outline: dragOver ? '2px dashed #f58220' : undefined,
         outlineOffset: -2,
+        fontWeight: active ? 600 : undefined,
       }}
       onClick={onClick}
       title={sublabel || label}

@@ -220,6 +220,7 @@ export const useAppStore = create<AppState>((set, get) => {
       document.documentElement.setAttribute('data-theme', theme)
       document.body.style.background = theme === 'light' ? '#e4e8ee' : '#0a0e1a'
       document.body.style.color = theme === 'light' ? '#0f172a' : '#e2e8f0'
+      localStorage.setItem('presskit-theme', theme)
       window.api.settings.set('ui.theme', theme)
       window.api.theme.update(theme)
     },
@@ -302,6 +303,7 @@ export const useAppStore = create<AppState>((set, get) => {
         document.documentElement.setAttribute('data-theme', savedTheme)
         document.body.style.background = savedTheme === 'light' ? '#e4e8ee' : '#0a0e1a'
         document.body.style.color = savedTheme === 'light' ? '#0f172a' : '#e2e8f0'
+        localStorage.setItem('presskit-theme', savedTheme)
 
         set({
           theme: savedTheme,
@@ -348,6 +350,8 @@ export const useAppStore = create<AppState>((set, get) => {
         if (source === 'local') {
           files = await window.api.fs.listDirectory(path)
           window.api.settings.addRecentPath(path)
+          // Index visited directory for search (fire & forget)
+          window.api.search.addPath(path).catch(() => {})
         } else {
           const entries = await window.api.dropbox.listFolder(path)
           files = entries.map((e: any) => ({

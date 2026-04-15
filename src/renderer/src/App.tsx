@@ -173,15 +173,19 @@ export default function App() {
       }
       // File operations — only when not typing in an input
       const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      const editable = (e.target as HTMLElement).isContentEditable
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || editable) return
       if (e.code === 'Space') {
         e.preventDefault()
+        e.stopImmediatePropagation()
         const { fullscreenPreview, selectedFile } = useAppStore.getState()
+
         if (fullscreenPreview) {
           useAppStore.setState({ fullscreenPreview: false })
         } else if (selectedFile && !selectedFile.isDirectory) {
           useAppStore.setState({ fullscreenPreview: true })
         }
+        return
       }
       if (e.ctrlKey && e.code === 'KeyC') {
         e.preventDefault()

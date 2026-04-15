@@ -31,6 +31,19 @@ export function FullscreenPreview() {
     }
   }, [currentIndex, fileList, selectFile])
 
+  // Tell main process about fullscreen state so window X closes preview, not app
+  useEffect(() => {
+    window.api.window.setFullscreenPreview(fullscreenPreview)
+    if (!fullscreenPreview) return
+    const cleanup = window.api.window.onCloseFullscreenPreview(() => {
+      useAppStore.setState({ fullscreenPreview: false })
+    })
+    return () => {
+      window.api.window.setFullscreenPreview(false)
+      cleanup()
+    }
+  }, [fullscreenPreview])
+
   // Keyboard nav
   useEffect(() => {
     if (!fullscreenPreview) return

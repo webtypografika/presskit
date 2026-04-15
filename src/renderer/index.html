@@ -6,6 +6,15 @@
     <title>PressKit</title>
   </head>
   <body>
+    <script>
+      // Apply saved theme synchronously to prevent dark→light flash
+      ;(function() {
+        var t = localStorage.getItem('presskit-theme') || 'light';
+        document.documentElement.setAttribute('data-theme', t);
+        document.body.style.background = t === 'light' ? '#e4e8ee' : '#0a0e1a';
+        document.body.style.color = t === 'light' ? '#0f172a' : '#e2e8f0';
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="./src/main.tsx"></script>
   </body>

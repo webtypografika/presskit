@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import {
   ExternalLink, FolderOpen, Scan, RefreshCw,
   Copy, Star, ChevronRight, Trash2, Scissors, Clipboard, CircleCheck, Circle,
-  FolderPlus
+  FolderPlus, Pencil
 } from 'lucide-react'
 import type { FileEntry } from '@/lib/file-types'
 import { useAppStore } from '@/stores/app-store'
@@ -61,6 +61,7 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
 
   const isFile = !file.isDirectory
   const isPrint = isFile && ['pdf', 'ai', 'psd', 'eps', 'indd', 'tiff'].includes(file.type)
+  const canConvert = isFile && ['pdf', 'ai', 'psd', 'eps', 'tiff', 'png', 'jpg', 'svg', 'raw'].includes(file.type)
   const pickedFiles = useAppStore(s => s.pickedFiles)
   const isPicked = isFile && pickedFiles.has(file.name)
 
@@ -129,11 +130,11 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
 
       <Divider />
 
-      {/* Print actions */}
-      {isPrint && (
+      {/* Print / Convert actions */}
+      {(isPrint || canConvert) && (
         <>
-          <MenuItem icon={<Scan size={13} />} label="Run Preflight" onClick={() => onAction('preflight')} accent />
-          <MenuItem icon={<RefreshCw size={13} />} label="Convert..." onClick={() => onAction('convert')} />
+          {isPrint && <MenuItem icon={<Scan size={13} />} label="Run Preflight" onClick={() => onAction('preflight')} accent />}
+          {canConvert && <MenuItem icon={<RefreshCw size={13} />} label="Convert..." onClick={() => onAction('convert')} />}
           <Divider />
         </>
       )}
@@ -146,6 +147,7 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
       <Divider />
 
       {/* File operations */}
+      <MenuItem icon={<Pencil size={13} />} label="Rename" onClick={() => onAction('rename')} shortcut="F2" />
       <MenuItem icon={<Copy size={13} />} label="Copy path" onClick={() => onAction('copyPath')} />
       <MenuItem icon={<Star size={13} />} label={file.isDirectory ? 'Bookmark folder' : 'Copy name'} onClick={() => onAction(file.isDirectory ? 'bookmark' : 'copyName')} />
 

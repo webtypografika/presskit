@@ -83,7 +83,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
 
   if (isPdfInput && !hasGs) {
     return (
-      <div className="h-full flex flex-col">
+      <div className="flex flex-col">
         <PanelHeader onClose={onClose} />
         <div style={{ padding: 24 }}>
           <div style={{ fontSize: 13, color: 'var(--th-text-muted)', lineHeight: 1.6 }}>
@@ -107,7 +107,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="h-full flex flex-col overflow-y-auto" style={{ background: 'var(--th-bg-secondary)' }}>
+    <div className="flex flex-col overflow-y-auto" style={{ background: 'var(--th-bg-secondary)', maxHeight: '80vh' }}>
       {/* Header */}
       <PanelHeader onClose={onClose} />
 
@@ -311,17 +311,22 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
 
 function PanelHeader({ onClose }: { onClose: () => void }) {
   return (
-    <div className="flex items-center justify-between" style={{
-      padding: '18px 24px', borderBottom: '1px solid var(--th-border)',
+    <div className="flex items-center" style={{
+      padding: '14px 24px', borderBottom: '1px solid var(--th-border)', gap: 10,
     }}>
-      <div className="flex items-center" style={{ gap: 10 }}>
-        <RefreshCw size={20} style={{ color: '#f58220' }} />
-        <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--th-text-primary)' }}>Convert File</span>
-      </div>
-      <button onClick={onClose} style={{
-        background: 'none', border: 'none', cursor: 'pointer',
-        padding: 6, borderRadius: 6, color: 'var(--th-text-muted)',
-      }}>
+      <RefreshCw size={18} style={{ color: '#f58220' }} />
+      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--th-text-primary)', flex: 1 }}>Convert File</span>
+      <button
+        onClick={onClose}
+        title="Κλείσιμο"
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          padding: 4, borderRadius: 6, color: 'var(--th-text-muted)',
+          display: 'flex', alignItems: 'center',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.color = 'var(--th-text-primary)' }}
+        onMouseLeave={e => { e.currentTarget.style.color = 'var(--th-text-muted)' }}
+      >
         <X size={18} />
       </button>
     </div>

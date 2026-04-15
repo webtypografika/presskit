@@ -7,6 +7,9 @@ import { promisify } from 'util'
 
 const execFileAsync = promisify(execFile)
 
+// Disable sharp's file cache on Windows to avoid EPERM on delete/rename
+import('sharp').then(m => m.default.cache(false)).catch(() => {})
+
 export interface ConvertOptions {
   // Target format
   format: 'tiff' | 'png' | 'jpg' | 'pdf'
@@ -166,45 +169,76 @@ async function convertPdfWithGs(inputPath: string, outputPath: string, options: 
     }
   } else {
     // PDF → image
+    // For CMYK output on formats whose GS device is RGB-only (jpeg, png),
+    // we render to a CMYK TIFF first, then post-convert with sharp.
+    const needsCmykPostProcess = options.colorSpace === 'cmyk' && (options.format === 'jpg' || options.format === 'png')
+
     let device: string
-    switch (options.format) {
-      case 'tiff':
-        device = options.colorSpace === 'cmyk' ? 'tiff32nc' : 'tiff24nc'
-        args.push(`-sCompression=lzw`)
-        break
-      case 'png':
-        device = 'png16m'
-        break
-      case 'jpg':
-        device = 'jpeg'
-        args.push(`-dJPEGQ=${options.quality || 95}`)
-        break
-      default:
-        device = 'png16m'
+    if (needsCmykPostProcess) {
+      device = 'tiff32nc'
+      args.push('-sCompression=lzw')
+    } else {
+      switch (options.format) {
+        case 'tiff':
+          device = options.colorSpace === 'cmyk' ? 'tiff32nc' : 'tiff24nc'
+          args.push(`-sCompression=lzw`)
+          break
+        case 'png':
+          device = 'png16m'
+          break
+        case 'jpg':
+          device = 'jpeg'
+          args.push(`-dJPEGQ=${options.quality || 95}`)
+          break
+        default:
+          device = 'png16m'
+      }
     }
     args.push(`-sDEVICE=${device}`)
   }
 
-  args.push(`-sOutputFile=${outputPath}`, inputPath)
+  // When CMYK post-processing is needed, GS writes to a temp TIFF
+  const needsCmykPostProcess = options.colorSpace === 'cmyk' && (options.format === 'jpg' || options.format === 'png')
+  const gsOutputPath = needsCmykPostProcess ? outputPath.replace(/\.[^.]+$/, '_cmyk_tmp.tiff') : outputPath
+
+  args.push(`-sOutputFile=${gsOutputPath}`, inputPath)
 
   console.log('[CONVERT] GS command:', gs, args.join(' '))
 
   try {
     const gsResult = await execFileAsync(gs, args, { timeout: 120000 })
     if (gsResult.stderr) console.warn('[CONVERT] GS stderr:', gsResult.stderr)
-    console.log('[CONVERT] GS done, checking output:', outputPath)
+    console.log('[CONVERT] GS done, checking output:', gsOutputPath)
 
     // For raster output, crop to TrimBox using sharp (more reliable than GS flag)
     if (options.useTrimBox && options.format !== 'pdf') {
       try {
         const boxes = await getPdfBoxes(inputPath)
         if (boxes) {
-          await cropToTrimBox(outputPath, boxes, options)
+          await cropToTrimBox(gsOutputPath, boxes, options)
         }
       } catch (cropErr) {
-        // Crop failed — still return the full-page image
         console.warn('TrimBox crop failed, keeping full page:', cropErr)
       }
+    }
+
+    // Post-process: convert CMYK TIFF → target format (JPG/PNG) preserving CMYK
+    if (needsCmykPostProcess) {
+      const sharp = (await import('sharp')).default
+      const { unlink } = await import('fs/promises')
+      let pipeline = sharp(gsOutputPath).toColorspace('cmyk')
+      if (options.format === 'jpg') {
+        pipeline = pipeline.jpeg({ quality: options.quality || 95 })
+      } else {
+        pipeline = pipeline.png({ compressionLevel: 6 })
+      }
+      if (options.dpi) {
+        pipeline = pipeline.withMetadata({ density: options.dpi })
+      }
+      const buf = await pipeline.toBuffer()
+      await writeFile(outputPath, buf)
+      await unlink(gsOutputPath).catch(() => {})
+      console.log('[CONVERT] CMYK post-process done:', outputPath)
     }
 
     const outputStats = await stat(outputPath)
@@ -216,6 +250,11 @@ async function convertPdfWithGs(inputPath: string, outputPath: string, options: 
       outputSize: outputStats.size,
     }
   } catch (err: any) {
+    // Clean up temp file on failure
+    if (needsCmykPostProcess) {
+      const { unlink } = await import('fs/promises')
+      await unlink(gsOutputPath).catch(() => {})
+    }
     return {
       success: false,
       inputPath,
@@ -261,7 +300,7 @@ export function registerConvertHandlers(ipcMain: IpcMain): void {
       }
 
       // Image → Image conversion (using sharp)
-      if (['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.bmp'].includes(ext)) {
+      if (['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.bmp', '.gif'].includes(ext)) {
         const result = await convertImage(inputPath, outputPath, options)
         return { ...result, inputSize: inputStats.size }
       }

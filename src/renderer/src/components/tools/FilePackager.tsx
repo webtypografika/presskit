@@ -50,8 +50,8 @@ export function FilePackager({ onClose }: { onClose: () => void }) {
       position: 'fixed', inset: 0, zIndex: 60,
       background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{
+    }}>
+      <div style={{
         width: 500, background: 'var(--th-bg-secondary)', borderRadius: 14,
         border: '1px solid var(--th-border)', display: 'flex', flexDirection: 'column',
         overflow: 'hidden',

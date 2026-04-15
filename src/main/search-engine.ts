@@ -94,7 +94,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms))
 }
 
-async function scanDirectory(dirPath: string, depth = 0, maxDepth = 4): Promise<void> {
+async function scanDirectory(dirPath: string, depth = 0, maxDepth = 12): Promise<void> {
   if (depth > maxDepth) return
 
   try {
@@ -171,6 +171,8 @@ function rebuildFts(): void {
   }
 }
 
+const INDEX_VERSION = 2 // bump to force re-index (v2: depth 12)
+
 async function buildIndex(): Promise<{ count: number; ms: number }> {
   if (indexing) return { count: 0, ms: 0 }
   indexing = true
@@ -179,6 +181,15 @@ async function buildIndex(): Promise<{ count: number; ms: number }> {
 
   try {
     const d = getDb()
+
+    // Force re-index when version changes
+    const savedVersion = store.get('search.indexVersion', 0) as number
+    if (savedVersion < INDEX_VERSION) {
+      console.log(`[SEARCH] Index version ${savedVersion} → ${INDEX_VERSION}, clearing old index`)
+      d.exec('DELETE FROM files')
+      d.exec('DELETE FROM files_fts')
+      store.set('search.indexVersion', INDEX_VERSION)
+    }
 
     const bookmarks = (store.get('paths.bookmarks') as string[]) || []
     const home = process.env.USERPROFILE || process.env.HOME || ''
@@ -206,9 +217,9 @@ async function buildIndex(): Promise<{ count: number; ms: number }> {
     if (existsSync(desktop)) paths.add(desktop)
     if (existsSync(downloads)) paths.add(downloads)
 
-    // Scan all paths with depth limit 4 (was 6)
+    // Scan all paths deep enough to cover nested project folders
     for (const p of paths) {
-      await scanDirectory(p, 0, 4)
+      await scanDirectory(p, 0, 12)
     }
 
     // Rebuild FTS index
@@ -235,7 +246,7 @@ async function buildIndex(): Promise<{ count: number; ms: number }> {
 }
 
 
-function search(query: string, limit = 30): any[] {
+function search(query: string, limit = 50): any[] {
   const d = getDb()
   const q = query.trim().toLowerCase()
   if (!q) return []
@@ -270,7 +281,7 @@ function search(query: string, limit = 30): any[] {
         SELECT path, name, dir, ext, size, modified, is_dir
         FROM files
         WHERE ${conditions}
-        ORDER BY is_dir DESC, name ASC
+        ORDER BY is_dir DESC, modified DESC
         LIMIT ?
       `).all(...params, limit) as any[]
 
@@ -279,6 +290,39 @@ function search(query: string, limit = 30): any[] {
       }
     } catch {}
   }
+
+  // Strategy 3: LIKE on path (find files inside matching folders)
+  if (results.length < limit) {
+    try {
+      const remaining = limit - results.length
+      const pathResults = d.prepare(`
+        SELECT path, name, dir, ext, size, modified, is_dir
+        FROM files
+        WHERE LOWER(path) LIKE ? AND is_dir = 0
+        ORDER BY modified DESC
+        LIMIT ?
+      `).all(`%${q}%`, remaining) as any[]
+
+      for (const r of pathResults) {
+        if (!seen.has(r.path)) { results.push(r); seen.add(r.path) }
+      }
+    } catch {}
+  }
+
+  // Sort: exact name matches first, then by modification date (newest first)
+  results.sort((a, b) => {
+    const aName = a.name.toLowerCase()
+    const bName = b.name.toLowerCase()
+    const aExact = aName === q || aName.startsWith(q)
+    const bExact = bName === q || bName.startsWith(q)
+    if (aExact && !bExact) return -1
+    if (!aExact && bExact) return 1
+    const aContains = aName.includes(q)
+    const bContains = bName.includes(q)
+    if (aContains && !bContains) return -1
+    if (!aContains && bContains) return 1
+    return (b.modified || 0) - (a.modified || 0)
+  })
 
   return results.slice(0, limit)
 }
@@ -293,7 +337,9 @@ export function registerSearchHandlers(ipcMain: IpcMain): void {
     if (!indexed && !indexing) {
       buildIndex().catch(() => {})
     }
-    return search(query, limit || 30)
+    const results = search(query, limit || 50)
+    console.log(`[SEARCH] query="${query}" → ${results.length} results (indexed=${indexed}, indexing=${indexing})`)
+    return results
   })
 
   ipcMain.handle('search:stats', async () => {
@@ -308,7 +354,8 @@ export function registerSearchHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('search:addPath', async (_e, dirPath: string) => {
     if (!existsSync(dirPath)) return { ok: false }
-    await scanDirectory(dirPath)
+    // Only scan 2 levels deep for visited directories (quick incremental)
+    await scanDirectory(dirPath, 0, 2)
     rebuildFts()
     return { ok: true }
   })

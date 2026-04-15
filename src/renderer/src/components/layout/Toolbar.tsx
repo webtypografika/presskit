@@ -206,10 +206,10 @@ export function Toolbar() {
         document.body
       )}
       {overlay === 'convert' && createPortal(
-        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: 50, display: 'flex' }}
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}
           onClick={(e) => { if (e.target === e.currentTarget) setOverlay('none') }}
         >
-          <div style={{ marginLeft: 'auto', width: 360, height: '100%', borderLeft: '1px solid var(--th-border)', background: 'var(--th-bg-secondary)', boxShadow: '-4px 0 20px rgba(0,0,0,0.15)' }}>
+          <div style={{ width: 400, maxHeight: '80vh', borderRadius: 14, overflow: 'hidden', background: 'var(--th-bg-secondary)', boxShadow: '0 8px 40px rgba(0,0,0,0.25)', border: '1px solid var(--th-border)' }}>
             <ConvertDialog onClose={() => setOverlay('none')} />
           </div>
         </div>,
@@ -286,14 +286,14 @@ function LabeledButton({ icon, label, onClick, disabled, active, accent }: {
 function friendlyEmailError(e: any): string {
   const raw = String(e?.message || e || '')
 
-  // Gmail OAuth expired / invalid — user must reconnect Gmail in PressCal
+  // Gmail OAuth expired / invalid
   if (
     raw.includes('UNAUTHENTICATED') ||
     raw.includes('Invalid Credentials') ||
     raw.includes('invalid authentication credentials') ||
     /Gmail send failed[\s\S]*401/.test(raw)
   ) {
-    return 'Το Gmail του PressCal χρειάζεται επανασύνδεση. Πήγαινε στο PressCal → Settings → Gmail και κάνε reconnect.'
+    return 'Η σύνδεση Gmail έληξε. Κάνε logout/login στο PressCal και δοκίμασε ξανά.'
   }
 
   // Gmail quota / rate limit
@@ -343,25 +343,46 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
 
   const totalSize = files.reduce((s, f) => s + (f.size || 0), 0)
 
+  const sendOnce = async () => {
+    await window.api.presscal.sendEmailWithFiles({
+      to: to.trim(),
+      subject: subject.trim(),
+      body: body.trim(),
+      filePaths: files.map((f: any) => ({ path: f.path, name: f.name, ext: f.extension })),
+      quoteId: currentQuoteId || undefined
+    })
+  }
+
   const handleSend = async () => {
     if (!to.trim() || !subject.trim()) return
     setSending(true)
     setError('')
 
     try {
-      // Send files via presscal — pass file paths, main process handles base64
-      await window.api.presscal.sendEmailWithFiles({
-        to: to.trim(),
-        subject: subject.trim(),
-        body: body.trim(),
-        filePaths: files.map((f: any) => ({ path: f.path, name: f.name, ext: f.extension })),
-        quoteId: currentQuoteId || undefined
-      })
-
+      await sendOnce()
       setSent(true)
       setTimeout(onClose, 1500)
     } catch (e: any) {
-      setError(friendlyEmailError(e))
+      console.error('[EMAIL] Raw error:', e?.message || e)
+      const raw = String(e?.message || '')
+      const isAuthError = raw.includes('UNAUTHENTICATED') || raw.includes('Invalid Credentials') ||
+        raw.includes('invalid authentication credentials') || /Gmail send failed[\s\S]*401/.test(raw)
+
+      if (isAuthError) {
+        // Auto-retry once — session may have refreshed server-side
+        console.log('[EMAIL] Auth error, retrying once...')
+        try {
+          await sendOnce()
+          setSent(true)
+          setTimeout(onClose, 1500)
+          return
+        } catch (e2: any) {
+          console.error('[EMAIL] Retry also failed:', e2?.message || e2)
+          setError(friendlyEmailError(e2))
+        }
+      } else {
+        setError(friendlyEmailError(e))
+      }
     } finally {
       setSending(false)
     }
@@ -495,7 +516,22 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
             <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Σας αποστέλλουμε τα αρχεία..." rows={4} style={{ ...inp, resize: 'vertical' }} />
           </div>
 
-          {error && <div style={{ fontSize: 13, color: '#ef4444' }}>{error}</div>}
+          {error && (
+            <div style={{ fontSize: 13, color: '#ef4444', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <span>{error}</span>
+              <button
+                onClick={handleSend}
+                disabled={sending}
+                style={{
+                  alignSelf: 'flex-start', padding: '6px 14px', borderRadius: 6, fontSize: 12,
+                  border: '1px solid #ef4444', background: 'transparent', color: '#ef4444',
+                  cursor: 'pointer', opacity: sending ? 0.5 : 1,
+                }}
+              >
+                Δοκίμασε ξανά
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Actions */}
@@ -557,10 +593,11 @@ function SearchBox() {
     }
     setSearching(true)
     try {
-      // Use indexed search (fast, fuzzy)
-      const r = await window.api.search.query(q.trim(), 20)
-      // Map DB results to FileEntry-like objects
-      const mapped = (r || []).map((item: any) => ({
+      const trimmed = q.trim()
+
+      // 1. Try indexed search first (fast)
+      const indexResults = await window.api.search.query(trimmed, 50)
+      const mapped = (indexResults || []).map((item: any) => ({
         name: item.name,
         path: item.path,
         isDirectory: item.is_dir === 1,
@@ -568,8 +605,24 @@ function SearchBox() {
         modified: item.modified ? new Date(item.modified).toISOString() : '',
         extension: item.ext || '',
         type: item.is_dir === 1 ? 'folder' : 'unknown',
-        _dir: item.dir, // parent directory for display
+        _dir: item.dir,
       }))
+
+      // 2. If indexed search returned few results, also do live filesystem search
+      //    from the current directory tree as fallback
+      if (mapped.length < 10 && currentPath) {
+        try {
+          const liveResults = await window.api.fs.search(currentPath, trimmed, 50)
+          const seen = new Set(mapped.map((m: any) => m.path))
+          for (const f of (liveResults || [])) {
+            if (!seen.has(f.path)) {
+              mapped.push({ ...f, _dir: f.path.replace(/[/\\][^/\\]+$/, '') })
+              seen.add(f.path)
+            }
+          }
+        } catch {}
+      }
+
       setResults(mapped)
       setOpen(true)
     } catch (e) {
@@ -578,7 +631,7 @@ function SearchBox() {
     } finally {
       setSearching(false)
     }
-  }, [])
+  }, [currentPath])
 
   const handleChange = useCallback((val: string) => {
     setQuery(val)
@@ -586,16 +639,22 @@ function SearchBox() {
     timerRef.current = setTimeout(() => doSearch(val), 150)
   }, [doSearch])
 
-  const handleSelect = useCallback((file: any) => {
+  const handleSelect = useCallback(async (file: any) => {
     if (file.isDirectory) {
       navigateTo(file.path)
     } else {
-      selectFile(file)
+      // Navigate to the file's parent folder, then select the file
+      const parentDir = file._dir || file.path.replace(/[/\\][^/\\]+$/, '')
+      if (parentDir && parentDir !== currentPath) {
+        await navigateTo(parentDir)
+      }
+      // Small delay to let the directory load, then select
+      setTimeout(() => selectFile(file), 150)
     }
     setQuery('')
     setResults([])
     setOpen(false)
-  }, [navigateTo, selectFile])
+  }, [navigateTo, selectFile, currentPath])
 
   // Get position for portal dropdown
   const rect = inputRef.current?.getBoundingClientRect()
@@ -632,7 +691,7 @@ function SearchBox() {
           width: Math.min(Math.max(rect.width + 200, 420), window.innerWidth - 20),
           background: 'var(--th-bg-secondary)', border: '1px solid var(--th-border)', borderRadius: 10,
           boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
-          maxHeight: 360, overflowY: 'auto', zIndex: 9999,
+          maxHeight: 480, overflowY: 'auto', zIndex: 9999,
         }}>
           {searching && (
             <div style={{ padding: '8px 14px', fontSize: 12, color: 'var(--th-text-muted)' }}>Αναζήτηση...</div>
@@ -672,6 +731,9 @@ function SearchBox() {
               </div>
             )
           })}
+          <div style={{ padding: '6px 14px', fontSize: 11, color: 'var(--th-text-muted)', borderTop: '1px solid var(--th-border)', textAlign: 'right' }}>
+            {results.length} αποτελέσματα
+          </div>
         </div>,
         document.body
       )}

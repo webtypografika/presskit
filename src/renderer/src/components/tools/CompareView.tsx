@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useAppStore } from '@/stores/app-store'
-import { Columns, Loader2, ArrowLeftRight, Layers } from 'lucide-react'
+import { Columns, Loader2, ArrowLeftRight, Layers, FolderOpen } from 'lucide-react'
 
 interface CompareResult {
   file1: { path: string; thumbnail: string; width: number; height: number }
@@ -46,8 +46,8 @@ export function CompareView({ onClose }: { onClose: () => void }) {
       position: 'fixed', inset: 0, zIndex: 60,
       background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{
+    }}>
+      <div style={{
         width: '90%', maxWidth: 1200, height: '85%',
         background: 'var(--th-bg-secondary)', borderRadius: 14,
         border: '1px solid var(--th-border)', display: 'flex', flexDirection: 'column',
@@ -95,13 +95,35 @@ export function CompareView({ onClose }: { onClose: () => void }) {
 
               {/* File 2 */}
               <div style={{ textAlign: 'center' }}>
-                <div style={{ width: 200 }}>
+                <div style={{ width: 260, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <select value={file2Path} onChange={e => setFile2Path(e.target.value)} style={selectStyle}>
-                    <option value="">Επιλέξτε αρχείο...</option>
+                    <option value="">Από τρέχοντα φάκελο...</option>
                     {comparableFiles.map(f => (
                       <option key={f.path} value={f.path}>{f.name}</option>
                     ))}
                   </select>
+                  <button
+                    onClick={async () => {
+                      const paths = await window.api.dialog.openFiles([
+                        { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'tif', 'tiff', 'bmp', 'webp', 'pdf'] }
+                      ])
+                      if (paths && paths.length > 0) setFile2Path(paths[0])
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      padding: '8px 12px', borderRadius: 8, fontSize: 13,
+                      border: '1px solid var(--th-border)', background: 'var(--th-bg-primary)',
+                      color: 'var(--th-text-secondary)', cursor: 'pointer',
+                    }}
+                  >
+                    <FolderOpen size={14} />
+                    Επιλογή αρχείου...
+                  </button>
+                  {file2Path && !comparableFiles.some(f => f.path === file2Path) && (
+                    <div style={{ fontSize: 11, color: 'var(--th-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {file2Path.split(/[/\\]/).pop()}
+                    </div>
+                  )}
                 </div>
                 <div style={{ fontSize: 11, color: '#64748b', marginTop: 8 }}>Αρχείο 2</div>
               </div>

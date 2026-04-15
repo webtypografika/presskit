@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(cd:*)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd.exe //c \"start presscal-fh://test\" 2>&1; sleep 5 && tasklist 2>/dev/null | grep -i electron)",
+      "Bash(grep:*)",
+      "Bash(curl:*)",
+      "Bash(find:*)",
+      "Bash(rm -f \"$APPDATA/presscal-filehelper/search-index.db\" \"$APPDATA/presscal-filehelper/search-index.db-wal\" \"$APPDATA/presscal-filehelper/search-index.db-shm\")",
+      "Read(//c/Users/info/Dropbox/presscal-filehelper/$APPDATA/presscal-filehelper/**)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)",
+      "Read(//c/Program Files/Adobe/**)",
+      "Bash(node:*)",
+      "Bash(where gswin64c:*)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Program Files \\(x86\\)/**)",
+      "Bash(\"/c/Program Files/gs/gs10.07.0/bin/gswin64c.exe\" -version 2>&1 | head -3)",
+      "Bash(\"/c/Program Files/gs/gs10.07.0/bin/gswin64c.exe\" -dNOPAUSE -dBATCH -dSAFER -dQUIET -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dHaveTransparency=false -r300 -sOutputFile=\"/c/Users/info/Downloads/test_flat.pdf\" \"/c/Users/info/Downloads/1.pdf\" 2>&1)",
+      "Bash(\"/c/Program Files/gs/gs10.07.0/bin/gswin64c.exe\" -dNOPAUSE -dBATCH -dSAFER -dQUIET -sDEVICE=tiff32nc -sCompression=lzw -r300 -sOutputFile=\"/c/Users/info/Downloads/test_flat.tiff\" \"/c/Users/info/Downloads/1.pdf\" 2>&1)",
+      "Bash(npm ls:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git:*)",
+      "Read(//c/Users/info/Dropbox/presscal-filehelper/Local/presscal-filehelper/**)",
+      "Read(//c/Users/info/Dropbox/presscal-filehelper/$LOCALAPPDATA/presscal-filehelper/**)",
+      "Bash(\"C:/Program Files/gs/gs10.07.0/bin/gswin64c.exe\" --version 2>&1)",
+      "Read(//c/Users/info/Dropbox/presscal-filehelper/$APPDATA/presskit/**)",
+      "Read(//c/Users/info/AppData/Roaming/presskit/**)",
+      "Read(//c/Users/info/AppData/Roaming/presscal-filehelper/**)",
+      "Bash(rm:*)",
+      "Read(//c/Users/info/Dropbox/presscal-filehelper/$LOCALAPPDATA/Programs/**)",
+      "Read(//c/Users/info/Dropbox/presscal-filehelper/$PROGRAMFILES/**)",
+      "Bash(npx asar:*)",
+      "Bash(sleep:*)",
+      "Bash(npx electron-vite:*)"
+    ]
+  }
+}

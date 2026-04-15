@@ -251,6 +251,13 @@ async function handleProtocolUrl(url: string): Promise<void> {
       const { existsSync, readFileSync } = await import('fs')
       const { join: pathJoin } = await import('path')
       if (!existsSync(folderPath)) {
+        // Folder was deleted — recreate it via download-to-folder
+        if (quoteId) {
+          console.log('[DeepLink] Folder missing, falling back to download-to-folder:', folderPath)
+          const target = parsed.searchParams.get('target') || 'global'
+          await handleProtocolUrl(`presscal-fh://download-to-folder?quoteId=${encodeURIComponent(quoteId)}&target=${encodeURIComponent(target)}`)
+          return
+        }
         const { dialog } = await import('electron')
         dialog.showErrorBox('Φάκελος δεν βρέθηκε', `Ο φάκελος δεν υπάρχει:\n${folderPath}`)
         return
@@ -275,9 +282,10 @@ async function handleProtocolUrl(url: string): Promise<void> {
     if (parsed.hostname === 'download-to-folder') {
       const quoteId = parsed.searchParams.get('quoteId')
       const target = parsed.searchParams.get('target') || 'global'
+      const onlyNew = parsed.searchParams.get('onlyNew') === '1'
       if (!quoteId) return
 
-      const { writeFile, mkdir } = await import('fs/promises')
+      const { writeFile, mkdir, access: fsAccess, readdir: rdDir } = await import('fs/promises')
       const { join: pathJoin, basename } = await import('path')
       const { tmpdir } = await import('os')
 
@@ -289,125 +297,235 @@ async function handleProtocolUrl(url: string): Promise<void> {
         return
       }
 
-      console.log('[DeepLink] download-to-folder for quote:', quoteId, 'target:', target)
-      deepLog('[DeepLink] Fetching file list from:', presscalUrl)
+      console.log('[DeepLink] download-to-folder for quote:', quoteId, 'target:', target, 'onlyNew:', onlyNew)
 
       const sendProgress = (step: string, current: number, total: number, done = false) => {
         mainWindow?.webContents.send('deeplink-progress', { step, current, total, done })
       }
       sendProgress('Λήψη λίστας αρχείων...', 0, 0)
 
-      // 1. Fetch file list for this quote (target=global|customer determines folderPath)
-      const listRes = await fetch(
-        `${presscalUrl}/api/filehelper/files?quoteId=${encodeURIComponent(quoteId)}&target=${encodeURIComponent(target)}`,
-        { headers: { 'Authorization': `Bearer ${apiKey}` } }
-      )
-      if (!listRes.ok) {
-        const errBody = await listRes.text().catch(() => '')
-        console.error('[DeepLink] Failed to fetch files:', listRes.status, errBody)
-        deepLog('[DeepLink] API error:', listRes.status, errBody)
+      // Helper: HTTP GET that returns raw Buffer (bypasses Electron fetch UTF-8 issues)
+      const httpGet = (url: string): Promise<{ status: number; body: Buffer }> => {
+        return new Promise((resolve, reject) => {
+          const mod = url.startsWith('https') ? require('https') : require('http')
+          mod.get(url, { headers: { 'Authorization': `Bearer ${apiKey}` } }, (res: any) => {
+            // Follow redirects
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+              httpGet(res.headers.location).then(resolve).catch(reject)
+              return
+            }
+            const chunks: Buffer[] = []
+            res.on('data', (c: Buffer) => chunks.push(c))
+            res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks) }))
+            res.on('error', reject)
+          }).on('error', reject)
+        })
+      }
+
+      // 1. Fetch file list using Node.js http (not Electron fetch) for correct UTF-8
+      const listParams = new URLSearchParams({ quoteId, target })
+      if (onlyNew) listParams.set('onlyNew', '1')
+
+      const listResult = await httpGet(`${presscalUrl}/api/filehelper/files?${listParams}`)
+      if (listResult.status !== 200) {
+        console.error('[DeepLink] Failed to fetch files:', listResult.status, listResult.body.toString('utf8').slice(0, 200))
         return
       }
 
-      const data = await listRes.json()
-      console.log('[DeepLink] API response:', JSON.stringify(data, null, 2))
+      const data = JSON.parse(listResult.body.toString('utf8'))
+      console.log('[DeepLink] folderPath:', data.folderPath)
+      console.log('[DeepLink] files:', data.files?.length, 'newCount:', data.newCount)
 
-      const files: Array<{ filePath: string; fileName: string }> = data.files || []
+      const files: Array<{ id?: string; filePath: string; fileName: string; source?: string }> = data.files || []
 
-      if (files.length === 0) {
-        console.log('[DeepLink] No files to download')
-        deepLog('[DeepLink] No files to download')
-        return
-      }
-
-      // 2. Use folderPath from API response, fallback to temp with proper name
-      let targetDir = data.folderPath
+      // 2. Resolve target directory
+      let targetDir: string = data.folderPath
       if (!targetDir) {
-        // Fetch quote details for a readable folder name
         let folderName = quoteId
         try {
-          const quoteRes = await fetch(`${presscalUrl}/api/filehelper/quotes/${encodeURIComponent(quoteId)}`, {
-            headers: { 'Authorization': `Bearer ${apiKey}` }
-          })
-          if (quoteRes.ok) {
-            const quote = await quoteRes.json()
+          const qRes = await httpGet(`${presscalUrl}/api/filehelper/quotes/${encodeURIComponent(quoteId)}`)
+          if (qRes.status === 200) {
+            const quote = JSON.parse(qRes.body.toString('utf8'))
             const num = quote.number || quoteId
             const customer = (quote.customerName && quote.customerName !== '–') ? quote.customerName : ''
             folderName = customer ? `[${num}] ${customer}` : `[${num}]`
-            // Sanitize for filesystem
             folderName = folderName.replace(/[<>:"/\\|?*]/g, '_')
           }
         } catch {}
         targetDir = pathJoin(tmpdir(), 'PressCal', folderName)
       }
+
+      // Fix forward slashes on Windows, then normalize path segments (trim each)
+      targetDir = targetDir.replace(/\//g, '\\')
+      targetDir = targetDir.split('\\').map(s => s.trim()).join('\\')
+
+      // Resolve each segment against disk to handle NFC/NFD and encoding mismatches
+      const segments = targetDir.split('\\')
+      let resolvedDir = segments[0]
+      for (let i = 1; i < segments.length; i++) {
+        const seg = segments[i]
+        const candidate = resolvedDir + '\\' + seg
+        try {
+          await fsAccess(candidate)
+          resolvedDir = candidate
+        } catch {
+          // Segment doesn't exist — try ASCII prefix match
+          try {
+            const children = await rdDir(resolvedDir)
+            const asciiPrefix = seg.replace(/[^\x00-\x7F].*/, '').trim()
+            const match = asciiPrefix.length >= 3
+              ? children.find(c => c.replace(/[^\x00-\x7F].*/, '').trim() === asciiPrefix)
+              : null
+            if (match) {
+              resolvedDir = resolvedDir + '\\' + match
+              console.log(`[DeepLink] Resolved "${seg}" → "${match}"`)
+            } else {
+              resolvedDir = candidate
+            }
+          } catch {
+            resolvedDir = candidate
+          }
+        }
+      }
+      targetDir = resolvedDir
+
       console.log('[DeepLink] Target folder:', targetDir)
       await mkdir(targetDir, { recursive: true })
-      sendProgress('Δημιουργία φακέλου...', 0, files.length)
 
-      // 3. Download each file
-      let downloaded = 0
+      // 3. Filter files that already exist locally
+      const filesToDownload: typeof files = []
       for (const file of files) {
+        const saveName = file.fileName || basename(file.filePath)
+        try {
+          await fsAccess(pathJoin(targetDir, saveName))
+          console.log(`[DeepLink] Exists, skipping: ${saveName}`)
+        } catch {
+          filesToDownload.push(file)
+        }
+      }
+
+      console.log(`[DeepLink] ${filesToDownload.length} to download (${files.length - filesToDownload.length} exist)`)
+
+      if (filesToDownload.length === 0) {
+        sendProgress('Κανένα νέο αρχείο', 0, 0, true)
+        mainWindow?.webContents.send('navigate-to-folder', { path: targetDir, quoteId })
+        return
+      }
+
+      sendProgress('Λήψη αρχείων...', 0, filesToDownload.length)
+
+      // 4. Download files
+      let downloaded = 0
+      const downloadedFileIds: string[] = []
+
+      for (const file of filesToDownload) {
         try {
           const saveName = file.fileName || basename(file.filePath)
-          sendProgress(saveName, downloaded, files.length)
+          sendProgress(saveName, downloaded, filesToDownload.length)
 
+          // Build download URL
           const fileUrl = file.filePath.startsWith('http')
             ? file.filePath
-            : `${presscalUrl}${file.filePath}`
+            : `${presscalUrl}${file.filePath.startsWith('/') ? '' : '/'}${file.filePath}`
 
-          // /storage/ paths are public, others need auth
-          const needsAuth = !file.filePath.includes('/storage/')
-          const headers: Record<string, string> = {}
-          if (needsAuth) {
-            headers['Authorization'] = `Bearer ${apiKey}`
-          }
+          console.log(`[DeepLink] Downloading: ${saveName} (source: ${file.source || 'unknown'})`)
 
-          const res = await fetch(fileUrl, { headers })
-          if (!res.ok) {
-            console.warn(`[DeepLink] Failed to download ${file.fileName}:`, res.status)
+          const dlResult = await httpGet(fileUrl)
+          if (dlResult.status !== 200) {
+            console.warn(`[DeepLink] Failed ${saveName}: ${dlResult.status}`)
             continue
           }
 
-          const buffer = Buffer.from(await res.arrayBuffer())
           const savePath = pathJoin(targetDir, saveName)
-          await writeFile(savePath, buffer)
+          await writeFile(savePath, dlResult.body)
           downloaded++
-          console.log(`[DeepLink] Downloaded: ${saveName}`)
+          if (file.id) downloadedFileIds.push(file.id)
+          console.log(`[DeepLink] Saved: ${saveName} (${dlResult.body.length} bytes)`)
 
-          // Auto-extract ZIP files
+          // Auto-extract ZIP
           if (saveName.toLowerCase().endsWith('.zip')) {
             try {
               const { execFile: ef } = await import('child_process')
               const { promisify: prom } = await import('util')
-              const execAsync = prom(ef)
-              await execAsync('powershell', [
+              await prom(ef)('powershell', [
                 '-NoProfile', '-Command',
                 `Expand-Archive -Path '${savePath}' -DestinationPath '${targetDir}' -Force`
               ], { timeout: 60000 })
-              // Remove the zip after extraction
               const { unlink } = await import('fs/promises')
               await unlink(savePath)
-              console.log(`[DeepLink] Extracted & removed: ${saveName}`)
             } catch (zipErr) {
-              console.warn(`[DeepLink] Failed to extract ${saveName}:`, zipErr)
+              console.warn(`[DeepLink] Extract failed ${saveName}:`, zipErr)
             }
           }
         } catch (dlErr) {
-          console.warn(`[DeepLink] Error downloading ${file.fileName}:`, dlErr)
+          console.warn(`[DeepLink] Error ${file.fileName}:`, dlErr)
         }
       }
 
-      console.log(`[DeepLink] Downloaded ${downloaded}/${files.length} files to: ${targetDir}`)
+      console.log(`[DeepLink] Done: ${downloaded}/${filesToDownload.length} to ${targetDir}`)
 
-      // 4. Save quote context so PressKit knows which job this folder is for
+      // 5. Mark files as saved
+      if (downloaded > 0) {
+        try {
+          await fetch(`${presscalUrl}/api/filehelper/files`, {
+            method: 'PATCH',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ quoteId }),
+          })
+        } catch {}
+      }
+
+      // 6. Save quote context
       try {
         await writeFile(pathJoin(targetDir, '.presskit'), JSON.stringify({ quoteId }), 'utf-8')
       } catch {}
 
-      // 5. Navigate PressKit browser to the folder
-      sendProgress('Ολοκληρώθηκε', downloaded, files.length, true)
+      // 7. Navigate to folder
+      sendProgress('Ολοκληρώθηκε', downloaded, filesToDownload.length, true)
       mainWindow?.webContents.send('navigate-to-folder', { path: targetDir, quoteId })
     }
+    // Archive a quote folder: presscal-fh://archive-quote?folderPath=C:\...
+    if (parsed.hostname === 'archive-quote') {
+      const folderPath = parsed.searchParams.get('folderPath')
+      if (!folderPath) {
+        deepLog('[DeepLink] archive-quote: missing folderPath')
+        return
+      }
+
+      const { existsSync: fsExists } = await import('fs')
+      const { rename: fsRename, mkdir: fsMkdir } = await import('fs/promises')
+      const { join: pathJoin, dirname: pathDirname, basename: pathBasename } = await import('path')
+
+      if (!fsExists(folderPath)) {
+        deepLog('[DeepLink] archive-quote: folder not found:', folderPath)
+        return
+      }
+
+      const parentDir = pathDirname(folderPath)
+      const folderName = pathBasename(folderPath)
+      const archiveDir = pathJoin(parentDir, '_01 Archive')
+      const targetPath = pathJoin(archiveDir, folderName)
+
+      try {
+        await fsMkdir(archiveDir, { recursive: true })
+
+        if (fsExists(targetPath)) {
+          deepLog('[DeepLink] archive-quote: target already exists:', targetPath)
+          return
+        }
+
+        await fsRename(folderPath, targetPath)
+        console.log(`[ARCHIVE] Moved: ${folderName} → _01 Archive/`)
+
+        // If PressKit is currently viewing this folder, navigate to archive
+        mainWindow?.webContents.send('navigate-to-folder', { path: targetPath })
+      } catch (err) {
+        console.error('[ARCHIVE] Failed:', err)
+        const { dialog: dlgArchive } = await import('electron')
+        dlgArchive.showErrorBox('Αρχειοθέτηση', `Αποτυχία μετακίνησης φακέλου:\n${String(err)}`)
+      }
+    }
+
     if (parsed.hostname === 'connect') {
       const url = parsed.searchParams.get('url')
       const apiKey = parsed.searchParams.get('apiKey')
@@ -455,6 +573,18 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
+  })
+
+  // Intercept window close: if fullscreen preview is open, close preview instead of app
+  let fullscreenPreviewOpen = false
+  ipcMain.on('fullscreen-preview-state', (_e, open: boolean) => {
+    fullscreenPreviewOpen = open
+  })
+  mainWindow.on('close', (e) => {
+    if (fullscreenPreviewOpen && mainWindow && !mainWindow.isDestroyed()) {
+      e.preventDefault()
+      mainWindow.webContents.send('close-fullscreen-preview')
+    }
   })
 
   // Fallback: show window after 5s even if renderer didn't fire ready-to-show
@@ -946,7 +1076,7 @@ if (!gotTheLock) {
     if (process.platform !== 'darwin') app.quit()
   })
 
-  // Cleanup temp files on quit
+  // Cleanup on quit
   app.on('before-quit', async () => {
     try {
       const { rm } = await import('fs/promises')
