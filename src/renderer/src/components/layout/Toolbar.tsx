@@ -4,7 +4,7 @@ import {
   HardDrive, Cloud, Layers, RefreshCcw, Search, Send,
   PanelLeft, PanelRight, Eye, EyeOff,
   Columns, Pencil, Package, RectangleHorizontal,
-  FolderPlus
+  FolderPlus, Archive
 } from 'lucide-react'
 import { useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
@@ -25,6 +25,7 @@ export function Toolbar() {
   const selectedFiles = useAppStore(s => s.selectedFiles)
   const pathHistory = useAppStore(s => s.pathHistory)
   const historyIndex = useAppStore(s => s.historyIndex)
+  const currentPath = useAppStore(s => s.currentPath)
   const showSidebar = useAppStore(s => s.showSidebar)
   const showInspector = useAppStore(s => s.showInspector)
   const previewOpen = useAppStore(s => s.previewOpen)
@@ -63,6 +64,22 @@ export function Toolbar() {
   const canGoForward = historyIndex < pathHistory.length - 1
   const canPreflight = selectedFile && !selectedFile.isDirectory
 
+  // Archive is only relevant when viewing a quote folder (basename starts with "[QT-")
+  // and not already inside _01 Archive.
+  const currentFolderName = currentPath ? currentPath.split(/[\\/]/).pop() || '' : ''
+  const isQuoteFolder = /^\[QT[-_]/i.test(currentFolderName)
+  const alreadyInArchive = /[\\/]_01 Archive[\\/]/i.test(currentPath)
+  const canArchive = isQuoteFolder && !alreadyInArchive
+
+  const handleArchive = useCallback(async () => {
+    if (!currentPath) return
+    try {
+      await window.api.archive.quoteFolder(currentPath)
+    } catch (e) {
+      console.error('[ARCHIVE]', e)
+    }
+  }, [currentPath])
+
   return (
     <>
       {/* Row 1: Main toolbar with labels */}
@@ -98,6 +115,9 @@ export function Toolbar() {
           <LabeledButton icon={<RefreshCcw size={16} />} label="Convert" onClick={() => setOverlay(overlay === 'convert' ? 'none' : 'convert')} active={overlay === 'convert'} disabled={!canPreflight} />
           <LabeledButton icon={<Columns size={16} />} label="Compare" onClick={() => setShowCompare(true)} disabled={!canPreflight} />
           <LabeledButton icon={<Package size={16} />} label="Collect" onClick={() => setShowPackager(true)} />
+          {canArchive && (
+            <LabeledButton icon={<Archive size={16} />} label="Αρχειοθέτηση" onClick={handleArchive} />
+          )}
         </div>
 
         {/* Send email */}

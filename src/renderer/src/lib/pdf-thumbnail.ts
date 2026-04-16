@@ -6,12 +6,20 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString()
 
-// Cache to avoid re-rendering the same file
+// Cache to avoid re-rendering the same file.
+// Key includes mtime so edits to the PDF invalidate the cached thumbnail.
 const cache = new Map<string, string>()
 
-export async function renderPdfThumbnail(filePath: string, size: number): Promise<string | null> {
-  const cacheKey = `${filePath}:${size}`
+export async function renderPdfThumbnail(filePath: string, size: number, mtime?: string | number): Promise<string | null> {
+  const cacheKey = `${filePath}:${size}:${mtime ?? ''}`
   if (cache.has(cacheKey)) return cache.get(cacheKey)!
+
+  // Evict any stale entries for the same path (different mtime/size) so the
+  // cache doesn't retain old renderings forever after a file edit.
+  const prefix = `${filePath}:`
+  for (const key of cache.keys()) {
+    if (key.startsWith(prefix) && key !== cacheKey) cache.delete(key)
+  }
 
   try {
     // Read file via IPC and convert to base64 data URL

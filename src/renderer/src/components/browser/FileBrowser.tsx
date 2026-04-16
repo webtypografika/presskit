@@ -37,7 +37,12 @@ export function FileBrowser() {
         setLinked(false)
       }, 1500)
     } catch (e) {
+      // Surface the failure — previously this was only logged to the console,
+      // which left the "Σύνδεση..." banner frozen and the user with no clue
+      // that the link never reached PressCal.
       console.error('Link file error:', e)
+      const msg = (e as any)?.message || String(e) || 'Άγνωστο σφάλμα'
+      alert(`Αποτυχία σύνδεσης αρχείου με την προσφορά:\n\n${msg}\n\nΈλεγξε τις ρυθμίσεις PressCal (URL & API key) και ότι η προσφορά/είδος υπάρχουν.`)
     } finally {
       setLinking(false)
     }

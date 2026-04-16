@@ -80,14 +80,14 @@ function FileThumbnail({ file, size }: { file: FileEntry; size: number }) {
     enqueueThumb(async () => {
       try {
         const data = isPdf
-          ? await renderPdfThumbnail(file.path, size)
+          ? await renderPdfThumbnail(file.path, size, file.modified)
           : await window.api.preview.thumbnail(file.path, size)
         if (!cancelled && data) setThumb(data)
       } catch {}
     })
 
     return () => { cancelled = true }
-  }, [file.path, file.isDirectory, file.type, size])
+  }, [file.path, file.isDirectory, file.type, size, file.modified])
 
   if (file.isDirectory || !thumb) {
     return (
@@ -288,10 +288,16 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         count: drag.paths.length,
       })
 
-      // Hit-test folders for drop target
+      // Hit-test folders for drop target. Skip the source folder(s) —
+      // highlighting them looks like "cannot drop" to the user and is confusing
+      // because they haven't moved the cursor off the source yet.
       const el = document.elementFromPoint(e.clientX, e.clientY)
       const folderEl = el?.closest('[data-folder-path]') as HTMLElement | null
-      setDropTarget(folderEl?.dataset.folderPath || null)
+      const path = folderEl?.dataset.folderPath || null
+      const isSourceOrDescendant = path && drag.paths.some(p =>
+        p === path || path.startsWith(p + '/') || path.startsWith(p + '\\')
+      )
+      setDropTarget(isSourceOrDescendant ? null : path)
     }
 
     const onMouseUp = async (e: MouseEvent) => {
@@ -324,14 +330,25 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
       if (!validPaths.length) return
 
       try {
-        if (e.ctrlKey) {
-          await window.api.fs.copy(validPaths, targetPath)
-        } else {
-          await window.api.fs.move(validPaths, targetPath)
-        }
+        const results = e.ctrlKey
+          ? await window.api.fs.copy(validPaths, targetPath)
+          : await window.api.fs.move(validPaths, targetPath)
+        console.log('[DROP] results:', results)
         refreshDirectory()
+
+        const failures = (results || []).filter((r: any) => !r.ok)
+        if (failures.length > 0) {
+          const list = failures.map((f: any) =>
+            `• ${f.source.split(/[\\/]/).pop()}: ${f.error || 'άγνωστο σφάλμα'}`
+          ).join('\n')
+          alert(
+            `${e.ctrlKey ? 'Αντιγραφή' : 'Μετακίνηση'} απέτυχε για ${failures.length} αρχεί${failures.length === 1 ? 'ο' : 'α'}:\n\n${list}\n\n` +
+            `Πιθανή αιτία: ανοιχτό σε άλλη εφαρμογή ή κλειδωμένο από Dropbox/antivirus.`
+          )
+        }
       } catch (err) {
         console.error('Drop failed:', err)
+        alert(`Drop failed: ${(err as any)?.message || err}`)
       }
     }
 

@@ -183,6 +183,11 @@ const api = {
     start: (filePaths: string[]) => ipcRenderer.invoke('drag:start', filePaths)
   },
 
+  archive: {
+    quoteFolder: (folderPath: string) =>
+      ipcRenderer.invoke('archive:quoteFolder', folderPath) as Promise<{ ok: boolean; cancelled?: boolean; error?: string }>
+  },
+
   // Color tools
   color: {
     extractPalette: (path: string, count?: number) => ipcRenderer.invoke('color:extractPalette', path, count),

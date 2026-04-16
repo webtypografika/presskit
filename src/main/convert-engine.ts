@@ -392,6 +392,14 @@ async function convertImage(inputPath: string, outputPath: string, options: Conv
   const sharp = (await import('sharp')).default
   let pipeline = sharp(inputPath)
 
+  // Color space conversion — must be set BEFORE flatten, otherwise sharp
+  // commits the pipeline in sRGB and the CMYK conversion is silently dropped.
+  if (options.colorSpace === 'cmyk') {
+    pipeline = pipeline.toColorspace('cmyk')
+  } else if (options.colorSpace === 'srgb') {
+    pipeline = pipeline.toColorspace('srgb')
+  }
+
   // Flatten transparency (add white background)
   if (options.flatten) {
     pipeline = pipeline.flatten({ background: { r: 255, g: 255, b: 255 } })
@@ -403,13 +411,6 @@ async function convertImage(inputPath: string, outputPath: string, options: Conv
       fit: 'inside',
       withoutEnlargement: true
     })
-  }
-
-  // Color space conversion
-  if (options.colorSpace === 'cmyk') {
-    pipeline = pipeline.toColorspace('cmyk')
-  } else if (options.colorSpace === 'srgb') {
-    pipeline = pipeline.toColorspace('srgb')
   }
 
   // Output format
@@ -469,6 +470,11 @@ async function convertPsd(inputPath: string, outputPath: string, options: Conver
     raw: { width: psd.width, height: psd.height, channels: 4 }
   })
 
+  // Color space must be set BEFORE flatten — see note in convertImage()
+  if (options.colorSpace === 'cmyk') {
+    pipeline = pipeline.toColorspace('cmyk')
+  }
+
   if (options.flatten) {
     pipeline = pipeline.flatten({ background: { r: 255, g: 255, b: 255 } })
   }
@@ -478,10 +484,6 @@ async function convertPsd(inputPath: string, outputPath: string, options: Conver
       fit: 'inside',
       withoutEnlargement: true
     })
-  }
-
-  if (options.colorSpace === 'cmyk') {
-    pipeline = pipeline.toColorspace('cmyk')
   }
 
   switch (options.format) {

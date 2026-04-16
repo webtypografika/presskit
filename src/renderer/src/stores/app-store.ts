@@ -621,7 +621,7 @@ export const useAppStore = create<AppState>((set, get) => {
       if (!clipboard || !currentPath) return
       const paths = clipboard.files.map(f => f.path)
       try {
-        let results: any
+        let results: Array<{ source: string; dest: string; ok: boolean; error?: string }>
         if (clipboard.mode === 'copy') {
           results = await window.api.fs.copy(paths, currentPath)
         } else {
@@ -630,6 +630,19 @@ export const useAppStore = create<AppState>((set, get) => {
         }
         console.log('[PASTE] results:', results)
         await get().refreshDirectory()
+
+        // Surface any per-file failures — fs.move/copy never throws, it
+        // returns ok:false per entry, so silent failures are easy to miss.
+        const failures = (results || []).filter(r => !r.ok)
+        if (failures.length > 0) {
+          const list = failures.map(f =>
+            `• ${f.source.split(/[\\/]/).pop()}: ${f.error || 'άγνωστο σφάλμα'}`
+          ).join('\n')
+          alert(
+            `${clipboard.mode === 'copy' ? 'Αντιγραφή' : 'Μετακίνηση'} απέτυχε για ${failures.length} αρχεί${failures.length === 1 ? 'ο' : 'α'}:\n\n${list}\n\n` +
+            `Πιθανή αιτία: το αρχείο είναι ανοιχτό σε άλλη εφαρμογή ή κλειδωμένο από Dropbox/antivirus.`
+          )
+        }
       } catch (err) {
         console.error('Paste failed:', err)
         alert(`Paste failed: ${(err as any)?.message || err}`)

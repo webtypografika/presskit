@@ -26,6 +26,10 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
   const menuRef = useRef<HTMLDivElement>(null)
   const [openWithApps, setOpenWithApps] = useState<AppInfo[]>([])
   const [showOpenWith, setShowOpenWith] = useState(false)
+  // Measured position — starts offscreen, then adjusted after first layout
+  const [pos, setPos] = useState<{ left: number; top: number; visible: boolean }>({
+    left: x, top: y, visible: false
+  })
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -53,11 +57,34 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
       .catch(() => setOpenWithApps([]))
   }, [file])
 
-  // Adjust position to keep menu within viewport with some margin
-  const menuWidth = 220
-  const menuHeight = 400
-  const adjustedX = Math.max(8, Math.min(x, window.innerWidth - menuWidth))
-  const adjustedY = Math.max(8, Math.min(y, window.innerHeight - menuHeight))
+  // After first layout, measure actual menu size and flip direction when
+  // there is not enough room below/right of the click point.
+  useEffect(() => {
+    if (!menuRef.current) return
+    const rect = menuRef.current.getBoundingClientRect()
+    const margin = 8
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+
+    let left = x
+    let top = y
+
+    // Horizontal: flip to the left of cursor if overflow on right
+    if (left + rect.width + margin > vw) {
+      left = x - rect.width
+    }
+    // Clamp to viewport
+    left = Math.max(margin, Math.min(left, vw - rect.width - margin))
+
+    // Vertical: flip above cursor if overflow on bottom
+    if (top + rect.height + margin > vh) {
+      top = y - rect.height
+    }
+    // Clamp to viewport
+    top = Math.max(margin, Math.min(top, vh - rect.height - margin))
+
+    setPos({ left, top, visible: true })
+  }, [x, y, openWithApps.length])
 
   const isFile = !file.isDirectory
   const isPrint = isFile && ['pdf', 'ai', 'psd', 'eps', 'indd', 'tiff'].includes(file.type)
@@ -69,7 +96,10 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
     <div
       ref={menuRef}
       className="fixed z-50 bg-bg-tertiary border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-100"
-      style={{ left: adjustedX, top: adjustedY, minWidth: 200, padding: 6 }}
+      style={{
+        left: pos.left, top: pos.top, minWidth: 200, padding: 6,
+        visibility: pos.visible ? 'visible' : 'hidden',
+      }}
     >
       {/* Pick/Unpick */}
       {isFile && (

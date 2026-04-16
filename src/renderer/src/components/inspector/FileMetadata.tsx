@@ -194,7 +194,7 @@ function MiniPreview({ file }: { file: import('@/lib/file-types').FileEntry }) {
     const isPdf = file.type === 'pdf' || file.type === 'ai'
 
     if (isPdf) {
-      renderPdfThumbnail(file.path, 280)
+      renderPdfThumbnail(file.path, 280, file.modified)
         .then(data => { if (!cancelled) setThumb(data) })
         .catch(() => {})
     } else {
@@ -204,7 +204,7 @@ function MiniPreview({ file }: { file: import('@/lib/file-types').FileEntry }) {
     }
 
     return () => { cancelled = true }
-  }, [file.path, file.type])
+  }, [file.path, file.type, file.modified])
 
   if (!thumb) return null
 

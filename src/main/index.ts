@@ -485,19 +485,63 @@ async function handleProtocolUrl(url: string): Promise<void> {
       mainWindow?.webContents.send('navigate-to-folder', { path: targetDir, quoteId })
     }
     // Archive a quote folder: presscal-fh://archive-quote?folderPath=C:\...
+    // PressCal MUST use the exact folder name "_01 Archive" — it pre-writes
+    // jobFolderPath = <parent>/_01 Archive/<basename> in its DB before firing
+    // this deep link, and if PressKit uses a different name, DB is out of sync.
     if (parsed.hostname === 'archive-quote') {
-      const folderPath = parsed.searchParams.get('folderPath')
+      let folderPath = parsed.searchParams.get('folderPath')
+      const { dialog: dlgArchive } = await import('electron')
+
       if (!folderPath) {
         deepLog('[DeepLink] archive-quote: missing folderPath')
+        dlgArchive.showErrorBox('Αρχειοθέτηση', 'Δεν δόθηκε path για τον φάκελο προσφοράς.')
         return
       }
 
       const { existsSync: fsExists } = await import('fs')
-      const { rename: fsRename, mkdir: fsMkdir } = await import('fs/promises')
+      const { rename: fsRename, mkdir: fsMkdir, access: fsAccess2, readdir: rdDir2, copyFile: fsCopyFile, stat: fsStat2, rm: fsRm } = await import('fs/promises')
       const { join: pathJoin, dirname: pathDirname, basename: pathBasename } = await import('path')
+
+      // Normalize path (same treatment as download-to-folder)
+      folderPath = folderPath.replace(/\//g, '\\')
+      folderPath = folderPath.split('\\').map(s => s.trim()).join('\\')
+
+      // Segment-by-segment resolution — handles NFC/NFD mismatches and other
+      // encoding quirks between PressCal's stored path and the actual disk name.
+      if (!fsExists(folderPath)) {
+        const segments = folderPath.split('\\')
+        let resolved = segments[0]
+        for (let i = 1; i < segments.length; i++) {
+          const seg = segments[i]
+          const candidate = resolved + '\\' + seg
+          try {
+            await fsAccess2(candidate)
+            resolved = candidate
+          } catch {
+            try {
+              const children = await rdDir2(resolved)
+              const asciiPrefix = seg.replace(/[^\x00-\x7F].*/, '').trim()
+              const match = asciiPrefix.length >= 3
+                ? children.find(c => c.replace(/[^\x00-\x7F].*/, '').trim() === asciiPrefix)
+                : null
+              if (match) {
+                resolved = resolved + '\\' + match
+                console.log(`[ARCHIVE] Resolved "${seg}" → "${match}"`)
+              } else {
+                resolved = candidate
+              }
+            } catch {
+              resolved = candidate
+            }
+          }
+        }
+        folderPath = resolved
+      }
 
       if (!fsExists(folderPath)) {
         deepLog('[DeepLink] archive-quote: folder not found:', folderPath)
+        dlgArchive.showErrorBox('Αρχειοθέτηση',
+          `Ο φάκελος δεν βρέθηκε:\n${folderPath}\n\nΜπορεί να έχει μετακινηθεί ή διαγραφεί.`)
         return
       }
 
@@ -509,19 +553,67 @@ async function handleProtocolUrl(url: string): Promise<void> {
       try {
         await fsMkdir(archiveDir, { recursive: true })
 
+        // Idempotent: if already archived (e.g. retry), just navigate there.
         if (fsExists(targetPath)) {
-          deepLog('[DeepLink] archive-quote: target already exists:', targetPath)
+          console.log(`[ARCHIVE] Already archived, navigating: ${targetPath}`)
+          mainWindow?.webContents.send('navigate-to-folder', { path: targetPath })
           return
         }
 
-        await fsRename(folderPath, targetPath)
-        console.log(`[ARCHIVE] Moved: ${folderName} → _01 Archive/`)
+        // Try a fast rename first. On Dropbox / synced folders this often
+        // fails with EPERM/EBUSY because a file handle is held by the sync
+        // client or AV. Fall back to recursive copy + delete in that case.
+        let renamed = false
+        try {
+          await fsRename(folderPath, targetPath)
+          renamed = true
+        } catch (renameErr) {
+          console.warn('[ARCHIVE] Rename failed, falling back to copy+delete:', renameErr)
+        }
 
-        // If PressKit is currently viewing this folder, navigate to archive
+        if (!renamed) {
+          const copyDir = async (s: string, d: string) => {
+            await fsMkdir(d, { recursive: true })
+            const entries = await rdDir2(s, { withFileTypes: true })
+            for (const entry of entries) {
+              const sp = pathJoin(s, entry.name)
+              const dp = pathJoin(d, entry.name)
+              if (entry.isDirectory()) await copyDir(sp, dp)
+              else await fsCopyFile(sp, dp)
+            }
+          }
+
+          const srcStat = await fsStat2(folderPath)
+          if (srcStat.isDirectory()) {
+            await copyDir(folderPath, targetPath)
+            // Retry the delete a few times — sync clients may still hold locks
+            for (let i = 0; i < 3; i++) {
+              try {
+                await fsRm(folderPath, { recursive: true, force: true })
+                break
+              } catch (rmErr) {
+                if (i === 2) {
+                  console.warn('[ARCHIVE] Copy succeeded but delete of original failed:', rmErr)
+                  dlgArchive.showErrorBox('Αρχειοθέτηση',
+                    `Ο φάκελος αντιγράφηκε στο _01 Archive αλλά δεν μπόρεσε να διαγραφεί ο αρχικός.\n\n` +
+                    `Αιτία (πιθανή): αρχείο κλειδωμένο από Dropbox, antivirus ή κάποια εφαρμογή.\n\n` +
+                    `Κλείσε ό,τι μπορεί να έχει ανοιχτά αρχεία και διέγραψε χειροκίνητα:\n${folderPath}`)
+                  return
+                }
+                await new Promise(r => setTimeout(r, 500))
+              }
+            }
+          } else {
+            // Shouldn't happen for a quote folder, but handle defensively
+            await fsCopyFile(folderPath, targetPath)
+            await fsRm(folderPath, { force: true })
+          }
+        }
+
+        console.log(`[ARCHIVE] Moved: ${folderName} → _01 Archive/${renamed ? '' : ' (via copy+delete)'}`)
         mainWindow?.webContents.send('navigate-to-folder', { path: targetPath })
       } catch (err) {
         console.error('[ARCHIVE] Failed:', err)
-        const { dialog: dlgArchive } = await import('electron')
         dlgArchive.showErrorBox('Αρχειοθέτηση', `Αποτυχία μετακίνησης φακέλου:\n${String(err)}`)
       }
     }
@@ -990,6 +1082,28 @@ function registerHandlers(): void {
     } else {
       event.sender.startDrag({ files: filePaths, icon })
     }
+  })
+
+  // Manual archive-quote trigger (UI button). Delegates to the same deep link
+  // handler so behavior stays identical to PressCal-triggered archives.
+  ipcMain.handle('archive:quoteFolder', async (_e, folderPath: string) => {
+    if (!folderPath) return { ok: false, error: 'missing folderPath' }
+    const { dialog: dlgConfirm } = await import('electron')
+    const { basename } = await import('path')
+
+    const confirm = await dlgConfirm.showMessageBox(mainWindow!, {
+      type: 'question',
+      buttons: ['Αρχειοθέτηση', 'Ακύρωση'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Αρχειοθέτηση φακέλου',
+      message: `Αρχειοθέτηση του φακέλου "${basename(folderPath)}";`,
+      detail: 'Ο φάκελος θα μετακινηθεί στο _01 Archive/ του parent directory.',
+    })
+    if (confirm.response !== 0) return { ok: false, cancelled: true }
+
+    await handleProtocolUrl(`presscal-fh://archive-quote?folderPath=${encodeURIComponent(folderPath)}`)
+    return { ok: true }
   })
 
   // Dialogs
