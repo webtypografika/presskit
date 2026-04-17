@@ -76,7 +76,7 @@ export function QuoteLinker() {
   useEffect(() => {
     if (!selectedFile) return
     window.api.presscal.getFileLinks({})
-      .then(setFileLinks)
+      .then(data => setFileLinks(Array.isArray(data) ? data : []))
       .catch(() => setFileLinks([]))
   }, [selectedFile])
 
@@ -94,7 +94,7 @@ export function QuoteLinker() {
         preflightStatus: preflight?.overallStatus || undefined
       })
       const links = await window.api.presscal.getFileLinks({ quoteId })
-      setFileLinks(links)
+      setFileLinks(Array.isArray(links) ? links : [])
     } catch {
     } finally {
       setLinkingTo(null)

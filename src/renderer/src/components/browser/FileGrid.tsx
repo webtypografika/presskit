@@ -382,13 +382,23 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     e.preventDefault()
     e.stopPropagation()
     setDropTarget(null)
-    if (!targetFolder.isDirectory) return
+
+    // If dropped on a file (not folder), copy to current directory instead
+    const destDir = targetFolder.isDirectory ? targetFolder.path : useAppStore.getState().currentPath
+    if (!destDir) return
 
     const sourcePaths = Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
     if (!sourcePaths.length) return
 
+    console.log('[DROP-EXT] copying', sourcePaths.length, 'files to', destDir)
     try {
-      await window.api.fs.copy(sourcePaths, targetFolder.path)
+      const results = await window.api.fs.copy(sourcePaths, destDir)
+      const ok = results.filter((r: any) => r.ok).length
+      const failed = results.filter((r: any) => !r.ok)
+      console.log('[DROP-EXT] results:', ok, 'ok,', failed.length, 'failed')
+      if (failed.length > 0) {
+        console.error('[DROP-EXT] failures:', failed)
+      }
       refreshDirectory()
     } catch (err) {
       console.error('External drop failed:', err)
@@ -408,8 +418,15 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     const sourcePaths = Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
     if (!sourcePaths.length) return
 
+    console.log('[DROP-BG] copying', sourcePaths.length, 'files to', currentPath)
     try {
-      await window.api.fs.copy(sourcePaths, currentPath)
+      const results = await window.api.fs.copy(sourcePaths, currentPath)
+      const ok = results.filter((r: any) => r.ok).length
+      const failed = results.filter((r: any) => !r.ok)
+      console.log('[DROP-BG] results:', ok, 'ok,', failed.length, 'failed')
+      if (failed.length > 0) {
+        console.error('[DROP-BG] failures:', failed)
+      }
       refreshDirectory()
     } catch (err) {
       console.error('Background drop failed:', err)
@@ -417,6 +434,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   }, [refreshDirectory])
 
   const handleBgDragOver = useCallback((e: React.DragEvent) => {
+    console.log('[DRAGOVER-BG] types:', Array.from(e.dataTransfer.types), 'dragActive:', dragState.isActive())
     if (dragState.isActive()) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'

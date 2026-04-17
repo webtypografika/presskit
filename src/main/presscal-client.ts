@@ -132,10 +132,18 @@ export async function linkFileToQuoteItem(quoteId: string, itemId: string, fileP
     } catch {}
   }
 
-  return presscalFetch<any>(`/quotes/${quoteId}/items/${itemId}/link-file`, {
-    method: 'POST',
-    body: JSON.stringify(fileData)
-  })
+  console.log(`[LinkFile] POST /quotes/${quoteId}/items/${itemId}/link-file`, JSON.stringify(fileData, null, 2))
+  try {
+    const result = await presscalFetch<any>(`/quotes/${quoteId}/items/${itemId}/link-file`, {
+      method: 'POST',
+      body: JSON.stringify(fileData)
+    })
+    console.log(`[LinkFile] Success:`, result)
+    return result
+  } catch (err: any) {
+    console.error(`[LinkFile] FAILED: quoteId=${quoteId} itemId=${itemId}`, err.message)
+    throw err
+  }
 }
 
 export function registerPresscalHandlers(ipcMain: IpcMain): void {
@@ -264,13 +272,15 @@ export function registerPresscalHandlers(ipcMain: IpcMain): void {
     return linkFileToQuoteItem(quoteId, itemId, filePath)
   })
 
-  // Send email with local file attachments (reads files + base64 in main process)
+  // Send email with local file attachments
+  // Small payloads (<4 MB) go via PressCal Vercel API.
+  // Large payloads use direct SMTP via nodemailer + OAuth2 token from PressCal.
   ipcMain.handle('presscal:sendEmailWithFiles', async (_e, data: {
     to: string; subject: string; body: string;
     filePaths: { path: string; name: string; ext: string }[];
     quoteId?: string;
   }) => {
-    const { readFile: rf } = await import('fs/promises')
+    const { readFile: rf, stat: fsStat } = await import('fs/promises')
 
     const mimeTypes: Record<string, string> = {
       '.pdf': 'application/pdf', '.ai': 'application/postscript', '.psd': 'image/vnd.adobe.photoshop',
@@ -279,6 +289,100 @@ export function registerPresscalHandlers(ipcMain: IpcMain): void {
       '.indd': 'application/x-indesign',
     }
 
+    // Check total file size to decide route
+    const sizes = await Promise.all(data.filePaths.map(f => fsStat(f.path).then(s => s.size)))
+    const totalBytes = sizes.reduce((a, b) => a + b, 0)
+    const VERCEL_LIMIT = 4 * 1024 * 1024 // 4 MB
+
+    console.log('[PressCal] sendEmailWithFiles →',
+      `to=${data.to},`,
+      `attachments=${data.filePaths.length},`,
+      `total size=${(totalBytes / 1024 / 1024).toFixed(2)} MB,`,
+      `route=${totalBytes > VERCEL_LIMIT ? 'DIRECT SMTP' : 'Vercel API'},`,
+      `quoteId=${data.quoteId || '(none)'}`
+    )
+
+    if (totalBytes > VERCEL_LIMIT) {
+      // --- Direct send via Gmail API (no Vercel body limit) ---
+      const { readFile: readF } = await import('fs/promises')
+
+      // Fetch Gmail OAuth credentials from PressCal
+      const creds = await presscalFetch<{
+        accessToken: string; email: string;
+      }>('/gmail-credentials')
+
+      // Build attachments as base64
+      const parts = await Promise.all(data.filePaths.map(async (f) => {
+        const buf = await readF(f.path)
+        const ct = mimeTypes[f.ext] || 'application/octet-stream'
+        return { filename: f.name, content: buf.toString('base64'), contentType: ct }
+      }))
+
+      // Build RFC 2822 MIME message
+      const boundary = `----presskit_${Date.now()}_${Math.random().toString(36).slice(2)}`
+      const mimeLines: string[] = [
+        `From: ${creds.email}`,
+        `To: ${data.to}`,
+        `Subject: =?UTF-8?B?${Buffer.from(data.subject).toString('base64')}?=`,
+        'MIME-Version: 1.0',
+        `Content-Type: multipart/mixed; boundary="${boundary}"`,
+        '',
+        `--${boundary}`,
+        'Content-Type: text/plain; charset="UTF-8"',
+        'Content-Transfer-Encoding: base64',
+        '',
+        Buffer.from(data.body || ' ').toString('base64'),
+      ]
+      for (const part of parts) {
+        mimeLines.push(
+          `--${boundary}`,
+          `Content-Type: ${part.contentType}; name="${part.filename}"`,
+          'Content-Transfer-Encoding: base64',
+          `Content-Disposition: attachment; filename="${part.filename}"`,
+          '',
+          part.content,
+        )
+      }
+      mimeLines.push(`--${boundary}--`)
+
+      const rawMessage = mimeLines.join('\r\n')
+      // Gmail API uses URL-safe base64
+      const raw = Buffer.from(rawMessage)
+        .toString('base64')
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+      // Send via Gmail API — no Vercel in the path, 25MB limit
+      const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${creds.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ raw }),
+      })
+
+      if (!gmailRes.ok) {
+        const errBody = await gmailRes.text()
+        throw new Error(`Gmail send failed (${gmailRes.status}): ${errBody}`)
+      }
+
+      // Log the send in PressCal (without attachments) so it shows in history
+      await presscalFetch<any>('/email-log', {
+        method: 'POST',
+        body: JSON.stringify({
+          to: data.to,
+          subject: data.subject,
+          body: data.body,
+          attachmentNames: data.filePaths.map(f => f.name),
+          quoteId: data.quoteId,
+          sentDirect: true,
+        })
+      }).catch(err => console.warn('[PressCal] email-log failed (non-critical):', err.message))
+
+      return { success: true, direct: true }
+    }
+
+    // --- Small files: send via Vercel API as before ---
     const attachments = await Promise.all(
       data.filePaths.map(async (f) => {
         const buffer = await rf(f.path)
@@ -288,14 +392,6 @@ export function registerPresscalHandlers(ipcMain: IpcMain): void {
           contentType: mimeTypes[f.ext] || 'application/octet-stream'
         }
       })
-    )
-
-    const totalBase64 = attachments.reduce((sum, a) => sum + a.content.length, 0)
-    console.log('[PressCal] sendEmailWithFiles →',
-      `to=${data.to},`,
-      `attachments=${attachments.length},`,
-      `base64 size=${(totalBase64 / 1024 / 1024).toFixed(2)} MB,`,
-      `quoteId=${data.quoteId || '(none)'}`
     )
 
     return presscalFetch<any>('/email', {

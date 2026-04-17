@@ -187,7 +187,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
     if (parsed.hostname === 'pick-file-for-item') {
       const quoteId = parsed.searchParams.get('quoteId')
       const itemId = parsed.searchParams.get('itemId')
-      const folder = parsed.searchParams.get('folder')
+      let folder = parsed.searchParams.get('folder')
 
       if (!quoteId || !itemId) return
 
@@ -196,8 +196,19 @@ async function handleProtocolUrl(url: string): Promise<void> {
       // Navigate to customer folder if provided
       if (folder) {
         const { existsSync } = await import('fs')
+        // Try the folder path as-is first (may contain "/" in folder names)
         if (existsSync(folder)) {
+          deepLog('[DeepLink] pick-file-for-item folder (as-is):', folder)
           mainWindow?.webContents.send('navigate-to-folder', { path: folder })
+        } else {
+          // Fallback: try replacing / with \ (normal path separators)
+          const normalized = folder.replace(/\//g, '\\')
+          deepLog('[DeepLink] pick-file-for-item folder (normalized):', normalized, 'exists:', existsSync(normalized))
+          if (existsSync(normalized)) {
+            mainWindow?.webContents.send('navigate-to-folder', { path: normalized })
+          } else {
+            deepLog('[DeepLink] pick-file-for-item: folder not found, skipping nav')
+          }
         }
       }
 
@@ -615,6 +626,130 @@ async function handleProtocolUrl(url: string): Promise<void> {
       } catch (err) {
         console.error('[ARCHIVE] Failed:', err)
         dlgArchive.showErrorBox('Αρχειοθέτηση', `Αποτυχία μετακίνησης φακέλου:\n${String(err)}`)
+      }
+    }
+
+    // Restore a quote folder from archive: presscal-fh://restore-quote?folderPath=...&restorePath=...&quoteId=...
+    // Moves the folder from _01 Archive back to its original location, then confirms with PressCal.
+    if (parsed.hostname === 'restore-quote') {
+      let folderPath = parsed.searchParams.get('folderPath')   // current archived path
+      let restorePath = parsed.searchParams.get('restorePath') // target restored path
+      const quoteId = parsed.searchParams.get('quoteId') || ''
+      const { dialog: dlgRestore } = await import('electron')
+
+      if (!folderPath || !restorePath) {
+        deepLog('[DeepLink] restore-quote: missing folderPath or restorePath')
+        dlgRestore.showErrorBox('Επαναφορά', 'Λείπουν παράμετροι (folderPath / restorePath).')
+        return
+      }
+
+      const { existsSync: fsExists } = await import('fs')
+      const { rename: fsRename, mkdir: fsMkdir, readdir: rdDir2, copyFile: fsCopyFile, rm: fsRm, access: fsAccess2 } = await import('fs/promises')
+      const { join: pathJoin, dirname: pathDirname, basename: pathBasename } = await import('path')
+
+      // Normalize paths
+      folderPath = folderPath.replace(/\//g, '\\').split('\\').map(s => s.trim()).join('\\')
+      restorePath = restorePath.replace(/\//g, '\\').split('\\').map(s => s.trim()).join('\\')
+
+      // Segment-by-segment resolution (same as archive-quote)
+      if (!fsExists(folderPath)) {
+        const segments = folderPath.split('\\')
+        let resolved = segments[0]
+        for (let i = 1; i < segments.length; i++) {
+          const seg = segments[i]
+          const candidate = resolved + '\\' + seg
+          try {
+            await fsAccess2(candidate)
+            resolved = candidate
+          } catch {
+            try {
+              const children = await rdDir2(resolved)
+              const asciiPrefix = seg.replace(/[^\x00-\x7F].*/, '').trim()
+              const match = asciiPrefix.length >= 3
+                ? children.find(c => c.replace(/[^\x00-\x7F].*/, '').trim() === asciiPrefix)
+                : null
+              resolved = match ? resolved + '\\' + match : candidate
+            } catch {
+              resolved = candidate
+            }
+          }
+        }
+        folderPath = resolved
+      }
+
+      if (!fsExists(folderPath)) {
+        deepLog('[DeepLink] restore-quote: folder not found:', folderPath)
+        dlgRestore.showErrorBox('Επαναφορά',
+          `Ο αρχειοθετημένος φάκελος δεν βρέθηκε:\n${folderPath}`)
+        return
+      }
+
+      try {
+        // Ensure target parent exists
+        await fsMkdir(pathDirname(restorePath), { recursive: true })
+
+        // Idempotent: if already restored, just navigate
+        if (fsExists(restorePath)) {
+          console.log(`[RESTORE] Already at target, navigating: ${restorePath}`)
+          mainWindow?.webContents.send('navigate-to-folder', { path: restorePath, quoteId })
+        } else {
+          // Try rename first, fallback to copy+delete
+          let renamed = false
+          try {
+            await fsRename(folderPath, restorePath)
+            renamed = true
+          } catch (renameErr) {
+            console.warn('[RESTORE] Rename failed, falling back to copy+delete:', renameErr)
+          }
+
+          if (!renamed) {
+            const copyDir = async (s: string, d: string) => {
+              await fsMkdir(d, { recursive: true })
+              const entries = await rdDir2(s, { withFileTypes: true })
+              for (const entry of entries) {
+                const sp = pathJoin(s, entry.name)
+                const dp = pathJoin(d, entry.name)
+                if (entry.isDirectory()) await copyDir(sp, dp)
+                else await fsCopyFile(sp, dp)
+              }
+            }
+            await copyDir(folderPath, restorePath)
+
+            for (let i = 0; i < 3; i++) {
+              try {
+                await fsRm(folderPath, { recursive: true, force: true })
+                break
+              } catch (rmErr) {
+                if (i === 2) {
+                  console.warn('[RESTORE] Copy succeeded but delete of archive failed:', rmErr)
+                  dlgRestore.showErrorBox('Επαναφορά',
+                    `Ο φάκελος αντιγράφηκε αλλά δεν μπόρεσε να διαγραφεί ο αρχειοθετημένος.\n\n` +
+                    `Κλείσε ό,τι μπορεί να έχει ανοιχτά αρχεία και διέγραψε χειροκίνητα:\n${folderPath}`)
+                }
+                await new Promise(r => setTimeout(r, 500))
+              }
+            }
+          }
+
+          console.log(`[RESTORE] Moved: ${pathBasename(folderPath)} → ${restorePath}${renamed ? '' : ' (via copy+delete)'}`)
+          mainWindow?.webContents.send('navigate-to-folder', { path: restorePath, quoteId })
+        }
+
+        // Confirm restore with PressCal (non-blocking)
+        if (quoteId) {
+          const presscalUrl = (store.get('presscal.url') as string)?.replace(/\/$/, '')
+          const apiKey = store.get('presscal.apiKey') as string
+          if (presscalUrl && apiKey) {
+            fetch(`${presscalUrl}/api/filehelper/quotes/${quoteId}/confirm-restore`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ restoredPath: restorePath }),
+            }).catch(err => console.warn('[RESTORE] confirm-restore failed (non-critical):', err.message))
+          }
+        }
+      } catch (err) {
+        console.error('[RESTORE] Failed:', err)
+        dlgRestore.showErrorBox('Επαναφορά', `Αποτυχία επαναφοράς φακέλου:\n${String(err)}`)
       }
     }
 

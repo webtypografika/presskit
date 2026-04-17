@@ -119,7 +119,13 @@ export function FileBrowser() {
             } else if (pickFileMode) {
               handlePickFile(file)
             } else {
-              selectFile(file)
+              // Open native-edit files (Adobe etc.) in default app on double-click
+              const nativeExts = new Set(['.ai', '.psd', '.indd', '.eps', '.svg', '.docx', '.xlsx', '.pptx'])
+              if (nativeExts.has(file.extension?.toLowerCase() || '')) {
+                window.api.shell.openPath(file.path)
+              } else {
+                selectFile(file)
+              }
             }
           }}
         />

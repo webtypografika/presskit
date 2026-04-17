@@ -6,10 +6,11 @@ import {
   Columns, Pencil, Package, RectangleHorizontal,
   FolderPlus, Archive
 } from 'lucide-react'
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useAppStore } from '@/stores/app-store'
 import { useShallow } from 'zustand/react/shallow'
+import type { PresscalCustomer } from '@/lib/ipc'
 import { Breadcrumb } from '../browser/Breadcrumb'
 import { BatchPreflightPanel } from '../batch/BatchPreflightPanel'
 import { ConvertDialog } from '../convert/ConvertDialog'
@@ -331,9 +332,17 @@ function friendlyEmailError(e: any): string {
     return 'Το PressCal δεν είναι ρυθμισμένο. Πήγαινε στις ρυθμίσεις.'
   }
 
-  // Attachment too large
-  if (raw.includes('too large') || raw.includes('Message size')) {
-    return 'Το αρχείο είναι πολύ μεγάλο για αποστολή μέσω email. Δοκίμασε WeTransfer ή Dropbox link.'
+  // Attachment too large (Vercel body limit or Gmail 25MB limit)
+  if (raw.includes('too large') || raw.includes('Message size') ||
+      raw.includes('Request Entity Too Large') || raw.includes('PAYLOAD_TOO_LARGE') ||
+      raw.includes('413')) {
+    return 'Τα αρχεία είναι πολύ μεγάλα για αποστολή μέσω email (όριο 25 MB). Δοκίμασε WeTransfer ή Dropbox link.'
+  }
+
+  // SMTP / BadCredentials from direct Gmail send
+  if (raw.includes('BadCredentials') || raw.includes('Username and Password not accepted') ||
+      raw.includes('Invalid login') || raw.includes('535-5.7.8')) {
+    return 'Η σύνδεση Gmail έληξε. Κάνε logout/login στο PressCal και δοκίμασε ξανά.'
   }
 
   // Generic 500 — strip the stack and keep a short line
@@ -360,6 +369,30 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
   const [emailMenuOpen, setEmailMenuOpen] = useState(false)
+
+  // Customer search autocomplete — live search via API
+  const [customerSuggestions, setCustomerSuggestions] = useState<PresscalCustomer[]>([])
+  const [showCustomerSearch, setShowCustomerSearch] = useState(false)
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (!presscalConnected) return
+    const query = to.trim()
+    if (!query || (query.includes('@') && query.includes('.'))) {
+      setCustomerSuggestions([])
+      return
+    }
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => {
+      window.api.presscal.getCustomers(query)
+        .then(data => {
+          const withEmail = (data || []).filter(c => c.email)
+          setCustomerSuggestions(withEmail.slice(0, 8))
+        })
+        .catch(() => setCustomerSuggestions([]))
+    }, 250)
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current) }
+  }, [to, presscalConnected])
 
   const totalSize = files.reduce((s, f) => s + (f.size || 0), 0)
 
@@ -453,6 +486,11 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
             {files.length} αρχεί{files.length === 1 ? 'ο' : 'α'} · {formatSize(totalSize)}
           </span>
         </div>
+        {totalSize > 25 * 1024 * 1024 && (
+          <div style={{ padding: '8px 24px', background: 'rgba(239,68,68,0.08)', borderBottom: '1px solid var(--th-border)', fontSize: 12, color: '#ef4444' }}>
+            Τα αρχεία ξεπερνούν τα 25 MB — δεν μπορούν να σταλούν μέσω email. Δοκίμασε WeTransfer ή Dropbox link.
+          </div>
+        )}
 
         {/* Form */}
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12, flex: 1, overflow: 'auto' }}>
@@ -461,11 +499,13 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
             <div style={{ position: 'relative' }}>
               <input
                 value={to}
-                onChange={e => setTo(e.target.value)}
-                onFocus={() => lastCustomerEmailOptions.length > 0 && setEmailMenuOpen(true)}
-                onBlur={() => setTimeout(() => setEmailMenuOpen(false), 200)}
-                placeholder="email@example.com"
-                type="email"
+                onChange={e => { setTo(e.target.value); setShowCustomerSearch(true) }}
+                onFocus={() => {
+                  if (lastCustomerEmailOptions.length > 0) setEmailMenuOpen(true)
+                  else setShowCustomerSearch(true)
+                }}
+                onBlur={() => setTimeout(() => { setEmailMenuOpen(false); setShowCustomerSearch(false) }, 200)}
+                placeholder="email ή όνομα πελάτη..."
                 style={{ ...inp, paddingRight: lastCustomerEmailOptions.length > 1 ? 36 : 14 }}
                 autoFocus
               />
@@ -484,7 +524,8 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
                   ▾
                 </button>
               )}
-              {emailMenuOpen && lastCustomerEmailOptions.length > 0 && (
+              {/* Deep-link email options dropdown */}
+              {emailMenuOpen && lastCustomerEmailOptions.length > 0 && customerSuggestions.length === 0 && (
                 <div style={{
                   position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 100,
                   background: 'var(--th-bg-tertiary, var(--th-bg-secondary))',
@@ -525,6 +566,47 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
                   ))}
                 </div>
               )}
+              {/* Customer search autocomplete (when no deep-link context) */}
+              {showCustomerSearch && customerSuggestions.length > 0 && (
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 100,
+                  background: 'var(--th-bg-tertiary, var(--th-bg-secondary))',
+                  border: '1px solid var(--th-border)', borderRadius: 8,
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.3)', overflow: 'hidden',
+                  maxHeight: 280, overflowY: 'auto',
+                }}>
+                  {customerSuggestions.map((c, i) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onMouseDown={e => {
+                        e.preventDefault()
+                        setTo(c.email || '')
+                        setShowCustomerSearch(false)
+                      }}
+                      style={{
+                        width: '100%', padding: '10px 14px', border: 'none', cursor: 'pointer',
+                        background: 'transparent', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 2,
+                        borderBottom: i < customerSuggestions.length - 1 ? '1px solid var(--th-border)' : 'none',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--th-bg-hover)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <span style={{ fontSize: 13, color: 'var(--th-text-primary)', fontWeight: 500 }}>
+                        {c.name}
+                        {c.company && (
+                          <span style={{
+                            marginLeft: 6, fontSize: 11, color: 'var(--th-text-muted)', fontWeight: 400,
+                          }}>
+                            {c.company}
+                          </span>
+                        )}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--th-text-muted)' }}>{c.email}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <div>
@@ -561,7 +643,7 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
           </button>
           <button
             onClick={handleSend}
-            disabled={sending || sent || !to.trim() || !subject.trim()}
+            disabled={sending || sent || !to.trim() || !subject.trim() || totalSize > 25 * 1024 * 1024}
             style={{
               padding: '10px 24px', borderRadius: 8, border: 'none',
               background: sent ? '#22c55e' : '#f58220', color: '#fff',
