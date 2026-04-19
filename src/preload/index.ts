@@ -224,8 +224,6 @@ const api = {
     // ICC Profile
     getIccProfile: (filePath: string) => ipcRenderer.invoke('tools:getIccProfile', filePath),
 
-    // Compare
-    compareFiles: (path1: string, path2: string) => ipcRenderer.invoke('tools:compareFiles', path1, path2),
 
     // Print checklist
     printChecklist: (filePath: string) => ipcRenderer.invoke('tools:printChecklist', filePath),

@@ -3,7 +3,7 @@ import {
   LayoutGrid, List, Scan,
   HardDrive, Cloud, Layers, RefreshCcw, Search, Send,
   PanelLeft, PanelRight, Eye, EyeOff,
-  Columns, Pencil, Package, RectangleHorizontal,
+  Pencil, Package, RectangleHorizontal,
   FolderPlus, Archive
 } from 'lucide-react'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
@@ -14,7 +14,6 @@ import type { PresscalCustomer } from '@/lib/ipc'
 import { Breadcrumb } from '../browser/Breadcrumb'
 import { BatchPreflightPanel } from '../batch/BatchPreflightPanel'
 import { ConvertDialog } from '../convert/ConvertDialog'
-import { CompareView } from '../tools/CompareView'
 import { FilePackager } from '../tools/FilePackager'
 
 export type OverlayMode = 'none' | 'batch' | 'convert'
@@ -53,7 +52,6 @@ export function Toolbar() {
 
   const [overlay, setOverlay] = useState<OverlayMode>('none')
   const [showSendEmail, setShowSendEmail] = useState(false)
-  const [showCompare, setShowCompare] = useState(false)
   const [showPackager, setShowPackager] = useState(false)
 
   // Files to send = multi-selected or single selected
@@ -114,7 +112,6 @@ export function Toolbar() {
           <LabeledButton icon={<Scan size={16} />} label="Preflight" onClick={runPreflight} disabled={!canPreflight} accent />
           <LabeledButton icon={<Layers size={16} />} label="Batch" onClick={() => setOverlay(overlay === 'batch' ? 'none' : 'batch')} active={overlay === 'batch'} />
           <LabeledButton icon={<RefreshCcw size={16} />} label="Convert" onClick={() => setOverlay(overlay === 'convert' ? 'none' : 'convert')} active={overlay === 'convert'} disabled={!canPreflight} />
-          <LabeledButton icon={<Columns size={16} />} label="Compare" onClick={() => setShowCompare(true)} disabled={!canPreflight} />
           <LabeledButton icon={<Package size={16} />} label="Collect" onClick={() => setShowPackager(true)} />
           {canArchive && (
             <LabeledButton icon={<Archive size={16} />} label="Αρχειοθέτηση" onClick={handleArchive} />
@@ -238,7 +235,6 @@ export function Toolbar() {
       )}
 
       {showSendEmail && <SendEmailDialog files={filesToSend} onClose={() => setShowSendEmail(false)} />}
-      {showCompare && <CompareView onClose={() => setShowCompare(false)} />}
       {showPackager && <FilePackager onClose={() => setShowPackager(false)} />}
     </>
   )

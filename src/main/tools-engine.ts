@@ -818,84 +818,6 @@ async function getIccProfile(filePath: string): Promise<IccProfileInfo | null> {
   }
 }
 
-// ─── Side-by-Side Compare ───────────────────────────────────────────────────
-
-interface CompareResult {
-  file1: { path: string; thumbnail: string; width: number; height: number }
-  file2: { path: string; thumbnail: string; width: number; height: number }
-  diffImage?: string // base64 PNG showing pixel differences
-  diffPercentage: number // % of pixels that differ
-}
-
-async function compareFiles(path1: string, path2: string): Promise<CompareResult> {
-  const sharp = (await import('sharp')).default
-
-  // Load and resize both to same dimensions for comparison
-  const img1 = sharp(path1)
-  const img2 = sharp(path2)
-  const meta1 = await img1.metadata()
-  const meta2 = await img2.metadata()
-
-  const maxW = 800
-  const maxH = 800
-
-  const thumb1 = await img1.resize(maxW, maxH, { fit: 'inside' }).png().toBuffer()
-  const thumb2 = await img2.resize(maxW, maxH, { fit: 'inside' }).png().toBuffer()
-
-  // Generate diff image
-  const w = Math.min(meta1.width || maxW, meta2.width || maxW, maxW)
-  const h = Math.min(meta1.height || maxH, meta2.height || maxH, maxH)
-
-  const raw1 = await img1.resize(w, h, { fit: 'fill' }).removeAlpha().raw().toBuffer()
-  const raw2 = await img2.resize(w, h, { fit: 'fill' }).removeAlpha().raw().toBuffer()
-
-  // Create diff buffer
-  const diffBuf = Buffer.alloc(w * h * 3)
-  let diffPixels = 0
-  const threshold = 10 // color difference threshold
-
-  for (let i = 0; i < raw1.length; i += 3) {
-    const dr = Math.abs(raw1[i] - raw2[i])
-    const dg = Math.abs(raw1[i + 1] - raw2[i + 1])
-    const db = Math.abs(raw1[i + 2] - raw2[i + 2])
-    const diff = dr + dg + db
-
-    if (diff > threshold) {
-      diffPixels++
-      diffBuf[i] = 255     // Red highlight for differences
-      diffBuf[i + 1] = 0
-      diffBuf[i + 2] = 0
-    } else {
-      // Desaturated version of original
-      const gray = Math.round((raw1[i] + raw1[i + 1] + raw1[i + 2]) / 3)
-      diffBuf[i] = gray
-      diffBuf[i + 1] = gray
-      diffBuf[i + 2] = gray
-    }
-  }
-
-  const totalPixels = (raw1.length / 3)
-  const diffImage = await sharp(diffBuf, { raw: { width: w, height: h, channels: 3 } })
-    .png()
-    .toBuffer()
-
-  return {
-    file1: {
-      path: path1,
-      thumbnail: `data:image/png;base64,${thumb1.toString('base64')}`,
-      width: meta1.width || 0,
-      height: meta1.height || 0,
-    },
-    file2: {
-      path: path2,
-      thumbnail: `data:image/png;base64,${thumb2.toString('base64')}`,
-      width: meta2.width || 0,
-      height: meta2.height || 0,
-    },
-    diffImage: `data:image/png;base64,${diffImage.toString('base64')}`,
-    diffPercentage: Math.round((diffPixels / totalPixels) * 10000) / 100,
-  }
-}
 
 // ─── Print-Ready Checklist ──────────────────────────────────────────────────
 
@@ -1223,8 +1145,6 @@ export function registerToolHandlers(ipcMain: IpcMain): void {
   // ─ ICC Profile ─
   ipcMain.handle('tools:getIccProfile', async (_e, filePath: string) => getIccProfile(filePath))
 
-  // ─ Compare ─
-  ipcMain.handle('tools:compareFiles', async (_e, path1: string, path2: string) => compareFiles(path1, path2))
 
   // ─ Print Checklist ─
   ipcMain.handle('tools:printChecklist', async (_e, filePath: string) => generatePrintChecklist(filePath))
