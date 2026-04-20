@@ -55,6 +55,11 @@ async function presscalFetch<T>(endpoint: string, options?: RequestInit): Promis
   return response.json()
 }
 
+// Generic POST to PressCal API (used for gang-pick etc.)
+export async function postToPressCal(endpoint: string, data: Record<string, unknown>): Promise<any> {
+  return presscalFetch(endpoint, { method: 'POST', body: JSON.stringify(data) })
+}
+
 // Extract file metadata (images + PDFs) and POST to PressCal's link-file endpoint.
 // Shared by the IPC handler and the pick-file-dialog deep link handler.
 export async function linkFileToQuoteItem(quoteId: string, itemId: string, filePath: string): Promise<any> {
@@ -475,5 +480,10 @@ export function registerPresscalHandlers(ipcMain: IpcMain): void {
     await writeFile(tempPath, buffer)
 
     return tempPath
+  })
+
+  // Generic POST to PressCal API
+  ipcMain.handle('presscal:postToApi', async (_e, endpoint: string, data: any) => {
+    return presscalFetch(endpoint, { method: 'POST', body: JSON.stringify(data) })
   })
 }

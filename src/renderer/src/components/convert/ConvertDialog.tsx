@@ -159,6 +159,11 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
             </OptionButton>
           ))}
         </div>
+        {options.colorSpace === 'cmyk' && (options.format === 'jpg' || options.format === 'png') && (
+          <div style={{ marginTop: 8, fontSize: 12, color: '#f59e0b', lineHeight: 1.5 }}>
+            ⚠ Το CMYK δεν υποστηρίζεται σε {options.format.toUpperCase()}. Χρησιμοποίησε TIFF ή PDF για CMYK output.
+          </div>
+        )}
       </Section>
 
       {/* Resolution */}
@@ -250,61 +255,87 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
-      {/* Convert button */}
+      {/* Convert button / Result */}
       <div style={{ padding: '20px 24px' }}>
-        <button
-          onClick={handleConvert}
-          disabled={converting}
-          style={{
-            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            gap: 8, padding: '12px 20px', borderRadius: 10, border: 'none',
-            background: '#f58220', color: '#fff', fontSize: 14, fontWeight: 600,
-            cursor: converting ? 'default' : 'pointer',
-            opacity: converting ? 0.6 : 1,
-          }}
-        >
-          {converting ? (
-            <><Loader2 size={16} className="animate-spin" /> Converting...</>
-          ) : (
-            <><ArrowRight size={16} /> Convert to {options.format === 'pdf' ? 'Flat PDF' : options.format.toUpperCase()}</>
-          )}
-        </button>
-      </div>
+        {result ? (
+          <div style={{
+            padding: 16, borderRadius: 10,
+            background: result.success ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+            border: `1px solid ${result.success ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}`,
+          }}>
+            <div className="flex items-center" style={{ gap: 8, marginBottom: 6 }}>
+              {result.success
+                ? <CheckCircle size={18} style={{ color: '#22c55e' }} />
+                : <XCircle size={18} style={{ color: '#ef4444' }} />
+              }
+              <span style={{ fontSize: 13, fontWeight: 600, color: result.success ? '#22c55e' : '#ef4444' }}>
+                {result.success ? 'Ολοκληρώθηκε!' : 'Αποτυχία μετατροπής'}
+              </span>
+            </div>
 
-      {/* Result */}
-      {result && (
-        <div style={{
-          margin: '0 24px 20px', padding: 16, borderRadius: 10,
-          background: result.success ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
-          border: `1px solid ${result.success ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}`,
-        }}>
-          <div className="flex items-center" style={{ gap: 8, marginBottom: 6 }}>
-            {result.success
-              ? <CheckCircle size={18} style={{ color: '#22c55e' }} />
-              : <XCircle size={18} style={{ color: '#ef4444' }} />
-            }
-            <span style={{ fontSize: 13, fontWeight: 600, color: result.success ? '#22c55e' : '#ef4444' }}>
-              {result.success ? 'Converted successfully' : 'Conversion failed'}
-            </span>
-          </div>
+            {result.success ? (
+              <div style={{ marginLeft: 26, fontSize: 12, color: 'var(--th-text-secondary)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div>{result.outputPath.split(/[/\\]/).pop()}</div>
+                <div>{formatFileSize(result.inputSize)} → {formatFileSize(result.outputSize)}</div>
+                <div className="flex items-center" style={{ gap: 12, marginTop: 8 }}>
+                  <button
+                    onClick={() => window.api.shell.showInFolder(result.outputPath)}
+                    className="flex items-center"
+                    style={{ gap: 4, color: '#f58220', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  >
+                    <FolderOpen size={13} /> Άνοιγμα φακέλου
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginLeft: 26, fontSize: 12, color: '#ef4444' }}>{result.error}</div>
+            )}
 
-          {result.success ? (
-            <div style={{ marginLeft: 26, fontSize: 12, color: 'var(--th-text-secondary)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div>{result.outputPath.split(/[/\\]/).pop()}</div>
-              <div>{formatFileSize(result.inputSize)} → {formatFileSize(result.outputSize)}</div>
+            {/* Action buttons after result */}
+            <div className="flex items-center" style={{ gap: 8, marginTop: 14 }}>
               <button
-                onClick={() => window.api.shell.showInFolder(result.outputPath)}
-                className="flex items-center"
-                style={{ gap: 4, color: '#f58220', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: 4 }}
+                onClick={() => setResult(null)}
+                style={{
+                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  gap: 6, padding: '10px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500,
+                  border: '1px solid var(--th-border)', background: 'var(--th-bg-primary)',
+                  color: 'var(--th-text-secondary)', cursor: 'pointer',
+                }}
               >
-                <FolderOpen size={13} /> Show in folder
+                <RefreshCw size={14} /> Νέα μετατροπή
+              </button>
+              <button
+                onClick={onClose}
+                style={{
+                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  gap: 6, padding: '10px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500,
+                  border: 'none', background: '#f58220', color: '#fff', cursor: 'pointer',
+                }}
+              >
+                OK
               </button>
             </div>
-          ) : (
-            <div style={{ marginLeft: 26, fontSize: 12, color: '#ef4444' }}>{result.error}</div>
-          )}
-        </div>
-      )}
+          </div>
+        ) : (
+          <button
+            onClick={handleConvert}
+            disabled={converting}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              gap: 8, padding: '12px 20px', borderRadius: 10, border: 'none',
+              background: '#f58220', color: '#fff', fontSize: 14, fontWeight: 600,
+              cursor: converting ? 'default' : 'pointer',
+              opacity: converting ? 0.6 : 1,
+            }}
+          >
+            {converting ? (
+              <><Loader2 size={16} className="animate-spin" /> Μετατροπή...</>
+            ) : (
+              <><ArrowRight size={16} /> Convert to {options.format === 'pdf' ? 'Flat PDF' : options.format.toUpperCase()}</>
+            )}
+          </button>
+        )}
+      </div>
     </div>
   )
 }

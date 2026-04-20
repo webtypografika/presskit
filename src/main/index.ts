@@ -41,11 +41,14 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
   deepLog('[DeepLink] Received:', url)
 
-  // Always focus the window first
+  // Always focus the window first — Windows needs alwaysOnTop trick
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
+    mainWindow.setAlwaysOnTop(true)
+    mainWindow.moveTop()
     mainWindow.focus()
+    setTimeout(() => mainWindow?.setAlwaysOnTop(false), 300)
   }
 
   try {
@@ -247,6 +250,24 @@ async function handleProtocolUrl(url: string): Promise<void> {
       }
     }
 
+    if (parsed.hostname === 'pick-gang-file') {
+      const quoteId = parsed.searchParams.get('quoteId')
+      const gangIdx = parsed.searchParams.get('gangIdx')
+      const folder = parsed.searchParams.get('folder') || undefined
+      if (!quoteId || gangIdx == null) return
+
+      // Navigate to folder if provided
+      if (folder) {
+        const { existsSync } = await import('fs')
+        if (existsSync(folder)) {
+          mainWindow?.webContents.send('navigate-to-folder', { path: folder })
+        }
+      }
+
+      // Enter pick-file mode for gang — renderer handles the click
+      mainWindow?.webContents.send('pick-file-mode', { quoteId, itemId: `gang:${gangIdx}` })
+    }
+
     if (parsed.hostname === 'open-folder') {
       const folderPath = parsed.searchParams.get('path')
       const email = parsed.searchParams.get('email') || ''
@@ -278,10 +299,12 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore()
-        mainWindow.show()
+        mainWindow.showInactive()
         mainWindow.setAlwaysOnTop(true)
+        mainWindow.moveTop()
+        mainWindow.focusOnWebView()
         mainWindow.focus()
-        mainWindow.setAlwaysOnTop(false)
+        setTimeout(() => mainWindow?.setAlwaysOnTop(false), 200)
         mainWindow.webContents.send('navigate-to-folder', { path: folderPath, email, quoteId })
       }
     }
@@ -343,7 +366,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
       console.log('[DeepLink] folderPath:', data.folderPath)
       console.log('[DeepLink] files:', data.files?.length, 'newCount:', data.newCount)
 
-      const files: Array<{ id?: string; filePath: string; fileName: string; source?: string }> = data.files || []
+      const files: Array<{ id?: string; filePath: string; fileName: string; source?: string; subfolder?: string }> = data.files || []
 
       // 2. Resolve target directory
       let targetDir: string = data.folderPath
@@ -403,8 +426,9 @@ async function handleProtocolUrl(url: string): Promise<void> {
       const filesToDownload: typeof files = []
       for (const file of files) {
         const saveName = file.fileName || basename(file.filePath)
+        const saveDir = file.subfolder ? pathJoin(targetDir, file.subfolder) : targetDir
         try {
-          await fsAccess(pathJoin(targetDir, saveName))
+          await fsAccess(pathJoin(saveDir, saveName))
           console.log(`[DeepLink] Exists, skipping: ${saveName}`)
         } catch {
           filesToDownload.push(file)
@@ -443,7 +467,9 @@ async function handleProtocolUrl(url: string): Promise<void> {
             continue
           }
 
-          const savePath = pathJoin(targetDir, saveName)
+          const saveDir = file.subfolder ? pathJoin(targetDir, file.subfolder) : targetDir
+          if (file.subfolder) await mkdir(saveDir, { recursive: true })
+          const savePath = pathJoin(saveDir, saveName)
           await writeFile(savePath, dlResult.body)
           downloaded++
           if (file.id) downloadedFileIds.push(file.id)
@@ -907,11 +933,22 @@ function startFileServer(): void {
       req.on('data', (chunk: Buffer) => chunks.push(chunk))
       req.on('end', async () => {
         try {
+          const fsp = require('fs/promises')
           const dir = pathMod.dirname(savePath)
-          await require('fs/promises').mkdir(dir, { recursive: true })
-          await require('fs/promises').writeFile(savePath, Buffer.concat(chunks))
+          await fsp.mkdir(dir, { recursive: true })
+          // Auto-increment filename if file exists: file.pdf → file_2.pdf → file_3.pdf
+          let finalPath = savePath
+          const ext = pathMod.extname(savePath)
+          const base = savePath.slice(0, -ext.length)
+          let n = 1
+          while (true) {
+            try { await fsp.access(finalPath); } catch { break }
+            n++
+            finalPath = `${base}_${n}${ext}`
+          }
+          await fsp.writeFile(finalPath, Buffer.concat(chunks))
           res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: true, path: savePath }))
+          res.end(JSON.stringify({ ok: true, path: finalPath }))
         } catch (e: any) {
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: e.message }))

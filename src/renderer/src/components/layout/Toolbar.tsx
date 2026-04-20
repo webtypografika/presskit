@@ -737,6 +737,19 @@ function SearchBox() {
     timerRef.current = setTimeout(() => doSearch(val), 150)
   }, [doSearch])
 
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      if (timerRef.current) clearTimeout(timerRef.current)
+      doSearch(query)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      setOpen(false)
+      setResults([])
+      ;(e.target as HTMLElement).blur()
+    }
+  }, [doSearch, query])
+
   const handleSelect = useCallback(async (file: any) => {
     if (file.isDirectory) {
       navigateTo(file.path)
@@ -754,6 +767,19 @@ function SearchBox() {
     setOpen(false)
   }, [navigateTo, selectFile, currentPath])
 
+  // Close on click outside
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (inputRef.current?.contains(e.target as Node)) return
+      if (dropdownRef.current?.contains(e.target as Node)) return
+      setOpen(false)
+    }
+    document.addEventListener('mousedown', handler, true)
+    return () => document.removeEventListener('mousedown', handler, true)
+  }, [open])
+
   // Get position for portal dropdown
   const rect = inputRef.current?.getBoundingClientRect()
 
@@ -770,8 +796,8 @@ function SearchBox() {
           <input
             value={query}
             onChange={e => handleChange(e.target.value)}
-            onFocus={() => setOpen(true)}
-            onBlur={() => setTimeout(() => setOpen(false), 300)}
+            onFocus={() => { if (results.length > 0) setOpen(true) }}
+            onKeyDown={handleKeyDown}
             placeholder="Αναζήτηση..."
             style={{
               border: 'none', background: 'transparent', color: 'var(--th-text-primary)',
@@ -782,7 +808,7 @@ function SearchBox() {
         </div>
       </div>
       {open && results.length > 0 && rect && createPortal(
-        <div style={{
+        <div ref={dropdownRef} style={{
           position: 'fixed',
           top: rect.bottom + 4,
           right: Math.max(window.innerWidth - rect.right, 10),

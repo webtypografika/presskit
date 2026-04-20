@@ -101,7 +101,8 @@ const api = {
     saveToCustomerFolder: (sourcePath: string, targetFolder: string, filename: string) => ipcRenderer.invoke('presscal:saveToCustomerFolder', sourcePath, targetFolder, filename),
     getQuoteEmailMessages: (quoteId: string) => ipcRenderer.invoke('presscal:getQuoteEmailMessages', quoteId),
     downloadAttachment: (messageId: string, attId: string, mime: string, filename: string) => ipcRenderer.invoke('presscal:downloadAttachment', messageId, attId, mime, filename),
-    uploadFileForCosting: (data: { filePath: string; fileName: string; target: 'customer' | 'quote'; targetId: string; quoteId?: string; itemId?: string }) => ipcRenderer.invoke('presscal:uploadFileForCosting', data)
+    uploadFileForCosting: (data: { filePath: string; fileName: string; target: 'customer' | 'quote'; targetId: string; quoteId?: string; itemId?: string }) => ipcRenderer.invoke('presscal:uploadFileForCosting', data),
+    postToApi: (endpoint: string, data: any) => ipcRenderer.invoke('presscal:postToApi', endpoint, data)
   },
 
   // Settings

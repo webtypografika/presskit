@@ -21,28 +21,31 @@ export function FileBrowser() {
     if (!pickFileMode || file.isDirectory) return
     setLinking(true)
     try {
-      await window.api.presscal.linkFileToItem(pickFileMode.quoteId, pickFileMode.itemId, file.path)
+      const isGang = pickFileMode.itemId.startsWith('gang:')
+      if (isGang) {
+        // Gang job pick — POST file path to gang-pick endpoint
+        const gangIdx = parseInt(pickFileMode.itemId.split(':')[1])
+        await window.api.presscal.postToApi('/gang-pick', {
+          quoteId: pickFileMode.quoteId,
+          gangIdx,
+          filePath: file.path,
+          fileName: file.name || file.path.split(/[/\\]/).pop() || 'file.pdf',
+        })
+      } else {
+        await window.api.presscal.linkFileToItem(pickFileMode.quoteId, pickFileMode.itemId, file.path)
+      }
       setLinked(true)
 
-      // Notify PressCal browser to refresh the quote page
-      try {
-        const status = await window.api.presscal.status()
-        if (status.connected && status.url) {
-          window.api.shell.openExternal(`${status.url}/quotes/${pickFileMode.quoteId}?refresh=${Date.now()}`)
-        }
-      } catch {}
+      // PressCal auto-refreshes via polling
 
       setTimeout(() => {
         useAppStore.setState({ pickFileMode: null })
         setLinked(false)
       }, 1500)
     } catch (e) {
-      // Surface the failure — previously this was only logged to the console,
-      // which left the "Σύνδεση..." banner frozen and the user with no clue
-      // that the link never reached PressCal.
       console.error('Link file error:', e)
       const msg = (e as any)?.message || String(e) || 'Άγνωστο σφάλμα'
-      alert(`Αποτυχία σύνδεσης αρχείου με την προσφορά:\n\n${msg}\n\nΈλεγξε τις ρυθμίσεις PressCal (URL & API key) και ότι η προσφορά/είδος υπάρχουν.`)
+      alert(`Αποτυχία σύνδεσης αρχείου:\n\n${msg}\n\nΈλεγξε τις ρυθμίσεις PressCal (URL & API key).`)
     } finally {
       setLinking(false)
     }
