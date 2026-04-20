@@ -158,7 +158,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
       if (!customerId) return
 
       const { dialog } = await import('electron')
-      mainWindow?.focus()
+      if (mainWindow) { mainWindow.setAlwaysOnTop(true); mainWindow.focus(); mainWindow.setAlwaysOnTop(false); }
 
       const result = await dialog.showOpenDialog(mainWindow!, {
         title: 'Επιλογή Φακέλου Πελάτη',
@@ -191,7 +191,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       if (!quoteId || !itemId) return
 
-      mainWindow?.focus()
+      if (mainWindow) { mainWindow.setAlwaysOnTop(true); mainWindow.focus(); mainWindow.setAlwaysOnTop(false); }
 
       // Navigate to customer folder if provided
       if (folder) {
@@ -240,13 +240,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
       try {
         const { linkFileToQuoteItem } = await import('./presscal-client')
         await linkFileToQuoteItem(quoteId, itemId, result.filePaths[0])
-        // Refresh the PressCal quote detail tab
-        const { store: s } = await import('./settings')
-        const url = s.get('presscal.url') as string
-        if (url) {
-          const { shell } = await import('electron')
-          shell.openExternal(`${url.replace(/\/$/, '')}/quotes/${quoteId}?refresh=${Date.now()}`)
-        }
+        // PressCal quote page auto-refreshes via polling + focus listener
       } catch (e) {
         const { dialog: dlg } = await import('electron')
         dlg.showErrorBox('Σύνδεση αρχείου απέτυχε', (e as Error).message)
@@ -285,7 +279,9 @@ async function handleProtocolUrl(url: string): Promise<void> {
       if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore()
         mainWindow.show()
+        mainWindow.setAlwaysOnTop(true)
         mainWindow.focus()
+        mainWindow.setAlwaysOnTop(false)
         mainWindow.webContents.send('navigate-to-folder', { path: folderPath, email, quoteId })
       }
     }
