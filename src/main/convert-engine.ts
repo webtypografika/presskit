@@ -4,6 +4,7 @@ import { extname, basename, dirname, join } from 'path'
 import { existsSync, readdirSync } from 'fs'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+import { isRawExtension, extractRawPreview } from './raw-preview'
 
 const execFileAsync = promisify(execFile)
 
@@ -264,6 +265,12 @@ export function registerConvertHandlers(ipcMain: IpcMain): void {
         return { ...result, inputSize: inputStats.size }
       }
 
+      // RAW camera files — extract embedded JPEG, then convert
+      if (isRawExtension(ext)) {
+        const result = await convertRaw(inputPath, outputPath, options)
+        return { ...result, inputSize: inputStats.size }
+      }
+
       // Image → Image conversion (using sharp)
       if (['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.bmp', '.gif'].includes(ext)) {
         const result = await convertImage(inputPath, outputPath, options)
@@ -315,6 +322,8 @@ export function registerConvertHandlers(ipcMain: IpcMain): void {
           result = await convertPdfWithGs(filePaths[i], outputPath, options)
         } else if (['.psd', '.psb'].includes(ext)) {
           result = await convertPsd(filePaths[i], outputPath, options)
+        } else if (isRawExtension(ext)) {
+          result = await convertRaw(filePaths[i], outputPath, options)
         } else {
           result = await convertImage(filePaths[i], outputPath, options)
         }
@@ -396,6 +405,72 @@ async function convertImage(inputPath: string, outputPath: string, options: Conv
   }
 
   // DPI metadata
+  if (options.dpi) {
+    pipeline = pipeline.withMetadata({ density: options.dpi })
+  }
+
+  const outputBuffer = await pipeline.toBuffer()
+  await writeFile(outputPath, outputBuffer)
+
+  return {
+    success: true,
+    inputPath,
+    outputPath,
+    inputSize: 0,
+    outputSize: outputBuffer.length
+  }
+}
+
+async function convertRaw(inputPath: string, outputPath: string, options: ConvertOptions): Promise<ConvertResult> {
+  const jpegBuffer = await extractRawPreview(inputPath)
+  if (!jpegBuffer) {
+    return {
+      success: false,
+      inputPath,
+      outputPath,
+      inputSize: 0,
+      outputSize: 0,
+      error: 'Could not extract preview from RAW file'
+    }
+  }
+
+  const sharp = (await import('sharp')).default
+  let pipeline = sharp(jpegBuffer)
+
+  // Color space conversion — BEFORE flatten
+  if (options.colorSpace === 'cmyk') {
+    pipeline = pipeline.toColorspace('cmyk')
+  } else if (options.colorSpace === 'srgb') {
+    pipeline = pipeline.toColorspace('srgb')
+  }
+
+  if (options.flatten) {
+    pipeline = pipeline.flatten({ background: { r: 255, g: 255, b: 255 } })
+  }
+
+  if (options.maxWidth || options.maxHeight) {
+    pipeline = pipeline.resize(options.maxWidth || undefined, options.maxHeight || undefined, {
+      fit: 'inside',
+      withoutEnlargement: true
+    })
+  }
+
+  switch (options.format) {
+    case 'tiff':
+      pipeline = pipeline.tiff({
+        compression: 'lzw',
+        xres: options.dpi || 300,
+        yres: options.dpi || 300
+      })
+      break
+    case 'png':
+      pipeline = pipeline.png({ compressionLevel: 6 })
+      break
+    case 'jpg':
+      pipeline = pipeline.jpeg({ quality: options.quality || 95 })
+      break
+  }
+
   if (options.dpi) {
     pipeline = pipeline.withMetadata({ density: options.dpi })
   }

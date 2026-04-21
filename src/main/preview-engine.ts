@@ -1,6 +1,7 @@
 import { IpcMain } from 'electron'
 import { readFile } from 'fs/promises'
 import { extname } from 'path'
+import { isRawExtension, extractRawPreview } from './raw-preview'
 
 export interface PreviewResult {
   type: 'image' | 'pdf-page' | 'svg' | 'font-sample' | 'none'
@@ -32,6 +33,23 @@ export function registerPreviewHandlers(ipcMain: IpcMain): void {
           .png()
           .toBuffer()
         return `data:image/png;base64,${buffer.toString('base64')}`
+      } catch {
+        return null
+      }
+    }
+
+    // RAW camera files — extract embedded JPEG preview
+    if (isRawExtension(ext)) {
+      try {
+        const jpegBuffer = await extractRawPreview(filePath)
+        if (jpegBuffer) {
+          const sharp = (await import('sharp')).default
+          const buffer = await sharp(jpegBuffer)
+            .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+            .png()
+            .toBuffer()
+          return `data:image/png;base64,${buffer.toString('base64')}`
+        }
       } catch {
         return null
       }
@@ -122,6 +140,35 @@ export function registerPreviewHandlers(ipcMain: IpcMain): void {
           data: `data:image/png;base64,${buffer.toString('base64')}`,
           width: meta.width,
           height: meta.height
+        }
+      } catch {
+        return { type: 'none', data: '' }
+      }
+    }
+
+    // RAW camera files — extract embedded JPEG preview
+    if (isRawExtension(ext)) {
+      try {
+        const jpegBuffer = await extractRawPreview(filePath)
+        if (jpegBuffer) {
+          const sharp = (await import('sharp')).default
+          const image = sharp(jpegBuffer)
+          const meta = await image.metadata()
+
+          let buffer: Buffer
+          const maxDim = 2048
+          if ((meta.width && meta.width > maxDim) || (meta.height && meta.height > maxDim)) {
+            buffer = await image.resize(maxDim, maxDim, { fit: 'inside' }).png().toBuffer()
+          } else {
+            buffer = await image.png().toBuffer()
+          }
+
+          return {
+            type: 'image',
+            data: `data:image/png;base64,${buffer.toString('base64')}`,
+            width: meta.width,
+            height: meta.height
+          }
         }
       } catch {
         return { type: 'none', data: '' }

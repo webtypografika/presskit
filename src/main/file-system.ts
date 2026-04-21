@@ -1,6 +1,7 @@
 import { IpcMain, BrowserWindow } from 'electron'
 import { readdir, stat, readFile, writeFile, rm, access, mkdir } from 'fs/promises'
 import { join, extname, basename, dirname } from 'path'
+import { isRawExtension, extractRawPreview } from './raw-preview'
 import { existsSync } from 'fs'
 
 const NOTES_FILE = '.presscal-notes.json'
@@ -66,9 +67,13 @@ const EXTENSION_MAP: Record<string, FileType> = {
   '.svg': 'svg',
   '.svgz': 'svg',
   '.cr2': 'raw',
+  '.cr3': 'raw',
   '.nef': 'raw',
   '.arw': 'raw',
   '.dng': 'raw',
+  '.raf': 'raw',
+  '.orf': 'raw',
+  '.rw2': 'raw',
   '.otf': 'font',
   '.ttf': 'font',
   '.woff': 'font',
@@ -247,6 +252,27 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
       modified: stats.mtime.toISOString(),
       extension: ext,
       type: getFileType(ext)
+    }
+
+    // RAW camera files — metadata from embedded JPEG preview
+    if (isRawExtension(ext)) {
+      try {
+        const jpegBuffer = await extractRawPreview(filePath)
+        if (jpegBuffer) {
+          const sharp = (await import('sharp')).default
+          const meta = await sharp(jpegBuffer).metadata()
+          metadata.width = meta.width
+          metadata.height = meta.height
+          metadata.dpi = meta.density || null
+          metadata.colorSpace = meta.space
+          metadata.channels = meta.channels
+          metadata.bitDepth = meta.depth
+          metadata.hasAlpha = meta.hasAlpha
+          metadata.format = 'raw'
+        }
+      } catch {
+        // Could not extract RAW preview
+      }
     }
 
     // Image metadata via sharp

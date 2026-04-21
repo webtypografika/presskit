@@ -145,7 +145,7 @@ export function getFileTypeColor(type: FileType): string {
 }
 
 export function isPreviewable(type: FileType): boolean {
-  return ['pdf', 'ai', 'psd', 'tiff', 'png', 'jpg', 'svg', 'font'].includes(type)
+  return ['pdf', 'ai', 'psd', 'tiff', 'png', 'jpg', 'svg', 'font', 'raw'].includes(type)
 }
 
 export function isImageType(type: FileType): boolean {
