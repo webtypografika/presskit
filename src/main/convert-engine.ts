@@ -244,6 +244,8 @@ export interface ConvertResult {
 export function registerConvertHandlers(ipcMain: IpcMain): void {
   // Convert a single file
   ipcMain.handle('convert:file', async (_e, inputPath: string, options: ConvertOptions): Promise<ConvertResult> => {
+    console.log('[CONVERT] options:', JSON.stringify(options))
+    console.log('[CONVERT] input:', inputPath)
     try {
       const ext = extname(inputPath).toLowerCase()
       const name = basename(inputPath, ext)
@@ -366,8 +368,7 @@ async function convertImage(inputPath: string, outputPath: string, options: Conv
   const sharp = (await import('sharp')).default
   let pipeline = sharp(inputPath)
 
-  // Color space conversion — must be set BEFORE flatten, otherwise sharp
-  // commits the pipeline in sRGB and the CMYK conversion is silently dropped.
+  // Color space conversion — set BEFORE flatten
   if (options.colorSpace === 'cmyk') {
     pipeline = pipeline.toColorspace('cmyk')
   } else if (options.colorSpace === 'srgb') {
@@ -387,14 +388,12 @@ async function convertImage(inputPath: string, outputPath: string, options: Conv
     })
   }
 
-  // Output format
+  // Output format — DPI is set via format options (xres/yres for TIFF).
+  // IMPORTANT: Do NOT use withMetadata({ density }) — it silently resets CMYK back to sRGB.
+  const dpi = options.dpi || 300
   switch (options.format) {
     case 'tiff':
-      pipeline = pipeline.tiff({
-        compression: 'lzw',
-        xres: options.dpi || 300,
-        yres: options.dpi || 300
-      })
+      pipeline = pipeline.tiff({ compression: 'lzw', xres: dpi, yres: dpi })
       break
     case 'png':
       pipeline = pipeline.png({ compressionLevel: 6 })
@@ -404,13 +403,12 @@ async function convertImage(inputPath: string, outputPath: string, options: Conv
       break
   }
 
-  // DPI metadata
-  if (options.dpi) {
-    pipeline = pipeline.withMetadata({ density: options.dpi })
-  }
-
   const outputBuffer = await pipeline.toBuffer()
   await writeFile(outputPath, outputBuffer)
+
+  // Verify output colorspace
+  const outMeta = await sharp(outputBuffer).metadata()
+  console.log('[CONVERT] output verify:', outMeta.space, outMeta.channels, 'ch', outMeta.width, 'x', outMeta.height)
 
   return {
     success: true,
@@ -437,7 +435,6 @@ async function convertRaw(inputPath: string, outputPath: string, options: Conver
   const sharp = (await import('sharp')).default
   let pipeline = sharp(jpegBuffer)
 
-  // Color space conversion — BEFORE flatten
   if (options.colorSpace === 'cmyk') {
     pipeline = pipeline.toColorspace('cmyk')
   } else if (options.colorSpace === 'srgb') {
@@ -450,18 +447,14 @@ async function convertRaw(inputPath: string, outputPath: string, options: Conver
 
   if (options.maxWidth || options.maxHeight) {
     pipeline = pipeline.resize(options.maxWidth || undefined, options.maxHeight || undefined, {
-      fit: 'inside',
-      withoutEnlargement: true
+      fit: 'inside', withoutEnlargement: true
     })
   }
 
+  const dpi = options.dpi || 300
   switch (options.format) {
     case 'tiff':
-      pipeline = pipeline.tiff({
-        compression: 'lzw',
-        xres: options.dpi || 300,
-        yres: options.dpi || 300
-      })
+      pipeline = pipeline.tiff({ compression: 'lzw', xres: dpi, yres: dpi })
       break
     case 'png':
       pipeline = pipeline.png({ compressionLevel: 6 })
@@ -469,10 +462,6 @@ async function convertRaw(inputPath: string, outputPath: string, options: Conver
     case 'jpg':
       pipeline = pipeline.jpeg({ quality: options.quality || 95 })
       break
-  }
-
-  if (options.dpi) {
-    pipeline = pipeline.withMetadata({ density: options.dpi })
   }
 
   const outputBuffer = await pipeline.toBuffer()
@@ -505,12 +494,11 @@ async function convertPsd(inputPath: string, outputPath: string, options: Conver
     }
   }
 
-  // Convert PSD composite to desired format via sharp
-  let pipeline = sharp(Buffer.from(psd.imageData.data.buffer), {
-    raw: { width: psd.width, height: psd.height, channels: 4 }
-  })
+  const rawInput = Buffer.from(psd.imageData.data.buffer)
+  const rawOpts = { raw: { width: psd.width, height: psd.height, channels: 4 as const } }
 
-  // Color space must be set BEFORE flatten — see note in convertImage()
+  let pipeline = sharp(rawInput, rawOpts)
+
   if (options.colorSpace === 'cmyk') {
     pipeline = pipeline.toColorspace('cmyk')
   }
@@ -526,9 +514,10 @@ async function convertPsd(inputPath: string, outputPath: string, options: Conver
     })
   }
 
+  const dpi = options.dpi || 300
   switch (options.format) {
     case 'tiff':
-      pipeline = pipeline.tiff({ compression: 'lzw', xres: options.dpi || 300, yres: options.dpi || 300 })
+      pipeline = pipeline.tiff({ compression: 'lzw', xres: dpi, yres: dpi })
       break
     case 'png':
       pipeline = pipeline.png({ compressionLevel: 6 })
@@ -536,10 +525,6 @@ async function convertPsd(inputPath: string, outputPath: string, options: Conver
     case 'jpg':
       pipeline = pipeline.jpeg({ quality: options.quality || 95 })
       break
-  }
-
-  if (options.dpi) {
-    pipeline = pipeline.withMetadata({ density: options.dpi })
   }
 
   const outputBuffer = await pipeline.toBuffer()

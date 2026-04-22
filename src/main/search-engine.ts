@@ -1,7 +1,7 @@
 import { IpcMain, app } from 'electron'
 import Database from 'better-sqlite3'
 import { readdir, stat } from 'fs/promises'
-import { join, extname, basename } from 'path'
+import { join, extname } from 'path'
 import { existsSync } from 'fs'
 import Store from 'electron-store'
 
@@ -43,7 +43,8 @@ function createDb(): Database.Database {
       ext TEXT NOT NULL,
       size INTEGER DEFAULT 0,
       modified INTEGER DEFAULT 0,
-      is_dir INTEGER DEFAULT 0
+      is_dir INTEGER DEFAULT 0,
+      path_lower TEXT NOT NULL DEFAULT ''
     );
 
     CREATE INDEX IF NOT EXISTS idx_name_lower ON files(name_lower);
@@ -79,14 +80,9 @@ function getDb(): Database.Database {
   }
 }
 
-// Normalize name for better matching
-function tokenize(name: string): string {
-  return name
-    .replace(/\.[^.]+$/, '')
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/[_\-.\s]+/g, ' ')
-    .toLowerCase()
-    .trim()
+// Normalize name: proper Unicode lowercase (SQLite LOWER() only handles ASCII)
+function nameLower(name: string): string {
+  return name.toLowerCase()
 }
 
 // Yield control to event loop periodically to avoid freezing
@@ -102,8 +98,8 @@ async function scanDirectory(dirPath: string, depth = 0, maxDepth = 12): Promise
     const d = getDb()
 
     const insertStmt = d.prepare(`
-      INSERT OR REPLACE INTO files (path, name, name_lower, dir, ext, size, modified, is_dir)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO files (path, name, name_lower, dir, ext, size, modified, is_dir, path_lower)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     const batch: (() => void)[] = []
@@ -122,8 +118,9 @@ async function scanDirectory(dirPath: string, depth = 0, maxDepth = 12): Promise
 
         batch.push(() => {
           insertStmt.run(
-            fullPath, name, tokenize(name), dirPath, ext,
-            s.size, Math.floor(s.mtimeMs), isDir ? 1 : 0
+            fullPath, name, nameLower(name), dirPath, ext,
+            s.size, Math.floor(s.mtimeMs), isDir ? 1 : 0,
+            fullPath.toLowerCase()
           )
         })
 
@@ -171,7 +168,7 @@ function rebuildFts(): void {
   }
 }
 
-const INDEX_VERSION = 2 // bump to force re-index (v2: depth 12)
+const INDEX_VERSION = 3 // bump to force re-index (v3: Unicode lowercase, path_lower)
 
 async function buildIndex(): Promise<{ count: number; ms: number }> {
   if (indexing) return { count: 0, ms: 0 }
@@ -180,16 +177,15 @@ async function buildIndex(): Promise<{ count: number; ms: number }> {
   const start = Date.now()
 
   try {
-    const d = getDb()
-
-    // Force re-index when version changes
+    // Force re-index when version changes (destroy DB to handle schema changes)
     const savedVersion = store.get('search.indexVersion', 0) as number
     if (savedVersion < INDEX_VERSION) {
-      console.log(`[SEARCH] Index version ${savedVersion} → ${INDEX_VERSION}, clearing old index`)
-      d.exec('DELETE FROM files')
-      d.exec('DELETE FROM files_fts')
+      console.log(`[SEARCH] Index version ${savedVersion} → ${INDEX_VERSION}, destroying old database`)
+      destroyDb()
       store.set('search.indexVersion', INDEX_VERSION)
     }
+
+    const d = getDb()
 
     const bookmarks = (store.get('paths.bookmarks') as string[]) || []
     const home = process.env.USERPROFILE || process.env.HOME || ''
@@ -270,11 +266,11 @@ function search(query: string, limit = 50): any[] {
     }
   } catch {}
 
-  // Strategy 2: LIKE on actual name (forgiving substring match)
+  // Strategy 2: LIKE on name_lower (pre-lowered in JS — handles Greek/Unicode)
   if (results.length < limit) {
     try {
       const words = q.split(/\s+/).filter(Boolean)
-      const conditions = words.map(() => 'LOWER(name) LIKE ?').join(' AND ')
+      const conditions = words.map(() => 'name_lower LIKE ?').join(' AND ')
       const params = words.map(w => `%${w}%`)
 
       const likeResults = d.prepare(`
@@ -291,15 +287,15 @@ function search(query: string, limit = 50): any[] {
     } catch {}
   }
 
-  // Strategy 3: LIKE on path (find files inside matching folders)
+  // Strategy 3: LIKE on path_lower (find files/folders inside matching paths)
   if (results.length < limit) {
     try {
       const remaining = limit - results.length
       const pathResults = d.prepare(`
         SELECT path, name, dir, ext, size, modified, is_dir
         FROM files
-        WHERE LOWER(path) LIKE ? AND is_dir = 0
-        ORDER BY modified DESC
+        WHERE path_lower LIKE ?
+        ORDER BY is_dir DESC, modified DESC
         LIMIT ?
       `).all(`%${q}%`, remaining) as any[]
 
@@ -309,18 +305,26 @@ function search(query: string, limit = 50): any[] {
     } catch {}
   }
 
-  // Sort: exact name matches first, then by modification date (newest first)
+  // Sort: exact/prefix matches first, folders before files, then by date
   results.sort((a, b) => {
     const aName = a.name.toLowerCase()
     const bName = b.name.toLowerCase()
-    const aExact = aName === q || aName.startsWith(q)
-    const bExact = bName === q || bName.startsWith(q)
-    if (aExact && !bExact) return -1
-    if (!aExact && bExact) return 1
-    const aContains = aName.includes(q)
-    const bContains = bName.includes(q)
-    if (aContains && !bContains) return -1
-    if (!aContains && bContains) return 1
+
+    // Score: exact=4, startsWith=3, contains=2, folder bonus=1
+    const score = (name: string, isDir: number): number => {
+      let s = 0
+      if (name === q) s = 4
+      else if (name.startsWith(q)) s = 3
+      else if (name.includes(q)) s = 2
+      if (isDir) s += 1 // folders slightly higher
+      return s
+    }
+    const aScore = score(aName, a.is_dir)
+    const bScore = score(bName, b.is_dir)
+    if (aScore !== bScore) return bScore - aScore
+
+    // Same relevance: folders first, then newest
+    if (a.is_dir !== b.is_dir) return b.is_dir - a.is_dir
     return (b.modified || 0) - (a.modified || 0)
   })
 
