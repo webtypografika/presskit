@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAppStore } from '@/stores/app-store'
+import { useDialogStore } from '@/stores/dialog-store'
 import { useShallow } from 'zustand/react/shallow'
 import { FileGrid } from './FileGrid'
 import { Loader2, Link2, X, CheckCircle, FolderPlus, Clipboard } from 'lucide-react'
@@ -45,7 +46,7 @@ export function FileBrowser() {
     } catch (e) {
       console.error('Link file error:', e)
       const msg = (e as any)?.message || String(e) || 'Άγνωστο σφάλμα'
-      alert(`Αποτυχία σύνδεσης αρχείου:\n\n${msg}\n\nΈλεγξε τις ρυθμίσεις PressCal (URL & API key).`)
+      useDialogStore.getState().showAlert(`Αποτυχία σύνδεσης αρχείου:\n\n${msg}\n\nΈλεγξε τις ρυθμίσεις PressCal (URL & API key).`)
     } finally {
       setLinking(false)
     }

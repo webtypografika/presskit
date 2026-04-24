@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { AppLayout } from './components/layout/AppLayout'
+import { AppDialog } from './components/layout/AppDialog'
 import { useAppStore } from './stores/app-store'
+import { useDialogStore } from './stores/dialog-store'
 import { Loader2 } from 'lucide-react'
 import type { PresscalCustomer } from './lib/ipc'
 
@@ -219,17 +221,18 @@ export default function App() {
         const names = filesToDelete.length === 1
           ? `"${filesToDelete[0].name}"`
           : `${filesToDelete.length} αρχεία`
-        if (confirm(`Διαγραφή ${names};`)) {
+        useDialogStore.getState().showConfirm(`Διαγραφή ${names};`).then((ok) => {
+          if (!ok) return
           window.api.fs.trash(filesToDelete.map(f => f.path)).then((results: any[]) => {
             const failed = results.filter((r: any) => !r.ok)
             if (failed.length > 0) {
-              alert(`Αποτυχία διαγραφής ${failed.length} αρχείων:\n${failed.map((f: any) => f.error).join('\n')}`)
+              useDialogStore.getState().showAlert(`Αποτυχία διαγραφής ${failed.length} αρχείων:\n${failed.map((f: any) => f.error).join('\n')}`)
             }
             // Small delay before refresh — let filesystem settle (Dropbox, indexer, etc.)
             clearSelection()
             setTimeout(() => refreshDirectory(), 200)
           })
-        }
+        })
       }
     }
     window.addEventListener('keydown', handler)
@@ -493,6 +496,7 @@ export default function App() {
   return (
     <>
       <AppLayout />
+      <AppDialog />
       {dlProgress && !dlProgress.done && (
         <div style={{
           position: 'fixed', bottom: 24, right: 24, zIndex: 9999,

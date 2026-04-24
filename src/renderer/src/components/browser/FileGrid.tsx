@@ -8,6 +8,7 @@ import type { FileEntry, FileType } from '@/lib/file-types'
 import { formatFileSize, getFileTypeColor, getFileTypeLabel } from '@/lib/file-types'
 import { renderPdfThumbnail } from '@/lib/pdf-thumbnail'
 import type { ViewMode } from '@/stores/app-store'
+import { useDialogStore } from '@/stores/dialog-store'
 
 // ─── Thumbnail queue (max 3 concurrent) ─────────────────────────────
 const THUMB_CONCURRENCY = 3
@@ -137,6 +138,8 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     clearNewFolder: s.clearNewFolder,
     createNewFolder: s.createNewFolder,
   })))
+  const showAlert = useDialogStore(s => s.showAlert)
+  const showConfirm = useDialogStore(s => s.showConfirm)
   const [ctxMenu, setCtxMenu] = useState<{ file: FileEntry; x: number; y: number } | null>(null)
   const [bgCtxMenu, setBgCtxMenu] = useState<{ x: number; y: number } | null>(null)
   const [renamingPath, setRenamingPath] = useState<string | null>(null)
@@ -167,7 +170,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     console.log('[RENAME] result:', result)
     setRenamingPath(null)
     if (!result.ok) {
-      alert(result.error || 'Αποτυχία μετονομασίας')
+      showAlert(result.error || 'Αποτυχία μετονομασίας')
     }
     setTimeout(() => refreshDirectory(), 200)
   }, [refreshDirectory])
@@ -341,14 +344,14 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
           const list = failures.map((f: any) =>
             `• ${f.source.split(/[\\/]/).pop()}: ${f.error || 'άγνωστο σφάλμα'}`
           ).join('\n')
-          alert(
+          showAlert(
             `${e.ctrlKey ? 'Αντιγραφή' : 'Μετακίνηση'} απέτυχε για ${failures.length} αρχεί${failures.length === 1 ? 'ο' : 'α'}:\n\n${list}\n\n` +
             `Πιθανή αιτία: ανοιχτό σε άλλη εφαρμογή ή κλειδωμένο από Dropbox/antivirus.`
           )
         }
       } catch (err) {
         console.error('Drop failed:', err)
-        alert(`Drop failed: ${(err as any)?.message || err}`)
+        showAlert(`Drop failed: ${(err as any)?.message || err}`)
       }
     }
 
@@ -465,6 +468,10 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         onSelect(file)
         setTimeout(runPreflight, 100)
         break
+      case 'convert':
+        onSelect(file)
+        setTimeout(() => window.dispatchEvent(new Event('open-convert')), 100)
+        break
       case 'linkQuote':
       case 'linkJob':
       case 'linkCustomer':
@@ -503,20 +510,21 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         const names = filesToDelete.length === 1
           ? `"${filesToDelete[0].name}"`
           : `${filesToDelete.length} αρχεία`
-        if (confirm(`Διαγραφή ${names};`)) {
+        showConfirm(`Διαγραφή ${names};`).then((ok) => {
+          if (!ok) return
           window.api.fs.trash(filesToDelete.map(f => f.path)).then((results) => {
             const failed = results.filter((r: any) => !r.ok)
             if (failed.length > 0) {
-              alert(`Αποτυχία διαγραφής ${failed.length} αρχείων:\n${failed.map((f: any) => f.error).join('\n')}`)
+              showAlert(`Αποτυχία διαγραφής ${failed.length} αρχείων:\n${failed.map((f: any) => f.error).join('\n')}`)
             }
             clearSelection()
             setTimeout(() => refreshDirectory(), 200)
           })
-        }
+        })
         break
       }
     }
-  }, [ctxMenu, onSelect, runPreflight, setInspectorTab, refreshDirectory, copyFiles, cutFiles, pasteFiles, selectedFiles, clearSelection, togglePick, requestNewFolder])
+  }, [ctxMenu, onSelect, runPreflight, setInspectorTab, refreshDirectory, copyFiles, cutFiles, pasteFiles, selectedFiles, clearSelection, togglePick, requestNewFolder, showAlert, showConfirm])
 
   // ─── Resizable column widths (list view) ─────────────────────────
   const colWidthsRef = useRef({ type: 80, date: 100, size: 80 })

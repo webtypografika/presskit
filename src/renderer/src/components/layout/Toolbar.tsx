@@ -54,6 +54,13 @@ export function Toolbar() {
   const [showSendEmail, setShowSendEmail] = useState(false)
   const [showPackager, setShowPackager] = useState(false)
 
+  // Allow other components (e.g. context menu) to open the convert dialog
+  useEffect(() => {
+    const handler = () => setOverlay('convert')
+    window.addEventListener('open-convert', handler)
+    return () => window.removeEventListener('open-convert', handler)
+  }, [])
+
   // Files to send = multi-selected or single selected
   const filesToSend = selectedFiles.length > 0
     ? selectedFiles.filter(f => !f.isDirectory)

@@ -15,6 +15,16 @@ import { registerToolHandlers } from './tools-engine'
 
 let mainWindow: BrowserWindow | null = null
 
+/** Show an error dialog that is modal to the main window (always on top of it). */
+function showError(title: string, message: string) {
+  const win = mainWindow || BrowserWindow.getFocusedWindow()
+  if (win) {
+    dialog.showMessageBox(win, { type: 'error', title, message, buttons: ['OK'] })
+  } else {
+    dialog.showErrorBox(title, message)
+  }
+}
+
 // Register custom protocol for deep links from PressCal
 const PROTOCOL = 'presscal-fh'
 if (process.defaultApp) {
@@ -246,7 +256,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
         // PressCal quote page auto-refreshes via polling + focus listener
       } catch (e) {
         const { dialog: dlg } = await import('electron')
-        dlg.showErrorBox('Σύνδεση αρχείου απέτυχε', (e as Error).message)
+        showError('Σύνδεση αρχείου απέτυχε', (e as Error).message)
       }
     }
 
@@ -284,8 +294,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
           await handleProtocolUrl(`presscal-fh://download-to-folder?quoteId=${encodeURIComponent(quoteId)}&target=${encodeURIComponent(target)}`)
           return
         }
-        const { dialog } = await import('electron')
-        dialog.showErrorBox('Φάκελος δεν βρέθηκε', `Ο φάκελος δεν υπάρχει:\n${folderPath}`)
+        showError('Φάκελος δεν βρέθηκε', `Ο φάκελος δεν υπάρχει:\n${folderPath}`)
         return
       }
 
@@ -523,11 +532,9 @@ async function handleProtocolUrl(url: string): Promise<void> {
     // this deep link, and if PressKit uses a different name, DB is out of sync.
     if (parsed.hostname === 'archive-quote') {
       let folderPath = parsed.searchParams.get('folderPath')
-      const { dialog: dlgArchive } = await import('electron')
-
       if (!folderPath) {
         deepLog('[DeepLink] archive-quote: missing folderPath')
-        dlgArchive.showErrorBox('Αρχειοθέτηση', 'Δεν δόθηκε path για τον φάκελο προσφοράς.')
+        showError('Αρχειοθέτηση', 'Δεν δόθηκε path για τον φάκελο προσφοράς.')
         return
       }
 
@@ -573,7 +580,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       if (!fsExists(folderPath)) {
         deepLog('[DeepLink] archive-quote: folder not found:', folderPath)
-        dlgArchive.showErrorBox('Αρχειοθέτηση',
+        showError('Αρχειοθέτηση',
           `Ο φάκελος δεν βρέθηκε:\n${folderPath}\n\nΜπορεί να έχει μετακινηθεί ή διαγραφεί.`)
         return
       }
@@ -627,7 +634,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
               } catch (rmErr) {
                 if (i === 2) {
                   console.warn('[ARCHIVE] Copy succeeded but delete of original failed:', rmErr)
-                  dlgArchive.showErrorBox('Αρχειοθέτηση',
+                  showError('Αρχειοθέτηση',
                     `Ο φάκελος αντιγράφηκε στο _01 Archive αλλά δεν μπόρεσε να διαγραφεί ο αρχικός.\n\n` +
                     `Αιτία (πιθανή): αρχείο κλειδωμένο από Dropbox, antivirus ή κάποια εφαρμογή.\n\n` +
                     `Κλείσε ό,τι μπορεί να έχει ανοιχτά αρχεία και διέγραψε χειροκίνητα:\n${folderPath}`)
@@ -647,7 +654,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
         mainWindow?.webContents.send('navigate-to-folder', { path: targetPath })
       } catch (err) {
         console.error('[ARCHIVE] Failed:', err)
-        dlgArchive.showErrorBox('Αρχειοθέτηση', `Αποτυχία μετακίνησης φακέλου:\n${String(err)}`)
+        showError('Αρχειοθέτηση', `Αποτυχία μετακίνησης φακέλου:\n${String(err)}`)
       }
     }
 
@@ -657,11 +664,9 @@ async function handleProtocolUrl(url: string): Promise<void> {
       let folderPath = parsed.searchParams.get('folderPath')   // current archived path
       let restorePath = parsed.searchParams.get('restorePath') // target restored path
       const quoteId = parsed.searchParams.get('quoteId') || ''
-      const { dialog: dlgRestore } = await import('electron')
-
       if (!folderPath || !restorePath) {
         deepLog('[DeepLink] restore-quote: missing folderPath or restorePath')
-        dlgRestore.showErrorBox('Επαναφορά', 'Λείπουν παράμετροι (folderPath / restorePath).')
+        showError('Επαναφορά', 'Λείπουν παράμετροι (folderPath / restorePath).')
         return
       }
 
@@ -701,7 +706,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       if (!fsExists(folderPath)) {
         deepLog('[DeepLink] restore-quote: folder not found:', folderPath)
-        dlgRestore.showErrorBox('Επαναφορά',
+        showError('Επαναφορά',
           `Ο αρχειοθετημένος φάκελος δεν βρέθηκε:\n${folderPath}`)
         return
       }
@@ -744,7 +749,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
               } catch (rmErr) {
                 if (i === 2) {
                   console.warn('[RESTORE] Copy succeeded but delete of archive failed:', rmErr)
-                  dlgRestore.showErrorBox('Επαναφορά',
+                  showError('Επαναφορά',
                     `Ο φάκελος αντιγράφηκε αλλά δεν μπόρεσε να διαγραφεί ο αρχειοθετημένος.\n\n` +
                     `Κλείσε ό,τι μπορεί να έχει ανοιχτά αρχεία και διέγραψε χειροκίνητα:\n${folderPath}`)
                 }
@@ -771,7 +776,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
         }
       } catch (err) {
         console.error('[RESTORE] Failed:', err)
-        dlgRestore.showErrorBox('Επαναφορά', `Αποτυχία επαναφοράς φακέλου:\n${String(err)}`)
+        showError('Επαναφορά', `Αποτυχία επαναφοράς φακέλου:\n${String(err)}`)
       }
     }
 

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { FileEntry, FileMetadata, PreviewResult, PreflightReport } from '../lib/file-types'
+import { useDialogStore } from './dialog-store'
 
 export type ViewMode = 'grid' | 'list'
 export type Source = 'local' | 'dropbox'
@@ -638,14 +639,14 @@ export const useAppStore = create<AppState>((set, get) => {
           const list = failures.map(f =>
             `• ${f.source.split(/[\\/]/).pop()}: ${f.error || 'άγνωστο σφάλμα'}`
           ).join('\n')
-          alert(
+          useDialogStore.getState().showAlert(
             `${clipboard.mode === 'copy' ? 'Αντιγραφή' : 'Μετακίνηση'} απέτυχε για ${failures.length} αρχεί${failures.length === 1 ? 'ο' : 'α'}:\n\n${list}\n\n` +
             `Πιθανή αιτία: το αρχείο είναι ανοιχτό σε άλλη εφαρμογή ή κλειδωμένο από Dropbox/antivirus.`
           )
         }
       } catch (err) {
         console.error('Paste failed:', err)
-        alert(`Paste failed: ${(err as any)?.message || err}`)
+        useDialogStore.getState().showAlert(`Paste failed: ${(err as any)?.message || err}`)
       }
     },
 
@@ -672,7 +673,7 @@ export const useAppStore = create<AppState>((set, get) => {
       if (result.ok) {
         await get().refreshDirectory()
       } else {
-        alert(`Αποτυχία δημιουργίας φακέλου: ${result.error}`)
+        useDialogStore.getState().showAlert(`Αποτυχία δημιουργίας φακέλου: ${result.error}`)
       }
     },
 
