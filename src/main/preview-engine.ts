@@ -28,12 +28,16 @@ export function registerPreviewHandlers(ipcMain: IpcMain): void {
     if (['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.bmp'].includes(ext)) {
       try {
         const sharp = (await import('sharp')).default
-        const buffer = await sharp(filePath)
+        const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000))
+        const render = sharp(filePath, { failOn: 'none' })
+          .flatten({ background: { r: 255, g: 255, b: 255 } })
           .resize(size, size, { fit: 'inside', withoutEnlargement: true })
           .png()
           .toBuffer()
-        return `data:image/png;base64,${buffer.toString('base64')}`
-      } catch {
+          .then(buf => `data:image/png;base64,${buf.toString('base64')}`)
+        return await Promise.race([render, timeout])
+      } catch (err) {
+        console.error(`[THUMB] Failed: ${filePath}`, (err as Error).message)
         return null
       }
     }

@@ -79,12 +79,17 @@ function FileThumbnail({ file, size }: { file: FileEntry; size: number }) {
     const isPdf = file.type === 'pdf' || file.type === 'ai'
 
     enqueueThumb(async () => {
+      if (cancelled) return
+      console.log(`[THUMB] Start: ${file.name} (${file.type})`)
       try {
         const data = isPdf
           ? await renderPdfThumbnail(file.path, size, file.modified)
           : await window.api.preview.thumbnail(file.path, size)
         if (!cancelled && data) setThumb(data)
-      } catch {}
+        else if (!cancelled && !data) console.warn(`[THUMB] No data: ${file.name}`)
+      } catch (err) {
+        console.warn(`[THUMB] Error: ${file.name}`, (err as Error).message)
+      }
     })
 
     return () => { cancelled = true }
@@ -645,7 +650,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
 
               {/* Modified */}
               <span className="text-xs text-text-muted text-right truncate">
-                {file.modified ? new Date(file.modified).toLocaleDateString('el-GR') : ''}
+                {file.modified ? new Date(file.modified).toLocaleString('el-GR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
               </span>
 
               {/* Size */}

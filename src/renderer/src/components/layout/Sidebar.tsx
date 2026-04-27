@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   HardDrive, Star, Clock, FolderOpen, Cloud, ChevronDown, ChevronRight,
   Plus, X, File, Folder, Image, FileText, Type
@@ -50,6 +50,37 @@ export function Sidebar() {
   const removeBookmark = async (path: string) => {
     const updated = await window.api.settings.removeBookmark(path)
     setBookmarks(updated)
+  }
+
+  const dragBookmark = useRef<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+
+  const handleBookmarkDragStart = (e: React.DragEvent, index: number) => {
+    dragBookmark.current = index
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/x-bookmark-reorder', String(index))
+  }
+
+  const handleBookmarkDragOver = (e: React.DragEvent, index: number) => {
+    if (dragBookmark.current === null) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverIndex(index)
+  }
+
+  const handleBookmarkDrop = async (e: React.DragEvent, toIndex: number) => {
+    e.preventDefault()
+    setDragOverIndex(null)
+    const fromIndex = dragBookmark.current
+    dragBookmark.current = null
+    if (fromIndex === null || fromIndex === toIndex) return
+    const updated = await window.api.settings.reorderBookmarks(fromIndex, toIndex)
+    setBookmarks(updated)
+  }
+
+  const handleBookmarkDragEnd = () => {
+    dragBookmark.current = null
+    setDragOverIndex(null)
   }
 
   return (
@@ -135,7 +166,7 @@ export function Sidebar() {
           </button>
         }
       >
-        {bookmarks.map(path => (
+        {bookmarks.map((path, index) => (
           <SidebarItem
             key={path}
             icon={<Star size={14} className="text-accent" />}
@@ -145,6 +176,12 @@ export function Sidebar() {
             onRemove={() => removeBookmark(path)}
             dropPath={path}
             active={normPath(currentPath).startsWith(normPath(path))}
+            draggable
+            onDragStart={(e) => handleBookmarkDragStart(e, index)}
+            onDragOverBookmark={(e) => handleBookmarkDragOver(e, index)}
+            onDropBookmark={(e) => handleBookmarkDrop(e, index)}
+            onDragEnd={handleBookmarkDragEnd}
+            isDropTarget={dragOverIndex === index}
           />
         ))}
         {bookmarks.length === 0 && (
@@ -202,7 +239,9 @@ function SidebarSection({ title, expanded, onToggle, action, children }: {
   )
 }
 
-function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath, active }: {
+function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath, active,
+  draggable: isDraggable, onDragStart, onDragOverBookmark, onDropBookmark, onDragEnd, isDropTarget
+}: {
   icon: React.ReactNode
   label: string
   sublabel?: string
@@ -211,20 +250,36 @@ function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath
   muted?: boolean
   dropPath?: string
   active?: boolean
+  draggable?: boolean
+  onDragStart?: (e: React.DragEvent) => void
+  onDragOverBookmark?: (e: React.DragEvent) => void
+  onDropBookmark?: (e: React.DragEvent) => void
+  onDragEnd?: () => void
+  isDropTarget?: boolean
 }) {
   const [dragOver, setDragOver] = useState(false)
   const refreshDirectory = useAppStore(s => s.refreshDirectory)
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
+    // Bookmark reorder takes priority
+    if (e.dataTransfer.types.includes('text/x-bookmark-reorder')) {
+      onDragOverBookmark?.(e)
+      return
+    }
     if (!dropPath) return
     e.preventDefault()
     e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move'
     setDragOver(true)
-  }, [dropPath])
+  }, [dropPath, onDragOverBookmark])
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
+    // Bookmark reorder
+    if (e.dataTransfer.types.includes('text/x-bookmark-reorder')) {
+      onDropBookmark?.(e)
+      return
+    }
     if (!dropPath) return
     const internalPaths = dragState.get()
     const isInternal = internalPaths.length > 0
@@ -240,7 +295,9 @@ function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath
       await window.api.fs.copy(validPaths, dropPath)
     }
     refreshDirectory()
-  }, [dropPath, refreshDirectory])
+  }, [dropPath, refreshDirectory, onDropBookmark])
+
+  const highlight = dragOver || isDropTarget
 
   return (
     <div
@@ -249,18 +306,22 @@ function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath
       }`}
       style={{
         padding: '12px 32px',
-        background: dragOver ? 'rgba(245,130,32,0.15)' : active ? 'var(--th-bg-hover)' : undefined,
+        background: highlight ? 'rgba(245,130,32,0.15)' : active ? 'var(--th-bg-hover)' : undefined,
         borderLeft: active ? '3px solid #f58220' : '3px solid transparent',
-        paddingLeft: active ? 29 : 29,
+        paddingLeft: 29,
+        borderTop: isDropTarget ? '2px solid #f58220' : '2px solid transparent',
         outline: dragOver ? '2px dashed #f58220' : undefined,
         outlineOffset: -2,
         fontWeight: active ? 600 : undefined,
       }}
       onClick={onClick}
       title={sublabel || label}
+      draggable={isDraggable}
+      onDragStart={onDragStart}
       onDragOver={handleDragOver}
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
+      onDragEnd={onDragEnd}
     >
       <span className="flex-shrink-0">{icon}</span>
       <span className="truncate flex-1">{label}</span>

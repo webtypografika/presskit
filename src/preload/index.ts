@@ -112,7 +112,8 @@ const api = {
     getAll: () => ipcRenderer.invoke('settings:getAll'),
     addRecentPath: (path: string) => ipcRenderer.invoke('settings:addRecentPath', path),
     addBookmark: (path: string) => ipcRenderer.invoke('settings:addBookmark', path),
-    removeBookmark: (path: string) => ipcRenderer.invoke('settings:removeBookmark', path)
+    removeBookmark: (path: string) => ipcRenderer.invoke('settings:removeBookmark', path),
+    reorderBookmarks: (fromIndex: number, toIndex: number) => ipcRenderer.invoke('settings:reorderBookmarks', fromIndex, toIndex)
   },
 
   // System
@@ -168,6 +169,17 @@ const api = {
     onProgress: (callback: (data: { step: string; current: number; total: number; done: boolean }) => void) => {
       ipcRenderer.on('deeplink-progress', (_e, data) => callback(data))
       return () => ipcRenderer.removeAllListeners('deeplink-progress')
+    },
+    onShowAlert: (callback: (data: { title: string; message: string }) => void) => {
+      ipcRenderer.on('show-alert', (_e, data) => callback(data))
+      return () => ipcRenderer.removeAllListeners('show-alert')
+    },
+    onShowConfirm: (callback: (data: { id: string; title: string; message: string }) => void) => {
+      ipcRenderer.on('show-confirm', (_e, data) => callback(data))
+      return () => ipcRenderer.removeAllListeners('show-confirm')
+    },
+    respondConfirm: (id: string, result: boolean) => {
+      ipcRenderer.send(`dialog-result:${id}`, result)
     }
   },
 

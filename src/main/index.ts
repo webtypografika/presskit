@@ -15,11 +15,14 @@ import { registerToolHandlers } from './tools-engine'
 
 let mainWindow: BrowserWindow | null = null
 
-/** Show an error dialog that is modal to the main window (always on top of it). */
+/** Show an error via in-app modal (avoids native dialog going behind windows). */
 function showError(title: string, message: string) {
   const win = mainWindow || BrowserWindow.getFocusedWindow()
-  if (win) {
-    dialog.showMessageBox(win, { type: 'error', title, message, buttons: ['OK'] })
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('show-alert', { title, message })
+    // Bring window to front so the user sees it
+    if (win.isMinimized()) win.restore()
+    win.focus()
   } else {
     dialog.showErrorBox(title, message)
   }
@@ -787,8 +790,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
         store.set('presscal.url', url.replace(/\/$/, ''))
         store.set('presscal.apiKey', apiKey)
         deepLog('[DeepLink] Connected to PressCal:', url)
-        const { dialog: dlgConnect } = await import('electron')
-        dlgConnect.showMessageBox({ message: `Συνδέθηκε στο PressCal!\n${url}`, type: 'info' })
+        mainWindow?.webContents.send('show-alert', { title: 'PressCal', message: `Συνδέθηκε στο PressCal!\n${url}` })
         mainWindow?.webContents.send('presscal-connected', { url, apiKey })
       }
     }
@@ -969,7 +971,13 @@ function startFileServer(): void {
       ;(async () => {
         try {
           const { dialog } = await import('electron')
-          mainWindow?.focus()
+          // Bring PressKit window to front on Windows (focus alone is not enough)
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            if (mainWindow.isMinimized()) mainWindow.restore()
+            mainWindow.setAlwaysOnTop(true)
+            mainWindow.focus()
+            mainWindow.setAlwaysOnTop(false)
+          }
           const result = await dialog.showOpenDialog(mainWindow!, {
             title: 'Επιλογή Φακέλου Πελάτη',
             properties: ['openDirectory'],
@@ -1261,19 +1269,19 @@ function registerHandlers(): void {
   // handler so behavior stays identical to PressCal-triggered archives.
   ipcMain.handle('archive:quoteFolder', async (_e, folderPath: string) => {
     if (!folderPath) return { ok: false, error: 'missing folderPath' }
-    const { dialog: dlgConfirm } = await import('electron')
     const { basename } = await import('path')
 
-    const confirm = await dlgConfirm.showMessageBox(mainWindow!, {
-      type: 'question',
-      buttons: ['Αρχειοθέτηση', 'Ακύρωση'],
-      defaultId: 0,
-      cancelId: 1,
-      title: 'Αρχειοθέτηση φακέλου',
-      message: `Αρχειοθέτηση του φακέλου "${basename(folderPath)}";`,
-      detail: 'Ο φάκελος θα μετακινηθεί στο _01 Archive/ του parent directory.',
+    // Use in-app confirm dialog via renderer round-trip
+    const confirmed = await new Promise<boolean>((resolve) => {
+      const id = `confirm-${Date.now()}`
+      ipcMain.once(`dialog-result:${id}`, (_ev, result: boolean) => resolve(result))
+      mainWindow!.webContents.send('show-confirm', {
+        id,
+        title: 'Αρχειοθέτηση φακέλου',
+        message: `Αρχειοθέτηση του φακέλου "${basename(folderPath)}";\nΟ φάκελος θα μετακινηθεί στο _01 Archive/ του parent directory.`,
+      })
     })
-    if (confirm.response !== 0) return { ok: false, cancelled: true }
+    if (!confirmed) return { ok: false, cancelled: true }
 
     await handleProtocolUrl(`presscal-fh://archive-quote?folderPath=${encodeURIComponent(folderPath)}`)
     return { ok: true }
@@ -1336,7 +1344,9 @@ if (!gotTheLock) {
     if (url) handleProtocolUrl(url)
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.setAlwaysOnTop(true)
       mainWindow.focus()
+      mainWindow.setAlwaysOnTop(false)
     }
   })
 

@@ -58,4 +58,13 @@ export function registerSettingsHandlers(ipcMain: IpcMain): void {
     store.set('paths.bookmarks', filtered)
     return filtered
   })
+
+  ipcMain.handle('settings:reorderBookmarks', async (_e, fromIndex: number, toIndex: number) => {
+    const bookmarks = (store.get('paths.bookmarks') as string[]) || []
+    if (fromIndex < 0 || fromIndex >= bookmarks.length || toIndex < 0 || toIndex >= bookmarks.length) return bookmarks
+    const [item] = bookmarks.splice(fromIndex, 1)
+    bookmarks.splice(toIndex, 0, item)
+    store.set('paths.bookmarks', bookmarks)
+    return bookmarks
+  })
 }

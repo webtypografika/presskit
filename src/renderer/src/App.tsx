@@ -493,6 +493,18 @@ export default function App() {
     return cleanup
   }, [])
 
+  // Listen for in-app alerts/confirms from main process (replaces native dialogs)
+  useEffect(() => {
+    const cleanupAlert = window.api.deepLink.onShowAlert(({ title, message }) => {
+      useDialogStore.getState().showAlert(message, title)
+    })
+    const cleanupConfirm = window.api.deepLink.onShowConfirm(async ({ id, title, message }) => {
+      const result = await useDialogStore.getState().showConfirm(message, title)
+      window.api.deepLink.respondConfirm(id, result)
+    })
+    return () => { cleanupAlert(); cleanupConfirm() }
+  }, [])
+
   return (
     <>
       <AppLayout />

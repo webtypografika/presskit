@@ -55,7 +55,7 @@ function createDb(): Database.Database {
 
   d.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
-      name, path,
+      name,
       content='files',
       content_rowid='rowid',
       tokenize='unicode61 remove_diacritics 2'
@@ -157,7 +157,7 @@ function rebuildFts(): void {
     const d = getDb()
     d.exec(`
       DELETE FROM files_fts;
-      INSERT INTO files_fts(rowid, name, path) SELECT rowid, name, path FROM files;
+      INSERT INTO files_fts(rowid, name) SELECT rowid, name FROM files;
     `)
   } catch (err: any) {
     console.error('[SEARCH] rebuildFts failed:', err.message)
@@ -168,7 +168,7 @@ function rebuildFts(): void {
   }
 }
 
-const INDEX_VERSION = 3 // bump to force re-index (v3: Unicode lowercase, path_lower)
+const INDEX_VERSION = 4 // bump to force re-index (v4: FTS name-only, better ranking)
 
 async function buildIndex(): Promise<{ count: number; ms: number }> {
   if (indexing) return { count: 0, ms: 0 }
@@ -247,81 +247,76 @@ function search(query: string, limit = 50): any[] {
   const q = query.trim().toLowerCase()
   if (!q) return []
 
+  const words = q.split(/\s+/).filter(Boolean)
+  if (words.length === 0) return []
+
   const results: any[] = []
   const seen = new Set<string>()
 
-  // Strategy 1: FTS5 prefix match
-  try {
-    const ftsQuery = q.split(/\s+/).filter(Boolean).map(t => `"${t}"*`).join(' AND ')
-    const ftsResults = d.prepare(`
-      SELECT f.path, f.name, f.dir, f.ext, f.size, f.modified, f.is_dir
-      FROM files_fts ft
-      JOIN files f ON f.rowid = ft.rowid
-      WHERE files_fts MATCH ?
-      ORDER BY rank
-      LIMIT ?
-    `).all(ftsQuery, limit) as any[]
-    for (const r of ftsResults) {
+  function add(rows: any[]) {
+    for (const r of rows) {
       if (!seen.has(r.path)) { results.push(r); seen.add(r.path) }
     }
-  } catch {}
+  }
 
-  // Strategy 2: LIKE on name_lower (pre-lowered in JS — handles Greek/Unicode)
+  // --- Primary: LIKE on name_lower (reliable, handles Greek/Unicode) ---
+  try {
+    const conditions = words.map(() => 'name_lower LIKE ?').join(' AND ')
+    const params = words.map(w => `%${w}%`)
+    add(d.prepare(`
+      SELECT path, name, dir, ext, size, modified, is_dir
+      FROM files
+      WHERE ${conditions}
+      ORDER BY
+        CASE
+          WHEN name_lower = ? THEN 0
+          WHEN name_lower LIKE ? THEN 1
+          ELSE 2
+        END,
+        is_dir DESC,
+        modified DESC
+      LIMIT ?
+    `).all(...params, q, `${q}%`, limit) as any[])
+  } catch (err) {
+    console.error('[SEARCH] LIKE query failed:', (err as Error).message)
+  }
+
+  // --- Fallback: FTS5 prefix match (catches word-boundary matches LIKE may miss) ---
   if (results.length < limit) {
     try {
-      const words = q.split(/\s+/).filter(Boolean)
-      const conditions = words.map(() => 'name_lower LIKE ?').join(' AND ')
-      const params = words.map(w => `%${w}%`)
-
-      const likeResults = d.prepare(`
-        SELECT path, name, dir, ext, size, modified, is_dir
-        FROM files
-        WHERE ${conditions}
-        ORDER BY is_dir DESC, modified DESC
+      const ftsQuery = words.map(t => `"${t}"*`).join(' AND ')
+      add(d.prepare(`
+        SELECT f.path, f.name, f.dir, f.ext, f.size, f.modified, f.is_dir
+        FROM files_fts ft
+        JOIN files f ON f.rowid = ft.rowid
+        WHERE files_fts MATCH ?
+        ORDER BY rank
         LIMIT ?
-      `).all(...params, limit) as any[]
-
-      for (const r of likeResults) {
-        if (!seen.has(r.path)) { results.push(r); seen.add(r.path) }
-      }
+      `).all(ftsQuery, limit - results.length) as any[])
     } catch {}
   }
 
-  // Strategy 3: LIKE on path_lower (find files/folders inside matching paths)
-  if (results.length < limit) {
-    try {
-      const remaining = limit - results.length
-      const pathResults = d.prepare(`
-        SELECT path, name, dir, ext, size, modified, is_dir
-        FROM files
-        WHERE path_lower LIKE ?
-        ORDER BY is_dir DESC, modified DESC
-        LIMIT ?
-      `).all(`%${q}%`, remaining) as any[]
-
-      for (const r of pathResults) {
-        if (!seen.has(r.path)) { results.push(r); seen.add(r.path) }
-      }
-    } catch {}
-  }
-
-  // Sort: exact/prefix matches first, folders before files, then by date
+  // --- Sort by relevance ---
   results.sort((a, b) => {
     const aName = a.name.toLowerCase()
     const bName = b.name.toLowerCase()
 
-    // Score: exact=4, startsWith=3, contains=2, folder bonus=1
-    const score = (name: string, isDir: number): number => {
-      let s = 0
-      if (name === q) s = 4
-      else if (name.startsWith(q)) s = 3
-      else if (name.includes(q)) s = 2
-      if (isDir) s += 1 // folders slightly higher
-      return s
+    const score = (name: string): number => {
+      if (name === q) return 10                    // exact
+      if (name.startsWith(q)) return 8             // prefix
+      // Check if all words appear at word boundaries
+      const allWordsInName = words.every(w => name.includes(w))
+      if (!allWordsInName) return 0
+      const atBoundary = words.every(w => {
+        const idx = name.indexOf(w)
+        return idx === 0 || /[\s_\-.\\/()[\]{}]/.test(name[idx - 1])
+      })
+      if (atBoundary) return 6                     // word-boundary
+      return 4                                      // substring
     }
-    const aScore = score(aName, a.is_dir)
-    const bScore = score(bName, b.is_dir)
-    if (aScore !== bScore) return bScore - aScore
+
+    const diff = score(bName) - score(aName)
+    if (diff !== 0) return diff
 
     // Same relevance: folders first, then newest
     if (a.is_dir !== b.is_dir) return b.is_dir - a.is_dir
