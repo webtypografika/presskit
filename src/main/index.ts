@@ -549,7 +549,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
           await fetch(`${presscalUrl}/api/filehelper/files`, {
             method: 'PATCH',
             headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ quoteId }),
+            body: JSON.stringify({ quoteId, savedToPath: targetDir }),
           })
         } catch {}
       }
@@ -616,9 +616,9 @@ async function handleProtocolUrl(url: string): Promise<void> {
       }
 
       if (!fsExists(folderPath)) {
-        deepLog('[DeepLink] archive-quote: folder not found:', folderPath)
-        showError('Αρχειοθέτηση',
-          `Ο φάκελος δεν βρέθηκε:\n${folderPath}\n\nΜπορεί να έχει μετακινηθεί ή διαγραφεί.`)
+        deepLog('[DeepLink] archive-quote: folder not found (already archived or in customer folder):', folderPath)
+        // Don't show error — folder may already be archived, deleted, or in a customer folder.
+        // Silently skip so the user isn't alarmed.
         return
       }
 
@@ -857,12 +857,13 @@ async function processPendingArchives() {
     })
     if (res.status !== 200) return
 
+    const data = await res.json()
     const archives: Array<{
       quoteId: string
-      folderPath: string
-      pendingArchivePath?: string
-      pendingDelete?: boolean
-    }> = await res.json()
+      sourcePath: string
+      destPath: string
+      number?: string
+    }> = data.items || data || []
 
     if (!archives || archives.length === 0) return
     console.log(`[ARCHIVE-POLL] Found ${archives.length} pending archives`)
@@ -873,9 +874,9 @@ async function processPendingArchives() {
 
     for (const entry of archives) {
       const quoteId = entry.quoteId
-      let folderPath = entry.folderPath
+      let folderPath = entry.sourcePath
       if (!folderPath) {
-        console.warn(`[ARCHIVE-POLL] No folderPath for quote ${quoteId}, skipping`)
+        console.warn(`[ARCHIVE-POLL] No sourcePath for quote ${quoteId}, skipping`)
         continue
       }
 
@@ -906,6 +907,17 @@ async function processPendingArchives() {
         folderPath = resolved
       }
 
+      // Compute target path from API destPath or derive from source
+      let targetPath = entry.destPath
+      if (targetPath) {
+        targetPath = targetPath.replace(/\//g, '\\').split('\\').map(s => s.trim()).join('\\')
+      } else {
+        const parentDir = dirname(folderPath)
+        const folderName = basename(folderPath)
+        targetPath = pJoin(parentDir, '_01 Archive', folderName)
+      }
+      const archiveDir = dirname(targetPath)
+
       // If folder doesn't exist, it may have already been archived or deleted
       if (!existsSync(folderPath)) {
         console.log(`[ARCHIVE-POLL] Folder not found (already archived?): ${folderPath}`)
@@ -914,18 +926,12 @@ async function processPendingArchives() {
           await fetch(`${presscalUrl}/api/filehelper/quotes/${encodeURIComponent(quoteId)}/confirm-archive`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ archived: true }),
+            body: JSON.stringify({ newFolderPath: targetPath }),
           })
           console.log(`[ARCHIVE-POLL] Confirmed (folder missing): ${quoteId}`)
         } catch (e) { console.warn(`[ARCHIVE-POLL] confirm-archive failed:`, e) }
         continue
       }
-
-      // Move to _01 Archive
-      const parentDir = dirname(folderPath)
-      const folderName = basename(folderPath)
-      const archiveDir = pJoin(parentDir, '_01 Archive')
-      const targetPath = pJoin(archiveDir, folderName)
 
       try {
         await mkdir(archiveDir, { recursive: true })
@@ -962,7 +968,7 @@ async function processPendingArchives() {
         await fetch(`${presscalUrl}/api/filehelper/quotes/${encodeURIComponent(quoteId)}/confirm-archive`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ archived: true, archivePath: targetPath }),
+          body: JSON.stringify({ newFolderPath: targetPath }),
         })
         console.log(`[ARCHIVE-POLL] Confirmed: ${quoteId}`)
       } catch (err) {
