@@ -833,6 +833,148 @@ async function handleProtocolUrl(url: string): Promise<void> {
   }
 }
 
+// ─── Pending Archives Poller ──────────────────────────────────────
+// Polls PressCal for quotes that were soft-deleted and need archiving.
+// For each pending archive: move folder → _01 Archive, then POST confirm-archive.
+// If pendingDelete=true, PressCal will hard-delete the quote record on confirm.
+
+let pendingArchivesTimer: ReturnType<typeof setInterval> | null = null
+
+function startPendingArchivesPoller() {
+  // Initial check after 5s (let app settle), then every 30s
+  setTimeout(() => processPendingArchives(), 5000)
+  pendingArchivesTimer = setInterval(() => processPendingArchives(), 30000)
+}
+
+async function processPendingArchives() {
+  const presscalUrl = (store.get('presscal.url') as string)?.replace(/\/$/, '')
+  const apiKey = store.get('presscal.apiKey') as string
+  if (!presscalUrl || !apiKey) return
+
+  try {
+    const res = await fetch(`${presscalUrl}/api/filehelper/pending-archives`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+    })
+    if (res.status !== 200) return
+
+    const archives: Array<{
+      quoteId: string
+      folderPath: string
+      pendingArchivePath?: string
+      pendingDelete?: boolean
+    }> = await res.json()
+
+    if (!archives || archives.length === 0) return
+    console.log(`[ARCHIVE-POLL] Found ${archives.length} pending archives`)
+
+    const { existsSync } = await import('fs')
+    const { rename, mkdir, copyFile, stat, rm, readdir, access } = await import('fs/promises')
+    const { join: pJoin, dirname, basename } = await import('path')
+
+    for (const entry of archives) {
+      const quoteId = entry.quoteId
+      let folderPath = entry.folderPath
+      if (!folderPath) {
+        console.warn(`[ARCHIVE-POLL] No folderPath for quote ${quoteId}, skipping`)
+        continue
+      }
+
+      // Normalize path
+      folderPath = folderPath.replace(/\//g, '\\').split('\\').map(s => s.trim()).join('\\')
+
+      // Segment-by-segment resolution (NFC/NFD and encoding mismatches)
+      if (!existsSync(folderPath)) {
+        const segments = folderPath.split('\\')
+        let resolved = segments[0]
+        for (let i = 1; i < segments.length; i++) {
+          const seg = segments[i]
+          const candidate = resolved + '\\' + seg
+          try {
+            await access(candidate)
+            resolved = candidate
+          } catch {
+            try {
+              const children = await readdir(resolved)
+              const asciiPrefix = seg.replace(/[^\x00-\x7F].*/, '').trim()
+              const match = asciiPrefix.length >= 3
+                ? children.find(c => c.replace(/[^\x00-\x7F].*/, '').trim() === asciiPrefix)
+                : null
+              resolved = match ? resolved + '\\' + match : candidate
+            } catch { resolved = candidate }
+          }
+        }
+        folderPath = resolved
+      }
+
+      // If folder doesn't exist, it may have already been archived or deleted
+      if (!existsSync(folderPath)) {
+        console.log(`[ARCHIVE-POLL] Folder not found (already archived?): ${folderPath}`)
+        // Still confirm so PressCal can clean up
+        try {
+          await fetch(`${presscalUrl}/api/filehelper/quotes/${encodeURIComponent(quoteId)}/confirm-archive`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ archived: true }),
+          })
+          console.log(`[ARCHIVE-POLL] Confirmed (folder missing): ${quoteId}`)
+        } catch (e) { console.warn(`[ARCHIVE-POLL] confirm-archive failed:`, e) }
+        continue
+      }
+
+      // Move to _01 Archive
+      const parentDir = dirname(folderPath)
+      const folderName = basename(folderPath)
+      const archiveDir = pJoin(parentDir, '_01 Archive')
+      const targetPath = pJoin(archiveDir, folderName)
+
+      try {
+        await mkdir(archiveDir, { recursive: true })
+
+        if (existsSync(targetPath)) {
+          console.log(`[ARCHIVE-POLL] Already in archive: ${targetPath}`)
+        } else {
+          // Try rename, fallback to copy+delete
+          let renamed = false
+          try {
+            await rename(folderPath, targetPath)
+            renamed = true
+          } catch {
+            // Copy + delete fallback
+            const copyDir = async (s: string, d: string) => {
+              await mkdir(d, { recursive: true })
+              const entries = await readdir(s, { withFileTypes: true })
+              for (const e of entries) {
+                const sp = pJoin(s, e.name), dp = pJoin(d, e.name)
+                if (e.isDirectory()) await copyDir(sp, dp)
+                else await copyFile(sp, dp)
+              }
+            }
+            const srcStat = await stat(folderPath)
+            if (srcStat.isDirectory()) {
+              await copyDir(folderPath, targetPath)
+              try { await rm(folderPath, { recursive: true, force: true }) } catch {}
+            }
+          }
+          console.log(`[ARCHIVE-POLL] Archived: ${folderName}${renamed ? '' : ' (copy+delete)'}`)
+        }
+
+        // Confirm archive with PressCal
+        await fetch(`${presscalUrl}/api/filehelper/quotes/${encodeURIComponent(quoteId)}/confirm-archive`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ archived: true, archivePath: targetPath }),
+        })
+        console.log(`[ARCHIVE-POLL] Confirmed: ${quoteId}`)
+      } catch (err) {
+        console.error(`[ARCHIVE-POLL] Failed to archive ${folderName}:`, err)
+      }
+    }
+  } catch (err) {
+    // Silently fail — network errors, PressCal offline, etc.
+    // Will retry on next poll cycle
+  }
+}
+
 function createWindow(): void {
   const savedTheme = store.get('ui.theme', 'light') as string
   const isLight = savedTheme === 'light'
@@ -1393,6 +1535,9 @@ if (!gotTheLock) {
     const protocolUrl = process.argv.find(arg => arg.startsWith(`${PROTOCOL}://`))
     if (protocolUrl) handleProtocolUrl(protocolUrl)
 
+    // Start pending archives poller (checks every 30s)
+    startPendingArchivesPoller()
+
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
@@ -1409,6 +1554,7 @@ if (!gotTheLock) {
 
   // Cleanup on quit
   app.on('before-quit', async () => {
+    if (pendingArchivesTimer) clearInterval(pendingArchivesTimer)
     try {
       const { rm } = await import('fs/promises')
       const tempDir = join(app.getPath('temp'), 'presskit')
