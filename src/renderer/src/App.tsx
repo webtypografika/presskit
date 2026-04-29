@@ -502,7 +502,11 @@ export default function App() {
       const result = await useDialogStore.getState().showConfirm(message, title)
       window.api.deepLink.respondConfirm(id, result)
     })
-    return () => { cleanupAlert(); cleanupConfirm() }
+    const cleanupChoice = window.api.deepLink.onShowChoice(async ({ id, title, message, choices }) => {
+      const result = await useDialogStore.getState().showChoice(message, choices, title)
+      window.api.deepLink.respondChoice(id, result)
+    })
+    return () => { cleanupAlert(); cleanupConfirm(); cleanupChoice() }
   }, [])
 
   return (

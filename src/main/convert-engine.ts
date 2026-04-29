@@ -198,7 +198,7 @@ async function convertPdfWithGs(inputPath: string, outputPath: string, options: 
   try {
     const gsResult = await execFileAsync(gs, args, { timeout: 120000 })
     if (gsResult.stderr) console.warn('[CONVERT] GS stderr:', gsResult.stderr)
-    console.log('[CONVERT] GS done, checking output:', gsOutputPath)
+    console.log('[CONVERT] GS done, checking output:', outputPath)
 
     // For raster output, crop to TrimBox using sharp (more reliable than GS flag)
     if (options.useTrimBox && options.format !== 'pdf') {
@@ -368,16 +368,17 @@ async function convertImage(inputPath: string, outputPath: string, options: Conv
   const sharp = (await import('sharp')).default
   let pipeline = sharp(inputPath)
 
-  // Color space conversion — set BEFORE flatten
+  // Flatten transparency BEFORE colorspace conversion
+  // (flatten uses RGB background, and doing it after toColorspace('cmyk') can reset to sRGB)
+  if (options.flatten) {
+    pipeline = pipeline.flatten({ background: { r: 255, g: 255, b: 255 } })
+  }
+
+  // Color space conversion — set AFTER flatten to prevent flatten from resetting CMYK
   if (options.colorSpace === 'cmyk') {
     pipeline = pipeline.toColorspace('cmyk')
   } else if (options.colorSpace === 'srgb') {
     pipeline = pipeline.toColorspace('srgb')
-  }
-
-  // Flatten transparency (add white background)
-  if (options.flatten) {
-    pipeline = pipeline.flatten({ background: { r: 255, g: 255, b: 255 } })
   }
 
   // Resize
@@ -435,14 +436,14 @@ async function convertRaw(inputPath: string, outputPath: string, options: Conver
   const sharp = (await import('sharp')).default
   let pipeline = sharp(jpegBuffer)
 
+  if (options.flatten) {
+    pipeline = pipeline.flatten({ background: { r: 255, g: 255, b: 255 } })
+  }
+
   if (options.colorSpace === 'cmyk') {
     pipeline = pipeline.toColorspace('cmyk')
   } else if (options.colorSpace === 'srgb') {
     pipeline = pipeline.toColorspace('srgb')
-  }
-
-  if (options.flatten) {
-    pipeline = pipeline.flatten({ background: { r: 255, g: 255, b: 255 } })
   }
 
   if (options.maxWidth || options.maxHeight) {
@@ -499,12 +500,14 @@ async function convertPsd(inputPath: string, outputPath: string, options: Conver
 
   let pipeline = sharp(rawInput, rawOpts)
 
-  if (options.colorSpace === 'cmyk') {
-    pipeline = pipeline.toColorspace('cmyk')
-  }
-
   if (options.flatten) {
     pipeline = pipeline.flatten({ background: { r: 255, g: 255, b: 255 } })
+  }
+
+  if (options.colorSpace === 'cmyk') {
+    pipeline = pipeline.toColorspace('cmyk')
+  } else if (options.colorSpace === 'srgb') {
+    pipeline = pipeline.toColorspace('srgb')
   }
 
   if (options.maxWidth || options.maxHeight) {

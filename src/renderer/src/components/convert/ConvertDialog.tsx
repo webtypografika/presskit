@@ -15,6 +15,8 @@ interface ConvertOptions {
   quality: number
   flatten: boolean
   useTrimBox: boolean
+  maxWidth?: number
+  maxHeight?: number
 }
 
 interface ConvertResult {
@@ -203,6 +205,53 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
           />
         </Section>
       )}
+
+      {/* Resize */}
+      <Section>
+        <SectionLabel><Maximize size={14} style={{ marginRight: 10 }} />Μέγιστες διαστάσεις (mm)</SectionLabel>
+        <div className="flex items-center" style={{ gap: 8, marginTop: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1 }}>
+            <span style={{ fontSize: 12, color: 'var(--th-text-muted)', width: 16 }}>W</span>
+            <input
+              type="number"
+              placeholder="Auto"
+              value={options.maxWidth ? Math.round(options.maxWidth / (options.dpi / 25.4)) : ''}
+              onChange={e => {
+                const mm = Number(e.target.value)
+                setOptions(o => ({ ...o, maxWidth: mm ? Math.round(mm * (o.dpi / 25.4)) : undefined }))
+              }}
+              style={{
+                flex: 1, padding: '8px 10px', fontSize: 13, textAlign: 'center',
+                background: 'var(--th-bg-primary)', border: '1px solid var(--th-border)',
+                borderRadius: 8, color: 'var(--th-text-primary)', outline: 'none',
+                minWidth: 0,
+              }}
+            />
+          </div>
+          <X size={14} style={{ color: 'var(--th-text-muted)', flexShrink: 0 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1 }}>
+            <span style={{ fontSize: 12, color: 'var(--th-text-muted)', width: 16 }}>H</span>
+            <input
+              type="number"
+              placeholder="Auto"
+              value={options.maxHeight ? Math.round(options.maxHeight / (options.dpi / 25.4)) : ''}
+              onChange={e => {
+                const mm = Number(e.target.value)
+                setOptions(o => ({ ...o, maxHeight: mm ? Math.round(mm * (o.dpi / 25.4)) : undefined }))
+              }}
+              style={{
+                flex: 1, padding: '8px 10px', fontSize: 13, textAlign: 'center',
+                background: 'var(--th-bg-primary)', border: '1px solid var(--th-border)',
+                borderRadius: 8, color: 'var(--th-text-primary)', outline: 'none',
+                minWidth: 0,
+              }}
+            />
+          </div>
+        </div>
+        <div style={{ marginTop: 6, fontSize: 11, color: 'var(--th-text-muted)' }}>
+          Σμικρύνει ώστε να χωράει στις διαστάσεις (δεν μεγαλώνει). Κενό = χωρίς αλλαγή.
+        </div>
+      </Section>
 
       {/* Flatten transparency (non-PDF) */}
       {options.format !== 'pdf' && !isPdfInput && (

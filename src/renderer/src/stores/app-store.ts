@@ -138,6 +138,11 @@ interface AppState {
   clearNewFolder: () => void
   createNewFolder: (name: string) => Promise<void>
 
+  // Convert dialog trigger (set by context menu, consumed by Toolbar)
+  convertRequested: boolean
+  requestConvert: () => void
+  clearConvertRequest: () => void
+
   // Picks
   pickedFiles: Set<string>  // set of filenames (not paths)
   picksFilter: 'all' | 'picked' | 'unpicked'
@@ -676,6 +681,11 @@ export const useAppStore = create<AppState>((set, get) => {
         useDialogStore.getState().showAlert(`Αποτυχία δημιουργίας φακέλου: ${result.error}`)
       }
     },
+
+    // Convert dialog trigger
+    convertRequested: false,
+    requestConvert: () => set({ convertRequested: true }),
+    clearConvertRequest: () => set({ convertRequested: false }),
 
     // Picks
     pickedFiles: new Set<string>(),

@@ -50,16 +50,20 @@ export function Toolbar() {
     requestNewFolder: s.requestNewFolder,
   })))
 
+  const convertRequested = useAppStore(s => s.convertRequested)
+  const clearConvertRequest = useAppStore(s => s.clearConvertRequest)
+
   const [overlay, setOverlay] = useState<OverlayMode>('none')
   const [showSendEmail, setShowSendEmail] = useState(false)
   const [showPackager, setShowPackager] = useState(false)
 
-  // Allow other components (e.g. context menu) to open the convert dialog
+  // Open convert dialog when requested from context menu (store-based trigger)
   useEffect(() => {
-    const handler = () => setOverlay('convert')
-    window.addEventListener('open-convert', handler)
-    return () => window.removeEventListener('open-convert', handler)
-  }, [])
+    if (convertRequested) {
+      setOverlay('convert')
+      clearConvertRequest()
+    }
+  }, [convertRequested, clearConvertRequest])
 
   // Files to send = multi-selected or single selected
   const filesToSend = selectedFiles.length > 0
@@ -685,6 +689,7 @@ function SearchBox() {
   const navigateTo = useAppStore(s => s.navigateTo)
   const currentPath = useAppStore(s => s.currentPath)
   const [query, setQuery] = useState('')
+  const queryRef = useRef('')
   const [results, setResults] = useState<any[]>([])
   const [open, setOpen] = useState(false)
   const [searching, setSearching] = useState(false)
@@ -740,6 +745,7 @@ function SearchBox() {
 
   const handleChange = useCallback((val: string) => {
     setQuery(val)
+    queryRef.current = val
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => doSearch(val), 150)
   }, [doSearch])
@@ -748,14 +754,14 @@ function SearchBox() {
     if (e.key === 'Enter') {
       e.preventDefault()
       if (timerRef.current) clearTimeout(timerRef.current)
-      doSearch(query)
+      doSearch(queryRef.current)
     } else if (e.key === 'Escape') {
       e.preventDefault()
       setOpen(false)
       setResults([])
       ;(e.target as HTMLElement).blur()
     }
-  }, [doSearch, query])
+  }, [doSearch])
 
   const handleSelect = useCallback(async (file: any) => {
     if (file.isDirectory) {

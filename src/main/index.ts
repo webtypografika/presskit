@@ -380,21 +380,55 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       const files: Array<{ id?: string; filePath: string; fileName: string; source?: string; subfolder?: string }> = data.files || []
 
-      // 2. Resolve target directory
-      let targetDir: string = data.folderPath
-      if (!targetDir) {
-        let folderName = quoteId
-        try {
-          const qRes = await httpGet(`${presscalUrl}/api/filehelper/quotes/${encodeURIComponent(quoteId)}`)
-          if (qRes.status === 200) {
-            const quote = JSON.parse(qRes.body.toString('utf8'))
-            const num = quote.number || quoteId
-            const customer = (quote.customerName && quote.customerName !== '–') ? quote.customerName : ''
-            folderName = customer ? `[${num}] ${customer}` : `[${num}]`
-            folderName = folderName.replace(/[<>:"/\\|?*]/g, '_')
-          }
-        } catch {}
-        targetDir = pathJoin(tmpdir(), 'PressCal', folderName)
+      // 2. Resolve target directory — offer choice if customer folder exists
+      let quoteFolderPath: string = data.folderPath || ''
+      let customerFolderPath = ''
+      let quoteName = quoteId
+
+      // Fetch quote details (for folder name and customer folder)
+      try {
+        const qRes = await httpGet(`${presscalUrl}/api/filehelper/quotes/${encodeURIComponent(quoteId)}`)
+        if (qRes.status === 200) {
+          const quote = JSON.parse(qRes.body.toString('utf8'))
+          const num = quote.number || quoteId
+          const customer = (quote.customerName && quote.customerName !== '–') ? quote.customerName : ''
+          quoteName = customer ? `[${num}] ${customer}` : `[${num}]`
+          quoteName = quoteName.replace(/[<>:"/\\|?*]/g, '_')
+          if (quote.customerFolderPath) customerFolderPath = quote.customerFolderPath
+        }
+      } catch {}
+
+      // If no quote folder, create a default name
+      if (!quoteFolderPath) {
+        quoteFolderPath = pathJoin(tmpdir(), 'PressCal', quoteName)
+      }
+
+      let targetDir = quoteFolderPath
+
+      // Ask user to choose between quote folder and customer folder
+      if (customerFolderPath && mainWindow) {
+        const quoteLabel = `Φάκελος Προσφοράς`
+        const customerLabel = `Φάκελος Πελάτη`
+        const choice = await new Promise<string>((resolve) => {
+          const id = `choice-${Date.now()}`
+          ipcMain.once(`dialog-result:${id}`, (_ev, result: string) => resolve(result))
+          mainWindow!.webContents.send('show-choice', {
+            id,
+            title: 'Αποθήκευση αρχείων',
+            message: `Πού θέλεις να αποθηκευτούν τα αρχεία;`,
+            choices: [quoteLabel, customerLabel],
+          })
+        })
+
+        if (!choice) {
+          // User cancelled
+          sendProgress('Ακυρώθηκε', 0, 0, true)
+          return
+        }
+
+        if (choice === customerLabel) {
+          targetDir = customerFolderPath
+        }
       }
 
       // Fix forward slashes on Windows, then normalize path segments (trim each)

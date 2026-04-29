@@ -126,12 +126,15 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   const newFolderPending = useAppStore(s => s.newFolderPending)
   const clipboard = useAppStore(s => s.clipboard)
   const {
-    runPreflight, setInspectorTab, toggleFileSelection, clearSelection,
+    runPreflight, setInspectorTab, selectFile, requestConvert,
+    toggleFileSelection, clearSelection,
     selectFileRange, copyFiles, cutFiles, pasteFiles, togglePick,
     requestNewFolder, clearNewFolder, createNewFolder
   } = useAppStore(useShallow(s => ({
     runPreflight: s.runPreflight,
     setInspectorTab: s.setInspectorTab,
+    selectFile: s.selectFile,
+    requestConvert: s.requestConvert,
     toggleFileSelection: s.toggleFileSelection,
     clearSelection: s.clearSelection,
     selectFileRange: s.selectFileRange,
@@ -474,8 +477,8 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         setTimeout(runPreflight, 100)
         break
       case 'convert':
-        onSelect(file)
-        setTimeout(() => window.dispatchEvent(new Event('open-convert')), 100)
+        selectFile(file)
+        setTimeout(() => requestConvert(), 50)
         break
       case 'linkQuote':
       case 'linkJob':
@@ -529,7 +532,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         break
       }
     }
-  }, [ctxMenu, onSelect, runPreflight, setInspectorTab, refreshDirectory, copyFiles, cutFiles, pasteFiles, selectedFiles, clearSelection, togglePick, requestNewFolder, showAlert, showConfirm])
+  }, [ctxMenu, onSelect, selectFile, requestConvert, runPreflight, setInspectorTab, refreshDirectory, copyFiles, cutFiles, pasteFiles, selectedFiles, clearSelection, togglePick, requestNewFolder, showAlert, showConfirm])
 
   // ─── Resizable column widths (list view) ─────────────────────────
   const colWidthsRef = useRef({ type: 80, date: 100, size: 80 })

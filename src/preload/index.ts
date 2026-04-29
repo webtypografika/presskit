@@ -180,6 +180,13 @@ const api = {
     },
     respondConfirm: (id: string, result: boolean) => {
       ipcRenderer.send(`dialog-result:${id}`, result)
+    },
+    onShowChoice: (callback: (data: { id: string; title: string; message: string; choices: string[] }) => void) => {
+      ipcRenderer.on('show-choice', (_e, data) => callback(data))
+      return () => ipcRenderer.removeAllListeners('show-choice')
+    },
+    respondChoice: (id: string, result: string) => {
+      ipcRenderer.send(`dialog-result:${id}`, result)
     }
   },
 
