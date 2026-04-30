@@ -1,9 +1,8 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useAppStore } from '@/stores/app-store'
-import { X, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { X, Loader2, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react'
 import { PdfPreview } from './PdfPreview'
-import { ImagePreview } from './ImagePreview'
 
 export function FullscreenPreview() {
   const fullscreenPreview = useAppStore(s => s.fullscreenPreview)
@@ -14,6 +13,14 @@ export function FullscreenPreview() {
 
   const [localPreview, setLocalPreview] = useState<any>(null)
   const [loading, setLoading] = useState(false)
+
+  // Zoom/pan state
+  const [zoom, setZoom] = useState(1)
+  const [position, setPosition] = useState({ x: 0, y: 0 })
+  const [dragging, setDragging] = useState(false)
+  const dragStartRef = useRef({ x: 0, y: 0 })
+  const posStartRef = useRef({ x: 0, y: 0 })
+  const contentRef = useRef<HTMLDivElement>(null)
 
   // Get navigable files (non-directories)
   const fileList = files.filter(f => !f.isDirectory)
@@ -30,6 +37,45 @@ export function FullscreenPreview() {
       selectFile(fileList[currentIndex - 1])
     }
   }, [currentIndex, fileList, selectFile])
+
+  // Reset zoom on file change
+  useEffect(() => {
+    setZoom(1)
+    setPosition({ x: 0, y: 0 })
+  }, [selectedFile?.path])
+
+  // Wheel zoom — native listener for non-passive
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el || !fullscreenPreview) return
+    const handler = (e: WheelEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const delta = e.deltaY > 0 ? -0.1 : 0.1
+      setZoom(z => Math.max(0.1, Math.min(10, z + delta)))
+    }
+    el.addEventListener('wheel', handler, { passive: false })
+    return () => el.removeEventListener('wheel', handler)
+  }, [fullscreenPreview])
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    setDragging(true)
+    dragStartRef.current = { x: e.clientX, y: e.clientY }
+    posStartRef.current = { ...position }
+  }, [position])
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragging) return
+    setPosition({
+      x: posStartRef.current.x + (e.clientX - dragStartRef.current.x),
+      y: posStartRef.current.y + (e.clientY - dragStartRef.current.y)
+    })
+  }, [dragging])
+
+  const handleMouseUp = useCallback(() => {
+    setDragging(false)
+  }, [])
 
   // Tell main process about fullscreen state so window X closes preview, not app
   useEffect(() => {
@@ -94,6 +140,72 @@ export function FullscreenPreview() {
     opacity: 0.6, transition: 'opacity 0.15s',
   }
 
+  const zoomBtnStyle: React.CSSProperties = {
+    background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 6,
+    padding: '4px 6px', cursor: 'pointer', color: '#fff', display: 'flex',
+    alignItems: 'center', justifyContent: 'center',
+  }
+
+  // For images: render img directly (no ImagePreview which has its own zoom)
+  // For PDFs: render PdfPreview inside zoom wrapper
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Loader2 size={32} className="animate-spin" style={{ color: '#fff' }} />
+        </div>
+      )
+    }
+    if (!preview) {
+      return (
+        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>
+          No preview available
+        </div>
+      )
+    }
+    if (preview.type === 'image') {
+      return (
+        <img
+          src={preview.data}
+          alt="Preview"
+          draggable={false}
+          style={{
+            maxWidth: '100%', maxHeight: '100%', objectFit: 'contain',
+            transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+            transformOrigin: 'center center',
+            transition: dragging ? 'none' : 'transform 0.1s ease-out',
+          }}
+        />
+      )
+    }
+    if (preview.type === 'pdf-page') {
+      return (
+        <div style={{
+          width: '100%', height: '100%',
+          transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+          transformOrigin: 'center center',
+          transition: dragging ? 'none' : 'transform 0.1s ease-out',
+        }}>
+          <PdfPreview data={preview.data} />
+        </div>
+      )
+    }
+    if (preview.type === 'svg') {
+      return (
+        <div
+          style={{
+            padding: 32,
+            transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+            transformOrigin: 'center center',
+            transition: dragging ? 'none' : 'transform 0.1s ease-out',
+          }}
+          dangerouslySetInnerHTML={{ __html: preview.data }}
+        />
+      )
+    }
+    return null
+  }
+
   return createPortal(
     <div
       style={{
@@ -103,10 +215,12 @@ export function FullscreenPreview() {
       }}
       onClick={close}
     >
-      {/* Header */}
+      {/* Header with zoom controls */}
       <div
-        className="flex items-center justify-between"
-        style={{ padding: '12px 20px', flexShrink: 0 }}
+        style={{
+          padding: '8px 20px', flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}
         onClick={e => e.stopPropagation()}
       >
         <span style={{ fontSize: 14, color: '#fff', opacity: 0.7 }}>
@@ -117,6 +231,37 @@ export function FullscreenPreview() {
             </span>
           )}
         </span>
+
+        {/* Zoom controls */}
+        {preview && !loading && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              style={zoomBtnStyle}
+              onClick={() => setZoom(z => Math.max(0.1, z - 0.25))}
+              title="Zoom out"
+            >
+              <ZoomOut size={16} />
+            </button>
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', width: 44, textAlign: 'center' }}>
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              style={zoomBtnStyle}
+              onClick={() => setZoom(z => Math.min(10, z + 0.25))}
+              title="Zoom in"
+            >
+              <ZoomIn size={16} />
+            </button>
+            <button
+              style={zoomBtnStyle}
+              onClick={() => { setZoom(1); setPosition({ x: 0, y: 0 }) }}
+              title="Fit to view"
+            >
+              <Maximize2 size={16} />
+            </button>
+          </div>
+        )}
+
         <button
           onClick={close}
           style={{
@@ -130,13 +275,23 @@ export function FullscreenPreview() {
 
       {/* Content with nav buttons */}
       <div
-        style={{ flex: 1, overflow: 'hidden', position: 'relative' }}
+        ref={contentRef}
+        style={{
+          flex: 1, overflow: 'hidden', position: 'relative',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: dragging ? 'grabbing' : 'grab',
+        }}
         onClick={e => e.stopPropagation()}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
       >
         {/* Previous button */}
         {hasPrev && (
           <button
-            onClick={goPrev}
+            onClick={e => { e.stopPropagation(); goPrev() }}
+            onMouseDown={e => e.stopPropagation()}
             style={{ ...navBtnStyle, left: 16 }}
             onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
             onMouseLeave={e => (e.currentTarget.style.opacity = '0.6')}
@@ -148,7 +303,8 @@ export function FullscreenPreview() {
         {/* Next button */}
         {hasNext && (
           <button
-            onClick={goNext}
+            onClick={e => { e.stopPropagation(); goNext() }}
+            onMouseDown={e => e.stopPropagation()}
             style={{ ...navBtnStyle, right: 16 }}
             onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
             onMouseLeave={e => (e.currentTarget.style.opacity = '0.6')}
@@ -157,30 +313,12 @@ export function FullscreenPreview() {
           </button>
         )}
 
-        {loading && (
-          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Loader2 size={32} className="animate-spin" style={{ color: '#fff' }} />
-          </div>
-        )}
-        {!loading && preview?.type === 'pdf-page' && <PdfPreview data={preview.data} />}
-        {!loading && preview?.type === 'image' && <ImagePreview data={preview.data} layers={preview.layers} />}
-        {!loading && preview?.type === 'svg' && (
-          <div
-            className="w-full h-full flex items-center justify-center overflow-auto"
-            style={{ padding: 32 }}
-            dangerouslySetInnerHTML={{ __html: preview.data }}
-          />
-        )}
-        {!loading && !preview && (
-          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>
-            No preview available
-          </div>
-        )}
+        {renderContent()}
       </div>
 
       {/* Hint */}
       <div style={{ padding: '8px 0', textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>
-        ← → navigate &nbsp;·&nbsp; Space / Esc close
+        ← → navigate &nbsp;·&nbsp; scroll zoom &nbsp;·&nbsp; drag pan &nbsp;·&nbsp; Space / Esc close
       </div>
     </div>,
     document.body

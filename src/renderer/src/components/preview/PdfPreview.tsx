@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react'
 import * as pdfjsLib from 'pdfjs-dist'
 
 // Set worker
@@ -17,6 +17,11 @@ export function PdfPreview({ data }: { data: string }) {
   const renderIdRef = useRef(0)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(0)
+  const [zoom, setZoom] = useState(1)
+  const [position, setPosition] = useState({ x: 0, y: 0 })
+  const [dragging, setDragging] = useState(false)
+  const dragStartRef = useRef({ x: 0, y: 0 })
+  const posStartRef = useRef({ x: 0, y: 0 })
 
   // Load PDF
   useEffect(() => {
@@ -41,6 +46,49 @@ export function PdfPreview({ data }: { data: string }) {
       pdfRef.current = null
     }
   }, [data])
+
+  // Reset zoom/pan on page or data change
+  useEffect(() => {
+    setZoom(1)
+    setPosition({ x: 0, y: 0 })
+  }, [data, page])
+
+  // Wheel zoom — must use native listener to allow preventDefault (React onWheel is passive)
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    const handler = (e: WheelEvent) => {
+      e.preventDefault()
+      const delta = e.deltaY > 0 ? -0.1 : 0.1
+      setZoom(z => Math.max(0.1, Math.min(10, z + delta)))
+    }
+    container.addEventListener('wheel', handler, { passive: false })
+    return () => container.removeEventListener('wheel', handler)
+  }, [])
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    setDragging(true)
+    dragStartRef.current = { x: e.clientX, y: e.clientY }
+    posStartRef.current = { ...position }
+  }, [position])
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragging) return
+    setPosition({
+      x: posStartRef.current.x + (e.clientX - dragStartRef.current.x),
+      y: posStartRef.current.y + (e.clientY - dragStartRef.current.y)
+    })
+  }, [dragging])
+
+  const handleMouseUp = useCallback(() => {
+    setDragging(false)
+  }, [])
+
+  const fitToView = useCallback(() => {
+    setZoom(1)
+    setPosition({ x: 0, y: 0 })
+  }, [])
 
   // Render page — fit to container, DPR-aware
   const renderPage = useCallback(async () => {
@@ -152,39 +200,79 @@ export function PdfPreview({ data }: { data: string }) {
 
   return (
     <div className="h-full flex flex-col">
+      {/* Zoom controls */}
+      <div className="h-7 flex items-center justify-center gap-2 bg-bg-tertiary border-b border-border flex-shrink-0">
+        <button
+          className="p-0.5 text-text-muted hover:text-text-primary"
+          onClick={() => setZoom(z => Math.max(0.1, z - 0.25))}
+          title="Zoom out"
+        >
+          <ZoomOut size={14} />
+        </button>
+        <span className="text-sm text-text-secondary w-12 text-center">
+          {Math.round(zoom * 100)}%
+        </span>
+        <button
+          className="p-0.5 text-text-muted hover:text-text-primary"
+          onClick={() => setZoom(z => Math.min(10, z + 0.25))}
+          title="Zoom in"
+        >
+          <ZoomIn size={14} />
+        </button>
+        <div className="w-px h-4 bg-border mx-1" />
+        <button
+          className="p-0.5 text-text-muted hover:text-text-primary"
+          onClick={fitToView}
+          title="Fit to view"
+        >
+          <Maximize2 size={14} />
+        </button>
+
+        {/* Page nav inline — only if multi-page */}
+        {totalPages > 1 && (
+          <>
+            <div className="w-px h-4 bg-border mx-1" />
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="p-0.5 text-text-muted hover:text-text-primary disabled:opacity-30"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <span className="text-sm text-text-secondary" style={{ fontSize: 11 }}>
+              {page} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="p-0.5 text-text-muted hover:text-text-primary disabled:opacity-30"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </>
+        )}
+      </div>
+
       {/* Canvas container — fills entire area */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-hidden flex items-center justify-center"
+        className="flex-1 overflow-hidden flex items-center justify-center cursor-grab active:cursor-grabbing"
         style={{ background: '#525659' }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
       >
-        <canvas ref={canvasRef} style={{ display: 'block' }} />
+        <canvas
+          ref={canvasRef}
+          style={{
+            display: 'block',
+            transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+            transformOrigin: 'center center',
+            transition: dragging ? 'none' : 'transform 0.1s ease-out'
+          }}
+        />
       </div>
-
-      {/* Page nav — only if multi-page */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center flex-shrink-0 bg-bg-secondary border-t border-border" style={{ height: 32, gap: 8 }}>
-          <button
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-            disabled={page <= 1}
-            className="text-text-muted hover:text-text-primary disabled:opacity-30"
-            style={{ padding: '2px 6px', border: 'none', background: 'transparent', cursor: 'pointer' }}
-          >
-            <ChevronLeft size={14} />
-          </button>
-          <span className="text-text-secondary" style={{ fontSize: 11 }}>
-            {page} / {totalPages}
-          </span>
-          <button
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages}
-            className="text-text-muted hover:text-text-primary disabled:opacity-30"
-            style={{ padding: '2px 6px', border: 'none', background: 'transparent', cursor: 'pointer' }}
-          >
-            <ChevronRight size={14} />
-          </button>
-        </div>
-      )}
     </div>
   )
 }
