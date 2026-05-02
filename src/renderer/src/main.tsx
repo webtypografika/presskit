@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { LicenseGate } from './components/LicenseGate'
 import './globals.css'
 
 // Surface renderer-side crashes. Without these, unhandled promise rejections
@@ -27,7 +28,9 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <App />
+        <LicenseGate>
+          <App />
+        </LicenseGate>
       </QueryClientProvider>
     </ErrorBoundary>
   </StrictMode>

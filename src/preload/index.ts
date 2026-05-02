@@ -105,6 +105,16 @@ const api = {
     postToApi: (endpoint: string, data: any) => ipcRenderer.invoke('presscal:postToApi', endpoint, data)
   },
 
+  // License
+  license: {
+    get: () => ipcRenderer.invoke('license:get'),
+    refresh: () => ipcRenderer.invoke('license:refresh'),
+    onChanged: (callback: (status: any) => void) => {
+      ipcRenderer.on('license:changed', (_e, status) => callback(status))
+      return () => ipcRenderer.removeAllListeners('license:changed')
+    }
+  },
+
   // Settings
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),

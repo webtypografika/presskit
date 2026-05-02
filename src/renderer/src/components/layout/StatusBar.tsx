@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAppStore } from '@/stores/app-store'
 import { useShallow } from 'zustand/react/shallow'
 import { formatFileSize } from '@/lib/file-types'
@@ -22,6 +22,13 @@ export function StatusBar() {
 
   const [showSettings, setShowSettings] = useState(false)
   const isDark = theme === 'dark'
+
+  // LicenseGate dispatches this when the user clicks "Άνοιγμα ρυθμίσεων".
+  useEffect(() => {
+    const handler = (): void => setShowSettings(true)
+    window.addEventListener('open-settings', handler as EventListener)
+    return () => window.removeEventListener('open-settings', handler as EventListener)
+  }, [])
 
   const fileCount = files.filter(f => !f.isDirectory).length
   const folderCount = files.filter(f => f.isDirectory).length

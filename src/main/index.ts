@@ -12,6 +12,7 @@ import { registerConvertHandlers } from './convert-engine'
 import { registerColorHandlers } from './color-tools'
 import { registerSearchHandlers } from './search-engine'
 import { registerToolHandlers } from './tools-engine'
+import { registerLicenseHandlers, startLicensePoller } from './license-engine'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -1225,6 +1226,7 @@ function registerHandlers(): void {
   registerColorHandlers(ipcMain)
   registerSearchHandlers(ipcMain)
   registerToolHandlers(ipcMain)
+  registerLicenseHandlers(ipcMain)
 
   // User directories
   ipcMain.handle('system:userPaths', async () => {
@@ -1543,6 +1545,9 @@ if (!gotTheLock) {
 
     // Start pending archives poller (checks every 30s)
     startPendingArchivesPoller()
+
+    // Start license poller — initial check now, then every 6h
+    startLicensePoller()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

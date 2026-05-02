@@ -153,7 +153,7 @@ function PresscalSettings() {
             type={showKey ? 'text' : 'password'}
             value={apiKey}
             onChange={e => setApiKey(e.target.value)}
-            placeholder="fh_..."
+            placeholder="psk_live_..."
             style={{ ...inputStyle, fontFamily: 'monospace' }}
           />
           <button
