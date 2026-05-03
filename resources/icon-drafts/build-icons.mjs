@@ -2,7 +2,7 @@ import sharp from 'sharp'
 import { writeFileSync } from 'fs'
 import pngToIco from 'png-to-ico'
 
-const SRC = 'C:/Users/info/Documents/Dropbox/PressCal my files/logo/new logo/1x/1024.png'
+const SRC = 'C:/Users/info/Documents/Dropbox/PressCal my files/logo/new logo/1x/Presskit 1024.png'
 const OUT_DIR = 'C:/Users/info/documents/dropbox/presscal-filehelper/resources'
 
 async function main() {
