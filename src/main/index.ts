@@ -12,7 +12,7 @@ import { registerConvertHandlers } from './convert-engine'
 import { registerColorHandlers } from './color-tools'
 import { registerSearchHandlers } from './search-engine'
 import { registerToolHandlers } from './tools-engine'
-import { registerLicenseHandlers, startLicensePoller } from './license-engine'
+import { registerLicenseHandlers, startLicensePoller, checkLicense } from './license-engine'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -825,8 +825,22 @@ async function handleProtocolUrl(url: string): Promise<void> {
         store.set('presscal.url', url.replace(/\/$/, ''))
         store.set('presscal.apiKey', apiKey)
         deepLog('[DeepLink] Connected to PressCal:', url)
-        mainWindow?.webContents.send('show-alert', { title: 'PressCal', message: `Συνδέθηκε στο PressCal!\n${url}` })
         mainWindow?.webContents.send('presscal-connected', { url, apiKey })
+
+        // Re-check license immediately so the LicenseGate unlocks without
+        // waiting for the next 6h poll. broadcastStatus inside checkLicense
+        // pushes the new state to the renderer.
+        const status = await checkLicense()
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send('license:changed', status)
+        }
+
+        const successMsg = status.active
+          ? (status.isTrial
+              ? `Συνδέθηκες! Trial ${status.daysLeft} ημερών ξεκίνησε.`
+              : 'Συνδέθηκες στο PressCal!')
+          : `Συνδέθηκες, αλλά η άδεια δεν είναι ενεργή.\n(${status.state})`
+        mainWindow?.webContents.send('show-alert', { title: 'PressCal', message: successMsg })
       }
     }
   } catch (e) {
