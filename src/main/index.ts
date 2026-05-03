@@ -1,7 +1,6 @@
 import { app, BrowserWindow, shell, ipcMain, dialog, nativeTheme } from 'electron'
 import { join, resolve } from 'path'
 import { is } from '@electron-toolkit/utils'
-import iconAsset from '../../resources/icon.ico?asset'
 import { registerFileSystemHandlers } from './file-system'
 import { registerPreviewHandlers } from './preview-engine'
 import { registerPreflightHandlers } from './preflight-engine'
@@ -1007,8 +1006,15 @@ function createWindow(): void {
   // Without this, BrowserWindow falls back to the default Electron atom
   // logo for the taskbar / window icon, even though electron-builder
   // correctly stamps the rhino on the installer .exe.
-  // ?asset import is electron-vite's built-in pattern: dev → source path,
-  // prod → bundled output path.
+  //
+  // Use a real filesystem path (NOT an asar-bundled path) — Windows native
+  // icon loading doesn't transparently resolve asar paths. The icon is
+  // shipped as an extraResource in package.json so it lives unpacked at
+  // <install>/resources/icon.ico in production. In dev it's still in the
+  // source tree.
+  const iconPath = is.dev
+    ? join(__dirname, '../../resources/icon.ico')
+    : join(process.resourcesPath, 'icon.ico')
 
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -1017,7 +1023,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     backgroundColor: bgColor,
-    icon: iconAsset,
+    icon: iconPath,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: overlayColor,

@@ -1,6 +1,6 @@
 {
   "name": "presskit",
-  "version": "1.1.5",
+  "version": "1.2.0",
   "description": "PressKit - Print & Design File Manager",
   "main": "./out/main/index.js",
   "scripts": {
@@ -58,6 +58,12 @@
     "files": [
       "out/**/*",
       "resources/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/icon.ico",
+        "to": "icon.ico"
+      }
     ],
     "win": {
       "target": [

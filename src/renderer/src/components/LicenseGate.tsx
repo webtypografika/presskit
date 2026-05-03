@@ -94,7 +94,7 @@ const iconWrap: CSSProperties = {
   width: 72,
   height: 72,
   borderRadius: '50%',
-  background: 'rgba(245, 130, 32, 0.12)',
+  background: 'rgba(110, 200, 200, 0.14)',
   marginBottom: 24,
 }
 
@@ -117,14 +117,14 @@ const primaryBtn: CSSProperties = {
   alignItems: 'center',
   gap: 8,
   padding: '12px 24px',
-  background: '#f58220',
+  background: '#00707c',
   color: '#fff',
   border: 'none',
   borderRadius: 10,
   fontSize: 14,
   fontWeight: 600,
   cursor: 'pointer',
-  boxShadow: '0 2px 8px rgba(245,130,32,0.35)',
+  boxShadow: '0 2px 8px rgba(0,112,124,0.35)',
 }
 
 const secondaryBtn: CSSProperties = {
@@ -143,7 +143,12 @@ const secondaryBtn: CSSProperties = {
 }
 
 function openCheckout(): void {
-  void window.api.shell.openExternal(CHECKOUT_URL)
+  // Logging because users have reported the click "doing nothing" — usually
+  // means the URL 404s in their browser, not that openExternal failed.
+  console.log('[LicenseGate] Opening checkout:', CHECKOUT_URL)
+  window.api.shell.openExternal(CHECKOUT_URL).catch(err => {
+    console.error('[LicenseGate] openExternal failed:', err)
+  })
 }
 
 function openSettings(): void {
@@ -230,13 +235,14 @@ function TrialBanner({ daysLeft, expiresAt }: { daysLeft: number; expiresAt: str
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-    padding: '8px 16px',
-    background: urgent ? '#dc2626' : '#f58220',
+    gap: 10,
+    padding: '3px 14px',
+    minHeight: 22,
+    background: urgent ? '#dc2626' : '#00707c',
     color: '#fff',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 500,
-    boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
   }
   const expiresText = expiresAt
     ? new Date(expiresAt).toLocaleDateString('el-GR', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -244,7 +250,7 @@ function TrialBanner({ daysLeft, expiresAt }: { daysLeft: number; expiresAt: str
   const dayWord = daysLeft === 1 ? 'ημέρα' : 'ημέρες'
   return (
     <div style={banner}>
-      <AlertTriangle size={14} />
+      <AlertTriangle size={12} />
       <span>
         Δοκιμαστική έκδοση — απομένουν <strong>{daysLeft} {dayWord}</strong>
         {expiresText && <> (έως {expiresText})</>}
@@ -252,14 +258,16 @@ function TrialBanner({ daysLeft, expiresAt }: { daysLeft: number; expiresAt: str
       <button
         onClick={openCheckout}
         style={{
-          padding: '4px 12px',
+          padding: '2px 10px',
+          minHeight: 18,
           background: 'rgba(255,255,255,0.18)',
           color: '#fff',
           border: 'none',
-          borderRadius: 6,
-          fontSize: 12,
+          borderRadius: 4,
+          fontSize: 11,
           fontWeight: 600,
           cursor: 'pointer',
+          lineHeight: 1.3,
         }}
       >
         Αγορά συνδρομής
@@ -272,7 +280,7 @@ function pickLockProps(status: LicenseStatus, refresh: () => void, refreshing: b
   switch (status.state) {
     case 'not_configured':
       return {
-        icon: <KeyRound size={32} color="#00707c" />,
+        icon: <KeyRound size={32} color="#6ec8c8" />,
         title: 'Σύνδεση με PressCal',
         message: (
           <>

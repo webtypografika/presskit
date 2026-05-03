@@ -1,48 +1,52 @@
 @import "tailwindcss";
 
-/* ─── THEME VARIABLES ─── */
+/* ─── THEME VARIABLES (Teal brand, May 2026) ─── */
 :root, [data-theme="dark"] {
-  --th-bg-primary: #0a0e1a;
-  --th-bg-secondary: #0f1525;
-  --th-bg-tertiary: #151c2e;
-  --th-bg-hover: #1a2340;
-  --th-bg-active: #1e2a4a;
-  --th-border: #1e293b;
-  --th-border-light: #334155;
-  --th-text-primary: #e2e8f0;
+  --th-bg-primary: #173a49;
+  --th-bg-secondary: #12303d;
+  --th-bg-tertiary: #1e4455;
+  --th-bg-hover: rgba(255,255,255,0.04);
+  --th-bg-active: rgba(255,255,255,0.06);
+  --th-border: rgba(255,255,255,0.1);
+  --th-border-light: rgba(255,255,255,0.2);
+  --th-text-primary: #dcdcdc;
   --th-text-secondary: #94a3b8;
-  --th-text-muted: #64748b;
-  --th-accent: #f58220;
-  --th-accent-hover: #ff9640;
-  --th-success: #22c55e;
-  --th-warning: #eab308;
-  --th-error: #ef4444;
+  --th-text-muted: #a0c4c4;
+  --th-accent: #6ec8c8;
+  --th-accent-hover: #00707c;
+  --th-accent-subtle: rgba(110,200,200,0.12);
+  --th-on-accent: #ffffff;
+  --th-success: #10b981;
+  --th-warning: #f59e0b;
+  --th-error: #f06548;
   --th-info: #3b82f6;
-  --th-input-bg: #0a0e1a;
-  --th-canvas-bg: #1a1f2e;
+  --th-input-bg: #12303d;
+  --th-canvas-bg: #1e4455;
   --th-shadow: rgba(0,0,0,0.5);
 }
 
 [data-theme="light"] {
-  --th-bg-primary: #e4e8ee;
-  --th-bg-secondary: #e4e8ee;
-  --th-bg-tertiary: #dde2e9;
-  --th-bg-hover: #d4d9e2;
-  --th-bg-active: #c8cfd9;
-  --th-border: #c0c8d4;
-  --th-border-light: #b0b9c6;
-  --th-text-primary: #0f172a;
-  --th-text-secondary: #374151;
-  --th-text-muted: #6b7a8d;
-  --th-accent: #ea580c;
-  --th-accent-hover: #f97316;
-  --th-success: #16a34a;
-  --th-warning: #ca8a04;
+  --th-bg-primary: #f5f9f9;
+  --th-bg-secondary: #ffffff;
+  --th-bg-tertiary: #ebf3f3;
+  --th-bg-hover: rgba(0,0,0,0.04);
+  --th-bg-active: rgba(0,0,0,0.06);
+  --th-border: #d8e6e6;
+  --th-border-light: #b8d4d4;
+  --th-text-primary: #173a49;
+  --th-text-secondary: #4a6e6e;
+  --th-text-muted: #8a9e9e;
+  --th-accent: #00707c;
+  --th-accent-hover: #6ec8c8;
+  --th-accent-subtle: rgba(0,112,124,0.10);
+  --th-on-accent: #ffffff;
+  --th-success: #10b981;
+  --th-warning: #d97706;
   --th-error: #dc2626;
   --th-info: #2563eb;
-  --th-input-bg: #e2e7ef;
-  --th-canvas-bg: #cad1dc;
-  --th-shadow: rgba(0,0,0,0.12);
+  --th-input-bg: #ffffff;
+  --th-canvas-bg: #ebf3f3;
+  --th-shadow: rgba(0,0,0,0.08);
 }
 
 /* Light mode: override hardcoded dark inline styles on key areas */
@@ -262,8 +266,8 @@ label {
   border-bottom: 2px solid transparent !important;
 }
 .tab-item.is-active {
-  background: rgba(245, 130, 32, 0.12) !important;
-  border-bottom: 2px solid #f58220 !important;
+  background: var(--th-accent-subtle) !important;
+  border-bottom: 2px solid var(--th-accent) !important;
 }
 .tab-item:not(.is-active):hover {
   background: var(--th-bg-hover) !important;
@@ -287,6 +291,50 @@ label {
 [data-file-item]:hover .pick-badge:hover {
   opacity: 1 !important;
   transform: scale(1.3);
+}
+
+/* ─── BRAND PALETTE OVERRIDES ─────────────────────────────────────────
+ * The codebase has 70+ files with hardcoded #f58220 (legacy brand orange)
+ * baked into inline style objects. Migrating each one would touch the
+ * whole UI and risk regressions. Instead, the rules below remap any
+ * inline orange (background, color, border) to the new teal accent at
+ * the cascade level. Same idea is already used for theme overrides above.
+ *
+ * If you write new components: use var(--th-accent) — don't add to this list.
+ */
+
+/* Backgrounds */
+[style*="background: #f58220"],
+[style*="background:#f58220"],
+[style*="background: #f58a4c"],
+[style*="background:#f58a4c"],
+[style*="background-color: #f58220"],
+[style*="background-color:#f58220"] {
+  background: var(--th-accent) !important;
+}
+
+/* Text colors */
+[style*="color: #f58220"],
+[style*="color:#f58220"],
+[style*="color: #f58a4c"],
+[style*="color:#f58a4c"],
+[style*="color: #ff9640"],
+[style*="color:#ff9640"] {
+  color: var(--th-accent) !important;
+}
+
+/* Borders */
+[style*="border: 1px solid #f58220"],
+[style*="border:1px solid #f58220"],
+[style*="border-color: #f58220"],
+[style*="border-color:#f58220"] {
+  border-color: var(--th-accent) !important;
+}
+
+/* Translucent orange overlays / glows */
+[style*="rgba(245,130,32"],
+[style*="rgba(245, 130, 32"] {
+  background: var(--th-accent-subtle) !important;
 }
 
 
