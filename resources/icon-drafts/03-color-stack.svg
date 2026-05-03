@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Squircle background, deep blue -->
+  <rect width="1024" height="1024" rx="225" fill="#1d2f6e"/>
+
+  <!-- Three overlapping sheets, slight perspective via skew -->
+  <!-- Back sheet — yellow tab -->
+  <g transform="translate(220, 280) rotate(-6 280 280)">
+    <rect x="0" y="0" width="560" height="500" rx="20" fill="#ffffff"/>
+    <rect x="0" y="0" width="560" height="60"  rx="20" fill="#fff200"/>
+  </g>
+
+  <!-- Middle sheet — magenta tab -->
+  <g transform="translate(232, 300)">
+    <rect x="0" y="0" width="560" height="500" rx="20" fill="#ffffff"/>
+    <rect x="0" y="0" width="560" height="60"  rx="20" fill="#ec008c"/>
+  </g>
+
+  <!-- Front sheet — orange tab + 3 content lines -->
+  <g transform="translate(244, 320) rotate(6 280 280)">
+    <rect x="0" y="0" width="560" height="500" rx="20" fill="#ffffff"/>
+    <rect x="0" y="0" width="560" height="60"  rx="20" fill="#f58220"/>
+    <!-- Subtle content lines -->
+    <rect x="60" y="160" width="440" height="22" rx="11" fill="#cbd5e1"/>
+    <rect x="60" y="220" width="320" height="22" rx="11" fill="#cbd5e1"/>
+    <rect x="60" y="280" width="380" height="22" rx="11" fill="#cbd5e1"/>
+  </g>
+</svg>

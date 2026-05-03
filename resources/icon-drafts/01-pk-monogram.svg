@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Squircle background, deep blue -->
+  <rect width="1024" height="1024" rx="225" fill="#1d2f6e"/>
+
+  <!-- "P" — orange, geometric -->
+  <!-- Stem -->
+  <rect x="240" y="270" width="130" height="490" rx="10" fill="#f58220"/>
+  <!-- Bowl -->
+  <path d="M 370 270
+           L 540 270
+           Q 670 270 670 405
+           Q 670 540 540 540
+           L 370 540 Z"
+        fill="#f58220"/>
+  <!-- Bowl inner cutout (acts as counter) -->
+  <path d="M 370 370
+           L 510 370
+           Q 560 370 560 405
+           Q 560 440 510 440
+           L 370 440 Z"
+        fill="#1d2f6e"/>
+
+  <!-- "K" — white, geometric -->
+  <!-- Stem -->
+  <rect x="700" y="270" width="100" height="490" rx="10" fill="#ffffff"/>
+  <!-- Upper diagonal -->
+  <path d="M 800 530 L 800 460 L 940 270 L 850 270 Z" fill="#ffffff"/>
+  <!-- Lower diagonal -->
+  <path d="M 800 470 L 870 470 L 970 760 L 870 760 Z" fill="#ffffff"/>
+</svg>

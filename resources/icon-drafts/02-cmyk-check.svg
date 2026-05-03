@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Squircle background, deep blue -->
+  <rect width="1024" height="1024" rx="225" fill="#1d2f6e"/>
+
+  <!-- 4 CMYK bars, vertical -->
+  <g transform="translate(212, 240)">
+    <rect x="0"   y="0" width="135" height="540" rx="22" fill="#00aeef"/>
+    <rect x="155" y="0" width="135" height="540" rx="22" fill="#ec008c"/>
+    <rect x="310" y="0" width="135" height="540" rx="22" fill="#fff200"/>
+    <rect x="465" y="0" width="135" height="540" rx="22" fill="#1a1a1a"/>
+  </g>
+
+  <!-- Orange checkmark crossing the bars -->
+  <path d="M 240 620 L 440 800 L 800 380"
+        stroke="#f58220" stroke-width="100"
+        stroke-linecap="round" stroke-linejoin="round"
+        fill="none"/>
+</svg>

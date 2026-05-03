@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="UTF-8">
+<title>PressKit Color Palettes</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, system-ui, sans-serif; background: #2a2a2e; padding: 24px; margin: 0; color: #e5e5e7; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: #a0a0a8; font-size: 13px; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: 1fr; gap: 28px; max-width: 1100px; margin: 0 auto; }
+  @media (min-width: 1500px) { .grid { grid-template-columns: 1fr 1fr; } }
+
+  .palette { border-radius: 14px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+  .palette-header { padding: 16px 24px; background: #1f1f23; border-bottom: 1px solid #34343c; }
+  .palette-name { font-size: 16px; font-weight: 700; margin: 0; }
+  .palette-tagline { font-size: 12px; color: #8a8a92; margin: 2px 0 0; }
+  .palette-hex { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .swatch { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; background: rgba(255,255,255,0.05); border-radius: 6px; font-size: 11px; font-family: ui-monospace, monospace; color: #c0c0c8; }
+  .swatch-dot { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.1); }
+
+  /* PressKit-style mock UI */
+  .mock { display: grid; grid-template-columns: 220px 1fr 280px; height: 360px; }
+  .sidebar { padding: 16px 12px; overflow: hidden; }
+  .main-panel { padding: 16px; overflow: hidden; border-left: 1px solid; border-right: 1px solid; }
+  .inspector { padding: 16px; overflow: hidden; }
+
+  .toolbar-row { display: flex; gap: 8px; margin-bottom: 14px; align-items: center; }
+  .btn { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; border: none; cursor: pointer; }
+  .btn-primary { color: white; }
+  .btn-secondary { background: transparent; border: 1px solid; }
+
+  .file-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; margin-bottom: 4px; font-size: 13px; }
+  .file-icon { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; }
+  .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-size { font-size: 11px; opacity: 0.6; }
+  .file-item.selected { font-weight: 500; }
+
+  .nav-section { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; margin: 12px 0 6px; }
+  .nav-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+  .nav-item.active { font-weight: 500; }
+  .nav-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  .stat-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; font-size: 12px; border-bottom: 1px solid; }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-label { opacity: 0.7; }
+  .stat-value { font-family: ui-monospace, monospace; font-size: 12px; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; }
+
+  /* ─── Palette 1: Studio Neutral ─── */
+  .p1 .palette-header { background: #18181c; }
+  .p1 .mock { background: #1a1a1f; color: #e8e8ed; }
+  .p1 .sidebar { background: #18181c; }
+  .p1 .main-panel { background: #1a1a1f; border-color: #2a2a30; }
+  .p1 .inspector { background: #18181c; }
+  .p1 .btn-primary { background: #e07a3c; }
+  .p1 .btn-secondary { color: #a8a8b0; border-color: #34343c; }
+  .p1 .file-item { color: #c8c8d0; }
+  .p1 .file-item.selected { background: #2a2a30; color: #fff; }
+  .p1 .file-icon.pdf { background: #d04545; }
+  .p1 .file-icon.psd { background: #4a78d4; }
+  .p1 .file-icon.jpg { background: #4ade80; }
+  .p1 .nav-section { color: #6e6e78; }
+  .p1 .nav-item { color: #c8c8d0; }
+  .p1 .nav-item.active { background: #2a2a30; color: #e07a3c; }
+  .p1 .nav-item .nav-dot { background: #e07a3c; }
+  .p1 .stat-row { border-color: #2a2a30; }
+  .p1 .badge.trial { background: rgba(224,122,60,0.18); color: #e07a3c; }
+
+  /* ─── Palette 2: Soft Slate ─── */
+  .p2 .palette-header { background: #0c1117; }
+  .p2 .mock { background: #0f1419; color: #d4dae0; }
+  .p2 .sidebar { background: #0c1117; }
+  .p2 .main-panel { background: #0f1419; border-color: #232f3d; }
+  .p2 .inspector { background: #0c1117; }
+  .p2 .btn-primary { background: #5fa8d3; color: #0a1018; }
+  .p2 .btn-secondary { color: #94a3b8; border-color: #324151; }
+  .p2 .file-item { color: #b8c2cc; }
+  .p2 .file-item.selected { background: #1a242f; color: #fff; }
+  .p2 .file-icon.pdf { background: #ef6e6e; }
+  .p2 .file-icon.psd { background: #5fa8d3; }
+  .p2 .file-icon.jpg { background: #34d399; }
+  .p2 .nav-section { color: #64748b; }
+  .p2 .nav-item { color: #b8c2cc; }
+  .p2 .nav-item.active { background: #1a242f; color: #5fa8d3; }
+  .p2 .nav-item .nav-dot { background: #5fa8d3; }
+  .p2 .stat-row { border-color: #232f3d; }
+  .p2 .badge.trial { background: rgba(245,130,32,0.16); color: #f5a460; }
+
+  /* ─── Palette 3: Paper & Ink (warm dark) ─── */
+  .p3 .palette-header { background: #15130f; }
+  .p3 .mock { background: #1c1a16; color: #ebe5d5; }
+  .p3 .sidebar { background: #15130f; }
+  .p3 .main-panel { background: #1c1a16; border-color: #2e2a24; }
+  .p3 .inspector { background: #15130f; }
+  .p3 .btn-primary { background: #f58a4c; color: #1c1a16; }
+  .p3 .btn-secondary { color: #a89e88; border-color: #3a3530; }
+  .p3 .file-item { color: #cfc6b0; }
+  .p3 .file-item.selected { background: #2e2a24; color: #faf6ee; }
+  .p3 .file-icon.pdf { background: #d96a3c; }
+  .p3 .file-icon.psd { background: #6e88c4; }
+  .p3 .file-icon.jpg { background: #8aaa6a; }
+  .p3 .nav-section { color: #6e6552; }
+  .p3 .nav-item { color: #cfc6b0; }
+  .p3 .nav-item.active { background: #2e2a24; color: #f58a4c; }
+  .p3 .nav-item .nav-dot { background: #f58a4c; }
+  .p3 .stat-row { border-color: #2e2a24; }
+  .p3 .badge.trial { background: rgba(245,138,76,0.18); color: #f58a4c; }
+
+  /* ─── Palette 4: Pure Teal — Light ─── */
+  .p4 .palette-header { background: #ebf3f3; color: #0e1518; }
+  .p4 .palette-name, .p4 .palette-tagline { color: #0e1518; }
+  .p4 .palette-tagline { color: #3f5856; }
+  .p4 .swatch { background: rgba(0,0,0,0.04); color: #3f5856; }
+  .p4 .mock { background: #f5f9f9; color: #0e1518; }
+  .p4 .sidebar { background: #ebf3f3; }
+  .p4 .main-panel { background: #ffffff; border-color: #d8e6e6; }
+  .p4 .inspector { background: #ebf3f3; }
+  .p4 .btn-primary { background: #00707c; color: #fff; }
+  .p4 .btn-secondary { background: #fff; color: #00707c; border-color: #b8d4d4; }
+  .p4 .file-item { color: #1f3331; }
+  .p4 .file-item.selected { background: #d8eded; color: #00707c; }
+  .p4 .file-icon.pdf { background: #e07a3c; }
+  .p4 .file-icon.psd { background: #00707c; }
+  .p4 .file-icon.jpg { background: #6ec8c8; }
+  .p4 .nav-section { color: #6b817f; }
+  .p4 .nav-item { color: #1f3331; }
+  .p4 .nav-item.active { background: #d8eded; color: #00707c; }
+  .p4 .nav-item .nav-dot { background: #00707c; }
+  .p4 .stat-row { border-color: #e0eaea; }
+  .p4 .stat-label { color: #6b817f; }
+  .p4 .badge.trial { background: #d8eded; color: #00707c; }
+
+  /* ─── Palette 5: Teal + Orange — Light ─── */
+  .p5 .palette-header { background: #f4ede2; color: #1a1a1a; }
+  .p5 .palette-name, .p5 .palette-tagline { color: #1a1a1a; }
+  .p5 .palette-tagline { color: #5a5a5a; }
+  .p5 .swatch { background: rgba(0,0,0,0.04); color: #5a5a5a; }
+  .p5 .mock { background: #fafaf7; color: #1a1a1a; }
+  .p5 .sidebar { background: #f4ede2; }
+  .p5 .main-panel { background: #ffffff; border-color: #e6dfd0; }
+  .p5 .inspector { background: #f4ede2; }
+  .p5 .btn-primary { background: #d96a1f; color: #fff; }
+  .p5 .btn-secondary { background: #fff; color: #00707c; border-color: #b8d4d4; }
+  .p5 .file-item { color: #2a2a2a; }
+  .p5 .file-item.selected { background: #e0f0f0; color: #00707c; }
+  .p5 .file-icon.pdf { background: #d96a1f; }
+  .p5 .file-icon.psd { background: #00707c; }
+  .p5 .file-icon.jpg { background: #6ec8c8; }
+  .p5 .nav-section { color: #8a8a8a; }
+  .p5 .nav-item { color: #2a2a2a; }
+  .p5 .nav-item.active { background: #e0f0f0; color: #00707c; }
+  .p5 .nav-item .nav-dot { background: #d96a1f; }
+  .p5 .stat-row { border-color: #ece6d8; }
+  .p5 .stat-label { color: #8a8a8a; }
+  .p5 .badge.trial { background: rgba(217,106,31,0.12); color: #d96a1f; }
+</style>
+</head>
+<body>
+
+<h1>PressKit — 3 Color Palettes</h1>
+<p class="lead">Mock PressKit UI σε 3 παλέτες. Στόχος: μειωμένη saturation, low eye-strain για ώρες χρήσης. Brand orange (#f58220) επιβιώνει αλλά πιο ήπια.</p>
+
+<div class="grid">
+
+  <!-- ═══════════ PALETTE 1: Studio Neutral ═══════════ -->
+  <div class="palette p1">
+    <div class="palette-header">
+      <div class="palette-name">1. Studio Neutral <span style="color:#8a8a92;font-weight:400;font-size:13px;">— warm dark</span></div>
+      <div class="palette-tagline">Όπως Linear/Figma. Αυθεντικά neutral, καθόλου μπλε. Πιο ήπιο orange accent.</div>
+      <div class="palette-hex">
+        <span class="swatch"><span class="swatch-dot" style="background:#1a1a1f"></span>#1a1a1f bg</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#232328"></span>#232328 surface</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#34343c"></span>#34343c border</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#e8e8ed"></span>#e8e8ed text</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#e07a3c"></span>#e07a3c accent</span>
+      </div>
+    </div>
+    <div class="mock">
+      <div class="sidebar">
+        <div class="nav-section">Pinned</div>
+        <div class="nav-item active"><span class="nav-dot"></span>Quotes</div>
+        <div class="nav-item">Customers</div>
+        <div class="nav-item">Recent</div>
+        <div class="nav-section">Tools</div>
+        <div class="nav-item">Preflight</div>
+        <div class="nav-item">Convert</div>
+        <div class="nav-item">Color Tools</div>
+      </div>
+      <div class="main-panel">
+        <div class="toolbar-row">
+          <button class="btn btn-primary">Convert</button>
+          <button class="btn btn-secondary">Preflight</button>
+          <span class="badge trial" style="margin-left:auto">Trial · 12 days</span>
+        </div>
+        <div class="file-item selected"><span class="file-icon pdf"></span><span class="file-name">brochure-A4-final.pdf</span><span class="file-size">2.4 MB</span></div>
+        <div class="file-item"><span class="file-icon psd"></span><span class="file-name">cover-design-v3.psd</span><span class="file-size">18.1 MB</span></div>
+        <div class="file-item"><span class="file-icon jpg"></span><span class="file-name">photo-shoot-001.jpg</span><span class="file-size">4.2 MB</span></div>
+        <div class="file-item"><span class="file-icon pdf"></span><span class="file-name">letterhead-print.pdf</span><span class="file-size">340 KB</span></div>
+      </div>
+      <div class="inspector">
+        <div style="font-size:13px;font-weight:500;margin-bottom:10px;">brochure-A4-final.pdf</div>
+        <div class="stat-row"><span class="stat-label">Format</span><span class="stat-value">PDF/X-1a</span></div>
+        <div class="stat-row"><span class="stat-label">Color</span><span class="stat-value">CMYK</span></div>
+        <div class="stat-row"><span class="stat-label">DPI</span><span class="stat-value">300</span></div>
+        <div class="stat-row"><span class="stat-label">Bleed</span><span class="stat-value">3 mm</span></div>
+        <div class="stat-row"><span class="stat-label">Pages</span><span class="stat-value">8</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ PALETTE 2: Soft Slate ═══════════ -->
+  <div class="palette p2">
+    <div class="palette-header">
+      <div class="palette-name">2. Soft Slate <span style="color:#8a8a92;font-weight:400;font-size:13px;">— cool, calm blues</span></div>
+      <div class="palette-tagline">Cool slate (όχι deep blue!). Sky-blue accent αντικαθιστά μέρος του orange. Πολύ low-strain.</div>
+      <div class="palette-hex">
+        <span class="swatch"><span class="swatch-dot" style="background:#0f1419"></span>#0f1419 bg</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#18222e"></span>#18222e surface</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#324151"></span>#324151 border</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#d4dae0"></span>#d4dae0 text</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#5fa8d3"></span>#5fa8d3 accent</span>
+      </div>
+    </div>
+    <div class="mock">
+      <div class="sidebar">
+        <div class="nav-section">Pinned</div>
+        <div class="nav-item active"><span class="nav-dot"></span>Quotes</div>
+        <div class="nav-item">Customers</div>
+        <div class="nav-item">Recent</div>
+        <div class="nav-section">Tools</div>
+        <div class="nav-item">Preflight</div>
+        <div class="nav-item">Convert</div>
+        <div class="nav-item">Color Tools</div>
+      </div>
+      <div class="main-panel">
+        <div class="toolbar-row">
+          <button class="btn btn-primary">Convert</button>
+          <button class="btn btn-secondary">Preflight</button>
+          <span class="badge trial" style="margin-left:auto">Trial · 12 days</span>
+        </div>
+        <div class="file-item selected"><span class="file-icon pdf"></span><span class="file-name">brochure-A4-final.pdf</span><span class="file-size">2.4 MB</span></div>
+        <div class="file-item"><span class="file-icon psd"></span><span class="file-name">cover-design-v3.psd</span><span class="file-size">18.1 MB</span></div>
+        <div class="file-item"><span class="file-icon jpg"></span><span class="file-name">photo-shoot-001.jpg</span><span class="file-size">4.2 MB</span></div>
+        <div class="file-item"><span class="file-icon pdf"></span><span class="file-name">letterhead-print.pdf</span><span class="file-size">340 KB</span></div>
+      </div>
+      <div class="inspector">
+        <div style="font-size:13px;font-weight:500;margin-bottom:10px;">brochure-A4-final.pdf</div>
+        <div class="stat-row"><span class="stat-label">Format</span><span class="stat-value">PDF/X-1a</span></div>
+        <div class="stat-row"><span class="stat-label">Color</span><span class="stat-value">CMYK</span></div>
+        <div class="stat-row"><span class="stat-label">DPI</span><span class="stat-value">300</span></div>
+        <div class="stat-row"><span class="stat-label">Bleed</span><span class="stat-value">3 mm</span></div>
+        <div class="stat-row"><span class="stat-label">Pages</span><span class="stat-value">8</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ PALETTE 3: Paper & Ink ═══════════ -->
+  <div class="palette p3">
+    <div class="palette-header">
+      <div class="palette-name">3. Paper &amp; Ink <span style="color:#8a8a92;font-weight:400;font-size:13px;">— warm charcoal</span></div>
+      <div class="palette-tagline">Warm charcoal (coffee tones). Σχετίζεται με print/paper/ink — ταιριαστό για τυπογράφους.</div>
+      <div class="palette-hex">
+        <span class="swatch"><span class="swatch-dot" style="background:#1c1a16"></span>#1c1a16 bg</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#25221d"></span>#25221d surface</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#3a3530"></span>#3a3530 border</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#ebe5d5"></span>#ebe5d5 text</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#f58a4c"></span>#f58a4c accent</span>
+      </div>
+    </div>
+    <div class="mock">
+      <div class="sidebar">
+        <div class="nav-section">Pinned</div>
+        <div class="nav-item active"><span class="nav-dot"></span>Quotes</div>
+        <div class="nav-item">Customers</div>
+        <div class="nav-item">Recent</div>
+        <div class="nav-section">Tools</div>
+        <div class="nav-item">Preflight</div>
+        <div class="nav-item">Convert</div>
+        <div class="nav-item">Color Tools</div>
+      </div>
+      <div class="main-panel">
+        <div class="toolbar-row">
+          <button class="btn btn-primary">Convert</button>
+          <button class="btn btn-secondary">Preflight</button>
+          <span class="badge trial" style="margin-left:auto">Trial · 12 days</span>
+        </div>
+        <div class="file-item selected"><span class="file-icon pdf"></span><span class="file-name">brochure-A4-final.pdf</span><span class="file-size">2.4 MB</span></div>
+        <div class="file-item"><span class="file-icon psd"></span><span class="file-name">cover-design-v3.psd</span><span class="file-size">18.1 MB</span></div>
+        <div class="file-item"><span class="file-icon jpg"></span><span class="file-name">photo-shoot-001.jpg</span><span class="file-size">4.2 MB</span></div>
+        <div class="file-item"><span class="file-icon pdf"></span><span class="file-name">letterhead-print.pdf</span><span class="file-size">340 KB</span></div>
+      </div>
+      <div class="inspector">
+        <div style="font-size:13px;font-weight:500;margin-bottom:10px;">brochure-A4-final.pdf</div>
+        <div class="stat-row"><span class="stat-label">Format</span><span class="stat-value">PDF/X-1a</span></div>
+        <div class="stat-row"><span class="stat-label">Color</span><span class="stat-value">CMYK</span></div>
+        <div class="stat-row"><span class="stat-label">DPI</span><span class="stat-value">300</span></div>
+        <div class="stat-row"><span class="stat-label">Bleed</span><span class="stat-value">3 mm</span></div>
+        <div class="stat-row"><span class="stat-label">Pages</span><span class="stat-value">8</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ PALETTE 4: Pure Teal ═══════════ -->
+  <div class="palette p4">
+    <div class="palette-header">
+      <div class="palette-name">4. Pure Teal — Light <span style="color:#5a6e6c;font-weight:400;font-size:13px;">— from rhino logo</span></div>
+      <div class="palette-tagline">Light theme με teal-only accents. #00707c για CTAs, #d8eded για selected backgrounds. Καθαρό, μοντέρνο, χωρίς orange.</div>
+      <div class="palette-hex">
+        <span class="swatch"><span class="swatch-dot" style="background:#f5f9f9;border-color:#d8e6e6"></span>#f5f9f9 bg</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#ffffff;border-color:#d8e6e6"></span>#ffffff surface</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#d8e6e6"></span>#d8e6e6 border</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#0e1518"></span>#0e1518 text</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#00707c"></span>#00707c primary</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#d8eded"></span>#d8eded selected</span>
+      </div>
+    </div>
+    <div class="mock">
+      <div class="sidebar">
+        <div class="nav-section">Pinned</div>
+        <div class="nav-item active"><span class="nav-dot"></span>Quotes</div>
+        <div class="nav-item">Customers</div>
+        <div class="nav-item">Recent</div>
+        <div class="nav-section">Tools</div>
+        <div class="nav-item">Preflight</div>
+        <div class="nav-item">Convert</div>
+        <div class="nav-item">Color Tools</div>
+      </div>
+      <div class="main-panel">
+        <div class="toolbar-row">
+          <button class="btn btn-primary">Convert</button>
+          <button class="btn btn-secondary">Preflight</button>
+          <span class="badge trial" style="margin-left:auto">Trial · 12 days</span>
+        </div>
+        <div class="file-item selected"><span class="file-icon pdf"></span><span class="file-name">brochure-A4-final.pdf</span><span class="file-size">2.4 MB</span></div>
+        <div class="file-item"><span class="file-icon psd"></span><span class="file-name">cover-design-v3.psd</span><span class="file-size">18.1 MB</span></div>
+        <div class="file-item"><span class="file-icon jpg"></span><span class="file-name">photo-shoot-001.jpg</span><span class="file-size">4.2 MB</span></div>
+        <div class="file-item"><span class="file-icon pdf"></span><span class="file-name">letterhead-print.pdf</span><span class="file-size">340 KB</span></div>
+      </div>
+      <div class="inspector">
+        <div style="font-size:13px;font-weight:500;margin-bottom:10px;">brochure-A4-final.pdf</div>
+        <div class="stat-row"><span class="stat-label">Format</span><span class="stat-value">PDF/X-1a</span></div>
+        <div class="stat-row"><span class="stat-label">Color</span><span class="stat-value">CMYK</span></div>
+        <div class="stat-row"><span class="stat-label">DPI</span><span class="stat-value">300</span></div>
+        <div class="stat-row"><span class="stat-label">Bleed</span><span class="stat-value">3 mm</span></div>
+        <div class="stat-row"><span class="stat-label">Pages</span><span class="stat-value">8</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ PALETTE 5: Teal + Orange (brand mix) ═══════════ -->
+  <div class="palette p5">
+    <div class="palette-header">
+      <div class="palette-name">5. Teal + Orange — Light <span style="color:#5a5a5a;font-weight:400;font-size:13px;">— brand mix</span></div>
+      <div class="palette-tagline">Light theme. Warm orange #d96a1f για CTAs, teal #00707c για selections. Συμπληρωματικά χρώματα + paper-like background.</div>
+      <div class="palette-hex">
+        <span class="swatch"><span class="swatch-dot" style="background:#fafaf7;border-color:#e6dfd0"></span>#fafaf7 bg</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#ffffff;border-color:#e6dfd0"></span>#ffffff surface</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#e6dfd0"></span>#e6dfd0 border</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#1a1a1a"></span>#1a1a1a text</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#d96a1f"></span>#d96a1f CTA</span>
+        <span class="swatch"><span class="swatch-dot" style="background:#00707c"></span>#00707c selection</span>
+      </div>
+    </div>
+    <div class="mock">
+      <div class="sidebar">
+        <div class="nav-section">Pinned</div>
+        <div class="nav-item active"><span class="nav-dot"></span>Quotes</div>
+        <div class="nav-item">Customers</div>
+        <div class="nav-item">Recent</div>
+        <div class="nav-section">Tools</div>
+        <div class="nav-item">Preflight</div>
+        <div class="nav-item">Convert</div>
+        <div class="nav-item">Color Tools</div>
+      </div>
+      <div class="main-panel">
+        <div class="toolbar-row">
+          <button class="btn btn-primary">Convert</button>
+          <button class="btn btn-secondary">Preflight</button>
+          <span class="badge trial" style="margin-left:auto">Trial · 12 days</span>
+        </div>
+        <div class="file-item selected"><span class="file-icon pdf"></span><span class="file-name">brochure-A4-final.pdf</span><span class="file-size">2.4 MB</span></div>
+        <div class="file-item"><span class="file-icon psd"></span><span class="file-name">cover-design-v3.psd</span><span class="file-size">18.1 MB</span></div>
+        <div class="file-item"><span class="file-icon jpg"></span><span class="file-name">photo-shoot-001.jpg</span><span class="file-size">4.2 MB</span></div>
+        <div class="file-item"><span class="file-icon pdf"></span><span class="file-name">letterhead-print.pdf</span><span class="file-size">340 KB</span></div>
+      </div>
+      <div class="inspector">
+        <div style="font-size:13px;font-weight:500;margin-bottom:10px;">brochure-A4-final.pdf</div>
+        <div class="stat-row"><span class="stat-label">Format</span><span class="stat-value">PDF/X-1a</span></div>
+        <div class="stat-row"><span class="stat-label">Color</span><span class="stat-value">CMYK</span></div>
+        <div class="stat-row"><span class="stat-label">DPI</span><span class="stat-value">300</span></div>
+        <div class="stat-row"><span class="stat-label">Bleed</span><span class="stat-value">3 mm</span></div>
+        <div class="stat-row"><span class="stat-label">Pages</span><span class="stat-value">8</span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
