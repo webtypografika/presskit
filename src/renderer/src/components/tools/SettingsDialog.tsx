@@ -123,6 +123,17 @@ function PresscalSettings() {
     }
   }
 
+  const disconnect = async () => {
+    if (!confirm('Αποσύνδεση από PressCal;\n\nΘα διαγραφούν URL και API key. Θα χρειαστεί να συνδεθείς ξανά για να χρησιμοποιήσεις το PressKit.')) return
+    await window.api.presscal.configure('', '')
+    setUrl('')
+    setApiKey('')
+    setTestResult(null)
+    useAppStore.setState({ presscalConnected: false, presscalOrgName: '' })
+    // Push a fresh license check so the LicenseGate immediately re-locks the app.
+    await window.api.license.refresh()
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       {/* Status */}
@@ -180,6 +191,20 @@ function PresscalSettings() {
         </button>
         {testResult === 'ok' && <span className="flex items-center gap-2" style={{ color: '#22c55e', fontSize: 14 }}><CheckCircle size={18} /> Connected</span>}
         {testResult === 'fail' && <span className="flex items-center gap-2" style={{ color: '#ef4444', fontSize: 14 }}><XCircle size={18} /> Failed</span>}
+
+        {(url || apiKey) && (
+          <button
+            onClick={disconnect}
+            style={{
+              marginLeft: 'auto',
+              padding: '10px 20px', borderRadius: 8, cursor: 'pointer',
+              background: 'transparent', color: '#ef4444',
+              border: '1px solid #ef4444', fontSize: 13, fontWeight: 500,
+            }}
+          >
+            Αποσύνδεση
+          </button>
+        )}
       </div>
     </div>
   )
