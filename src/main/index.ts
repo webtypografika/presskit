@@ -1,6 +1,7 @@
 import { app, BrowserWindow, shell, ipcMain, dialog, nativeTheme } from 'electron'
 import { join, resolve } from 'path'
 import { is } from '@electron-toolkit/utils'
+import iconAsset from '../../resources/icon.ico?asset'
 import { registerFileSystemHandlers } from './file-system'
 import { registerPreviewHandlers } from './preview-engine'
 import { registerPreflightHandlers } from './preflight-engine'
@@ -1003,6 +1004,12 @@ function createWindow(): void {
   const overlayColor = isLight ? '#e4e8ee' : '#0f1525'
   const symbolColor = isLight ? '#374151' : '#94a3b8'
 
+  // Without this, BrowserWindow falls back to the default Electron atom
+  // logo for the taskbar / window icon, even though electron-builder
+  // correctly stamps the rhino on the installer .exe.
+  // ?asset import is electron-vite's built-in pattern: dev → source path,
+  // prod → bundled output path.
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -1010,6 +1017,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     backgroundColor: bgColor,
+    icon: iconAsset,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: overlayColor,
