@@ -138,7 +138,7 @@ export function getFileTypeColor(type: FileType): string {
     document: '#64748b',
     spreadsheet: '#22c55e',
     archive: '#78716c',
-    folder: '#f58220',
+    folder: '#6ec8c8',
     unknown: '#64748b'
   }
   return colors[type] || '#64748b'
