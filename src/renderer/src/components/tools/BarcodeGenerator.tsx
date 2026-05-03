@@ -50,8 +50,8 @@ export function BarcodeGenerator() {
           <button key={t.id} onClick={() => { setType(t.id); setSvgOutput('') }} style={{
             flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600,
             border: 'none', cursor: 'pointer',
-            background: type === t.id ? 'rgba(245,130,32,0.15)' : 'transparent',
-            color: type === t.id ? '#f58220' : '#94a3b8',
+            background: type === t.id ? 'rgba(110,200,200,0.15)' : 'transparent',
+            color: type === t.id ? '#6ec8c8' : '#94a3b8',
           }}>
             {t.label}
           </button>
@@ -75,7 +75,7 @@ export function BarcodeGenerator() {
       {/* Generate button */}
       <button onClick={generate} disabled={!data.trim() || generating} style={{
         padding: '10px 16px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 600,
-        background: '#f58220', color: '#fff', cursor: 'pointer',
+        background: '#6ec8c8', color: '#fff', cursor: 'pointer',
         opacity: !data.trim() || generating ? 0.5 : 1,
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
       }}>
@@ -106,8 +106,8 @@ export function BarcodeGenerator() {
             </button>
             <button onClick={() => save('png')} style={{
               flex: 1, padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-              border: '1px solid #f58220', background: 'rgba(245,130,32,0.1)',
-              color: '#f58220', cursor: 'pointer',
+              border: '1px solid #6ec8c8', background: 'rgba(110,200,200,0.1)',
+              color: '#6ec8c8', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             }}>
               <Download size={13} /> Save PNG

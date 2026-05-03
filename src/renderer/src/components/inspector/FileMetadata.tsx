@@ -171,7 +171,7 @@ function FileNotes({ filePath }: { filePath: string }) {
             borderRadius: 8, color: 'var(--th-text-primary)', resize: 'vertical',
             outline: 'none', fontFamily: 'inherit', lineHeight: 1.5,
           }}
-          onFocus={e => e.currentTarget.style.borderColor = '#f58220'}
+          onFocus={e => e.currentTarget.style.borderColor = '#6ec8c8'}
           onBlur={e => e.currentTarget.style.borderColor = 'var(--th-border)'}
         />
         {!saved && (

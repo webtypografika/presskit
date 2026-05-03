@@ -381,7 +381,7 @@ function SidebarFolders() {
   return (
     <div className="border-b border-border" style={{ display: 'flex', flexDirection: 'column', maxHeight: '40vh' }}>
       <div style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <FolderOpen size={14} style={{ color: '#f58220' }} />
+        <FolderOpen size={14} style={{ color: '#6ec8c8' }} />
         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--th-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {folderName}
         </span>
@@ -399,14 +399,14 @@ function SidebarFolders() {
               padding: '7px 32px',
               cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: 8,
-              background: dropTarget === folder.path ? 'rgba(245,130,32,0.15)' : undefined,
-              outline: dropTarget === folder.path ? '2px dashed #f58220' : undefined,
+              background: dropTarget === folder.path ? 'rgba(110,200,200,0.15)' : undefined,
+              outline: dropTarget === folder.path ? '2px dashed #6ec8c8' : undefined,
               outlineOffset: -2,
             }}
             onMouseEnter={e => { if (dropTarget !== folder.path) e.currentTarget.style.background = 'var(--th-bg-hover)' }}
             onMouseLeave={e => { if (dropTarget !== folder.path) e.currentTarget.style.background = 'transparent' }}
           >
-            <Folder size={13} style={{ color: '#f58220' }} />
+            <Folder size={13} style={{ color: '#6ec8c8' }} />
             <span style={{
               fontSize: 12, color: 'var(--th-text-muted)',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,

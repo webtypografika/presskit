@@ -599,11 +599,11 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
               style={{
                 display: 'grid', gridTemplateColumns: colTemplate, alignItems: 'center',
                 padding: '6px 16px',
-                borderLeft: isSelected ? '2px solid #f58220' : '2px solid transparent',
+                borderLeft: isSelected ? '2px solid #6ec8c8' : '2px solid transparent',
                 background: dropTarget === file.path
-                  ? 'rgba(245,130,32,0.15)'
-                  : isSelected ? 'rgba(245,130,32,0.08)' : undefined,
-                outline: dropTarget === file.path ? '2px dashed #f58220' : undefined,
+                  ? 'rgba(110,200,200,0.15)'
+                  : isSelected ? 'rgba(110,200,200,0.08)' : undefined,
+                outline: dropTarget === file.path ? '2px dashed #6ec8c8' : undefined,
                 outlineOffset: -2,
               }}
             >
@@ -615,7 +615,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
                   cursor: file.isDirectory ? 'default' : 'pointer',
                   ...((!file.isDirectory && pickedFiles.has(file.name)) ? {
                     borderStyle: 'solid', borderWidth: '6px 6px 0 0',
-                    borderColor: '#f58220 #f58220 transparent transparent',
+                    borderColor: '#6ec8c8 #6ec8c8 transparent transparent',
                     borderRadius: '2px 0 0 0',
                   } : {}),
                 }}
@@ -731,13 +731,13 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
             style={{
               padding: 4,
               border: dropTarget === file.path
-                ? '2px dashed #f58220'
+                ? '2px dashed #6ec8c8'
                 : (selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path))
-                  ? '1px solid #f58220' : '1px solid transparent',
+                  ? '1px solid #6ec8c8' : '1px solid transparent',
               background: dropTarget === file.path
-                ? 'rgba(245,130,32,0.15)'
+                ? 'rgba(110,200,200,0.15)'
                 : selectedFiles.some(f => f.path === file.path)
-                  ? 'rgba(245,130,32,0.08)' : 'transparent',
+                  ? 'rgba(110,200,200,0.08)' : 'transparent',
               borderRadius: 10,
             }}
           >
@@ -950,7 +950,7 @@ function NewFolderInput({ defaultName, onSubmit, onCancel, viewMode, thumbnailSi
           onKeyDown={handleKeyDown}
           onBlur={() => onSubmit(inputRef.current?.value || '')}
           style={{
-            width: '100%', border: '1px solid #f58220', borderRadius: 4,
+            width: '100%', border: '1px solid #6ec8c8', borderRadius: 4,
             padding: '2px 6px', fontSize: 12, outline: 'none', textAlign: 'center',
             background: 'var(--th-bg-primary)', color: 'var(--th-text-primary)',
           }}
@@ -983,7 +983,7 @@ function PickBadge({ picked, onClick }: { picked: boolean; onClick: (e: React.Mo
         width: 0, height: 0,
         borderStyle: 'solid',
         borderWidth: '0 22px 22px 0',
-        borderColor: `transparent ${picked ? '#f58220' : 'rgba(100,100,100,0.5)'} transparent transparent`,
+        borderColor: `transparent ${picked ? '#6ec8c8' : 'rgba(100,100,100,0.5)'} transparent transparent`,
       }} />
     </div>
   )
@@ -1063,7 +1063,7 @@ function RenameInput({ name, onSubmit, onCancel }: {
       onClick={e => e.stopPropagation()}
       onDoubleClick={e => e.stopPropagation()}
       style={{
-        width: '100%', border: '1px solid #f58220', borderRadius: 4,
+        width: '100%', border: '1px solid #6ec8c8', borderRadius: 4,
         padding: '2px 6px', fontSize: 12, outline: 'none', textAlign: 'inherit',
         background: 'var(--th-bg-primary)', color: 'var(--th-text-primary)',
       }}
@@ -1090,7 +1090,7 @@ function ResizableHeader({ label, onResize, align }: {
           cursor: 'col-resize', zIndex: 2,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
-        onMouseEnter={e => { const line = e.currentTarget.firstElementChild as HTMLElement; if (line) line.style.background = '#f58220' }}
+        onMouseEnter={e => { const line = e.currentTarget.firstElementChild as HTMLElement; if (line) line.style.background = '#6ec8c8' }}
         onMouseLeave={e => { const line = e.currentTarget.firstElementChild as HTMLElement; if (line) line.style.background = 'var(--th-border)' }}
       >
         <span style={{

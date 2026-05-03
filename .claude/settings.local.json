@@ -36,7 +36,16 @@
       "Read(//c/Users/info/Dropbox/presscal-filehelper/$PROGRAMFILES/**)",
       "Bash(npx asar:*)",
       "Bash(sleep:*)",
-      "Bash(npx electron-vite:*)"
+      "Bash(npx electron-vite:*)",
+      "Bash(npm install:*)",
+      "Bash(cmd //c \"rmdir /s /q C:\\\\Users\\\\info\\\\Dropbox\\\\presscal-filehelper\\\\dist\" 2>&1)",
+      "Bash(cmd //c \"rmdir /s /q C:\\\\Users\\\\info\\\\Dropbox\\\\presscal-filehelper\\\\dist\" 2>&1 && cd \"C:\\\\Users\\\\info\\\\Dropbox\\\\presscal-filehelper\" && npm run package 2>&1)",
+      "Bash(cmd //c \"rmdir /s /q C:\\\\Users\\\\info\\\\Dropbox\\\\presscal-filehelper\\\\dist\" 2>&1 ; cd \"C:\\\\Users\\\\info\\\\Dropbox\\\\presscal-filehelper\" && npm run package 2>&1)",
+      "Bash(npx electron-builder:*)",
+      "Bash(wmic process:*)",
+      "Bash(cat:*)",
+      "Bash(echo:*)",
+      "Bash(python:*)"
     ]
   }
 }

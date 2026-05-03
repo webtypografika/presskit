@@ -1,0 +1,608 @@
+import { IpcMain, dialog, BrowserWindow, app } from 'electron'
+import { readFile, writeFile, stat, access } from 'fs/promises'
+import { extname, basename, dirname, join } from 'path'
+import { existsSync, readdirSync } from 'fs'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
+import { isRawExtension, extractRawPreview } from './raw-preview'
+
+const execFileAsync = promisify(execFile)
+
+// Disable sharp's file cache on Windows to avoid EPERM on delete/rename
+import('sharp').then(m => m.default.cache(false)).catch(() => {})
+
+export interface ConvertOptions {
+  // Target format
+  format: 'tiff' | 'png' | 'jpg' | 'pdf'
+  // Color space conversion
+  colorSpace?: 'cmyk' | 'srgb' | 'keep'
+  // Resolution
+  dpi?: number
+  // Quality (for jpg)
+  quality?: number
+  // Flatten transparency
+  flatten?: boolean
+  // Resize
+  maxWidth?: number
+  maxHeight?: number
+  // Use TrimBox instead of MediaBox (crops bleed/cropmarks)
+  useTrimBox?: boolean
+}
+
+// ─── Ghostscript detection ───────────────────────────────────────────
+
+let gsPath: string | null = null
+
+function findGhostscript(): string | null {
+  if (gsPath) return gsPath
+
+  // System install (user must install Ghostscript separately)
+  const programFiles = process.env['ProgramFiles'] || 'C:\\Program Files'
+  const gsRoot = join(programFiles, 'gs')
+  if (existsSync(gsRoot)) {
+    try {
+      const versions = readdirSync(gsRoot, { withFileTypes: true })
+        .filter(d => d.isDirectory() && d.name.startsWith('gs'))
+        .sort((a, b) => b.name.localeCompare(a.name)) // newest first
+      for (const ver of versions) {
+        const exe = join(gsRoot, ver.name, 'bin', 'gswin64c.exe')
+        if (existsSync(exe)) {
+          gsPath = exe
+          return gsPath
+        }
+      }
+    } catch {}
+  }
+
+  return null
+}
+
+// ─── PDF box reading ────────────────────────────────────────────────
+
+async function getPdfBoxes(inputPath: string): Promise<{ mediaBox: number[], trimBox: number[] } | null> {
+  try {
+    const { PDFDocument } = await import('pdf-lib')
+    const data = await readFile(inputPath)
+    const pdf = await PDFDocument.load(data, { ignoreEncryption: true })
+    const page = pdf.getPage(0)
+    const media = page.getMediaBox()
+    const trim = page.getTrimBox()
+    return {
+      mediaBox: [media.x, media.y, media.width, media.height],
+      trimBox: [trim.x, trim.y, trim.width, trim.height]
+    }
+  } catch {
+    return null
+  }
+}
+
+// ─── Crop image to TrimBox ──────────────────────────────────────────
+
+async function cropToTrimBox(
+  imagePath: string,
+  boxes: { mediaBox: number[], trimBox: number[] },
+  options: ConvertOptions
+): Promise<void> {
+  const [mx, my, mw, mh] = boxes.mediaBox
+  const [tx, ty, tw, th] = boxes.trimBox
+
+  // If TrimBox equals MediaBox, nothing to crop
+  if (Math.abs(tw - mw) < 0.5 && Math.abs(th - mh) < 0.5) return
+
+  const sharp = (await import('sharp')).default
+  const meta = await sharp(imagePath).metadata()
+  if (!meta.width || !meta.height) return
+
+  // Convert PDF points to pixel coordinates
+  const scaleX = meta.width / mw
+  const scaleY = meta.height / mh
+
+  // TrimBox origin is bottom-left in PDF, but pixels are top-left
+  const left = Math.round((tx - mx) * scaleX)
+  const top = Math.round((my + mh - ty - th) * scaleY)
+  const width = Math.round(tw * scaleX)
+  const height = Math.round(th * scaleY)
+
+  // Clamp to image bounds
+  const cropLeft = Math.max(0, left)
+  const cropTop = Math.max(0, top)
+  const cropWidth = Math.min(width, meta.width - cropLeft)
+  const cropHeight = Math.min(height, meta.height - cropTop)
+
+  if (cropWidth <= 0 || cropHeight <= 0) return
+
+  let pipeline = sharp(imagePath).extract({
+    left: cropLeft, top: cropTop, width: cropWidth, height: cropHeight
+  })
+
+  // Re-encode in the same format
+  switch (options.format) {
+    case 'tiff':
+      pipeline = pipeline.tiff({ compression: 'lzw' })
+      break
+    case 'png':
+      pipeline = pipeline.png({ compressionLevel: 6 })
+      break
+    case 'jpg':
+      pipeline = pipeline.jpeg({ quality: options.quality || 95 })
+      break
+  }
+
+  const buf = await pipeline.toBuffer()
+  await writeFile(imagePath, buf)
+}
+
+// ─── Ghostscript PDF conversion ──────────────────────────────────────
+
+async function convertPdfWithGs(inputPath: string, outputPath: string, options: ConvertOptions): Promise<ConvertResult> {
+  const gs = findGhostscript()
+  if (!gs) {
+    return { success: false, inputPath, outputPath: '', inputSize: 0, outputSize: 0, error: 'Ghostscript not found' }
+  }
+
+  const dpi = options.dpi || 300
+  const args: string[] = [
+    '-dNOPAUSE', '-dBATCH', '-dSAFER', '-dQUIET',
+    `-r${dpi}`,
+  ]
+
+  if (options.format === 'pdf') {
+    // PDF → flat PDF
+    args.push(
+      '-sDEVICE=pdfwrite',
+      '-dCompatibilityLevel=1.4',
+      '-dHaveTransparency=false',
+    )
+    // UseTrimBox is well-supported with pdfwrite
+    if (options.useTrimBox) {
+      args.push('-dUseTrimBox')
+    }
+    if (options.colorSpace === 'cmyk') {
+      args.push(
+        '-sColorConversionStrategy=CMYK',
+        '-dProcessColorModel=/DeviceCMYK',
+      )
+    } else if (options.colorSpace === 'srgb') {
+      args.push(
+        '-sColorConversionStrategy=sRGB',
+        '-dProcessColorModel=/DeviceRGB',
+      )
+    }
+  } else {
+    // PDF → image
+    // CMYK is only reliably supported in TIFF — JPG/PNG don't support CMYK,
+    // so we ignore the CMYK request and render in RGB for those formats.
+    let device: string
+    switch (options.format) {
+      case 'tiff':
+        device = options.colorSpace === 'cmyk' ? 'tiff32nc' : 'tiff24nc'
+        args.push(`-sCompression=lzw`)
+        break
+      case 'png':
+        device = 'png16m'
+        break
+      case 'jpg':
+        device = 'jpeg'
+        args.push(`-dJPEGQ=${options.quality || 95}`)
+        break
+      default:
+        device = 'png16m'
+    }
+    args.push(`-sDEVICE=${device}`)
+  }
+
+  args.push(`-sOutputFile=${outputPath}`, inputPath)
+
+  console.log('[CONVERT] GS command:', gs, args.join(' '))
+
+  try {
+    const gsResult = await execFileAsync(gs, args, { timeout: 120000 })
+    if (gsResult.stderr) console.warn('[CONVERT] GS stderr:', gsResult.stderr)
+    console.log('[CONVERT] GS done, checking output:', gsOutputPath)
+
+    // For raster output, crop to TrimBox using sharp (more reliable than GS flag)
+    if (options.useTrimBox && options.format !== 'pdf') {
+      try {
+        const boxes = await getPdfBoxes(inputPath)
+        if (boxes) {
+          await cropToTrimBox(outputPath, boxes, options)
+        }
+      } catch (cropErr) {
+        console.warn('TrimBox crop failed, keeping full page:', cropErr)
+      }
+    }
+
+    const outputStats = await stat(outputPath)
+    return {
+      success: true,
+      inputPath,
+      outputPath,
+      inputSize: 0,
+      outputSize: outputStats.size,
+    }
+  } catch (err: any) {
+    return {
+      success: false,
+      inputPath,
+      outputPath: '',
+      inputSize: 0,
+      outputSize: 0,
+      error: err.stderr || err.message || 'Ghostscript conversion failed',
+    }
+  }
+}
+
+export interface ConvertResult {
+  success: boolean
+  inputPath: string
+  outputPath: string
+  inputSize: number
+  outputSize: number
+  error?: string
+}
+
+export function registerConvertHandlers(ipcMain: IpcMain): void {
+  // Convert a single file
+  ipcMain.handle('convert:file', async (_e, inputPath: string, options: ConvertOptions): Promise<ConvertResult> => {
+    console.log('[CONVERT] options:', JSON.stringify(options))
+    console.log('[CONVERT] input:', inputPath)
+    try {
+      const ext = extname(inputPath).toLowerCase()
+      const name = basename(inputPath, ext)
+      const dir = dirname(inputPath)
+      const outputExt = '.' + options.format
+      const outputPath = join(dir, `${name}_converted${outputExt}`)
+
+      const inputStats = await (await import('fs/promises')).stat(inputPath)
+
+      // PDF/AI/EPS → via Ghostscript
+      if (['.pdf', '.ai', '.eps'].includes(ext)) {
+        const result = await convertPdfWithGs(inputPath, outputPath, options)
+        return { ...result, inputSize: inputStats.size }
+      }
+
+      // PSD → Image conversion
+      if (['.psd', '.psb'].includes(ext)) {
+        const result = await convertPsd(inputPath, outputPath, options)
+        return { ...result, inputSize: inputStats.size }
+      }
+
+      // RAW camera files — extract embedded JPEG, then convert
+      if (isRawExtension(ext)) {
+        const result = await convertRaw(inputPath, outputPath, options)
+        return { ...result, inputSize: inputStats.size }
+      }
+
+      // Image → Image conversion (using sharp)
+      if (['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.bmp', '.gif'].includes(ext)) {
+        const result = await convertImage(inputPath, outputPath, options)
+        return { ...result, inputSize: inputStats.size }
+      }
+
+      return {
+        success: false,
+        inputPath,
+        outputPath: '',
+        inputSize: inputStats.size,
+        outputSize: 0,
+        error: `Unsupported input format: ${ext}`
+      }
+    } catch (err: any) {
+      return {
+        success: false,
+        inputPath,
+        outputPath: '',
+        inputSize: 0,
+        outputSize: 0,
+        error: err.message || 'Conversion failed'
+      }
+    }
+  })
+
+  // Batch convert
+  ipcMain.handle('convert:batch', async (event, filePaths: string[], options: ConvertOptions) => {
+    const results: ConvertResult[] = []
+
+    for (let i = 0; i < filePaths.length; i++) {
+      event.sender.send('batch:progress', {
+        current: i + 1,
+        total: filePaths.length,
+        file: filePaths[i],
+        phase: 'convert'
+      })
+
+      try {
+        const ext = extname(filePaths[i]).toLowerCase()
+        const name = basename(filePaths[i], ext)
+        const dir = dirname(filePaths[i])
+        const outputPath = join(dir, `${name}_converted.${options.format}`)
+        const inputStats = await (await import('fs/promises')).stat(filePaths[i])
+
+        let result: ConvertResult
+
+        if (['.pdf', '.ai', '.eps'].includes(ext)) {
+          result = await convertPdfWithGs(filePaths[i], outputPath, options)
+        } else if (['.psd', '.psb'].includes(ext)) {
+          result = await convertPsd(filePaths[i], outputPath, options)
+        } else if (isRawExtension(ext)) {
+          result = await convertRaw(filePaths[i], outputPath, options)
+        } else {
+          result = await convertImage(filePaths[i], outputPath, options)
+        }
+
+        results.push({ ...result, inputSize: inputStats.size })
+      } catch (err: any) {
+        results.push({
+          success: false,
+          inputPath: filePaths[i],
+          outputPath: '',
+          inputSize: 0,
+          outputSize: 0,
+          error: err.message
+        })
+      }
+    }
+
+    return results
+  })
+
+  // Check Ghostscript availability
+  ipcMain.handle('convert:hasGhostscript', () => !!findGhostscript())
+
+  // Save dialog for output
+  ipcMain.handle('convert:saveDialog', async (_e, defaultName: string) => {
+    const result = await dialog.showSaveDialog({
+      defaultPath: defaultName,
+      filters: [
+        { name: 'TIFF', extensions: ['tif', 'tiff'] },
+        { name: 'PNG', extensions: ['png'] },
+        { name: 'JPEG', extensions: ['jpg', 'jpeg'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+    return result.canceled ? null : result.filePath
+  })
+}
+
+async function convertImage(inputPath: string, outputPath: string, options: ConvertOptions): Promise<ConvertResult> {
+  const sharp = (await import('sharp')).default
+
+  // CMYK + flatten needs two passes: flatten resets Sharp's pipeline to RGB,
+  // so we flatten first to a buffer, then convert colorspace on a fresh pipeline.
+  const needsTwoPass = options.colorSpace === 'cmyk' && options.flatten
+
+  let inputBuffer: Buffer | string = inputPath
+
+  // Pass 1: flatten transparency (if CMYK two-pass)
+  if (needsTwoPass) {
+    let flatPipeline = sharp(inputPath).flatten({ background: { r: 255, g: 255, b: 255 } })
+    if (options.maxWidth || options.maxHeight) {
+      flatPipeline = flatPipeline.resize(options.maxWidth || undefined, options.maxHeight || undefined, {
+        fit: 'inside', withoutEnlargement: true
+      })
+    }
+    inputBuffer = await flatPipeline.png().toBuffer() // lossless intermediate
+  }
+
+  // Pass 2 (or single pass if no two-pass needed)
+  let pipeline = sharp(inputBuffer)
+
+  // Color space conversion
+  if (options.colorSpace === 'cmyk') {
+    pipeline = pipeline.toColorspace('cmyk')
+  } else if (options.colorSpace === 'srgb') {
+    pipeline = pipeline.toColorspace('srgb')
+  }
+
+  // Flatten transparency (single-pass path: no CMYK conflict)
+  if (options.flatten && !needsTwoPass) {
+    pipeline = pipeline.flatten({ background: { r: 255, g: 255, b: 255 } })
+  }
+
+  // Resize (single-pass path)
+  if (!needsTwoPass && (options.maxWidth || options.maxHeight)) {
+    pipeline = pipeline.resize(options.maxWidth || undefined, options.maxHeight || undefined, {
+      fit: 'inside',
+      withoutEnlargement: true
+    })
+  }
+
+  // Output format
+  switch (options.format) {
+    case 'tiff':
+      pipeline = pipeline.tiff({
+        compression: 'lzw',
+        xres: options.dpi || 300,
+        yres: options.dpi || 300
+      })
+      break
+    case 'png':
+      pipeline = pipeline.png({ compressionLevel: 6 })
+      break
+    case 'jpg':
+      pipeline = pipeline.jpeg({ quality: options.quality || 95 })
+      break
+  }
+
+  // DPI metadata
+  if (options.dpi) {
+    pipeline = pipeline.withMetadata({ density: options.dpi })
+  }
+
+  const outputBuffer = await pipeline.toBuffer()
+  await writeFile(outputPath, outputBuffer)
+
+  // Verify output colorspace
+  const outMeta = await sharp(outputBuffer).metadata()
+  console.log('[CONVERT] output verify:', outMeta.space, outMeta.channels, 'ch', outMeta.width, 'x', outMeta.height)
+
+  return {
+    success: true,
+    inputPath,
+    outputPath,
+    inputSize: 0,
+    outputSize: outputBuffer.length
+  }
+}
+
+async function convertRaw(inputPath: string, outputPath: string, options: ConvertOptions): Promise<ConvertResult> {
+  const jpegBuffer = await extractRawPreview(inputPath)
+  if (!jpegBuffer) {
+    return {
+      success: false,
+      inputPath,
+      outputPath,
+      inputSize: 0,
+      outputSize: 0,
+      error: 'Could not extract preview from RAW file'
+    }
+  }
+
+  const sharp = (await import('sharp')).default
+  const needsTwoPass = options.colorSpace === 'cmyk' && options.flatten
+
+  let inputBuf: Buffer = jpegBuffer
+
+  // Two-pass for CMYK + flatten (flatten resets pipeline to RGB)
+  if (needsTwoPass) {
+    let flatPipeline = sharp(jpegBuffer).flatten({ background: { r: 255, g: 255, b: 255 } })
+    if (options.maxWidth || options.maxHeight) {
+      flatPipeline = flatPipeline.resize(options.maxWidth || undefined, options.maxHeight || undefined, {
+        fit: 'inside', withoutEnlargement: true
+      })
+    }
+    inputBuf = await flatPipeline.png().toBuffer()
+  }
+
+  let pipeline = sharp(inputBuf)
+
+  if (options.colorSpace === 'cmyk') {
+    pipeline = pipeline.toColorspace('cmyk')
+  } else if (options.colorSpace === 'srgb') {
+    pipeline = pipeline.toColorspace('srgb')
+  }
+
+  if (options.flatten && !needsTwoPass) {
+    pipeline = pipeline.flatten({ background: { r: 255, g: 255, b: 255 } })
+  }
+
+  if (!needsTwoPass && (options.maxWidth || options.maxHeight)) {
+    pipeline = pipeline.resize(options.maxWidth || undefined, options.maxHeight || undefined, {
+      fit: 'inside',
+      withoutEnlargement: true
+    })
+  }
+
+  switch (options.format) {
+    case 'tiff':
+      pipeline = pipeline.tiff({
+        compression: 'lzw',
+        xres: options.dpi || 300,
+        yres: options.dpi || 300
+      })
+      break
+    case 'png':
+      pipeline = pipeline.png({ compressionLevel: 6 })
+      break
+    case 'jpg':
+      pipeline = pipeline.jpeg({ quality: options.quality || 95 })
+      break
+  }
+
+  if (options.dpi) {
+    pipeline = pipeline.withMetadata({ density: options.dpi })
+  }
+
+  const outputBuffer = await pipeline.toBuffer()
+  await writeFile(outputPath, outputBuffer)
+
+  return {
+    success: true,
+    inputPath,
+    outputPath,
+    inputSize: 0,
+    outputSize: outputBuffer.length
+  }
+}
+
+async function convertPsd(inputPath: string, outputPath: string, options: ConvertOptions): Promise<ConvertResult> {
+  const { readPsd } = await import('ag-psd')
+  const sharp = (await import('sharp')).default
+
+  const buffer = await readFile(inputPath)
+  const psd = readPsd(buffer, { skipLayerImageData: true })
+
+  if (!psd.imageData) {
+    return {
+      success: false,
+      inputPath,
+      outputPath,
+      inputSize: 0,
+      outputSize: 0,
+      error: 'PSD has no composite image data'
+    }
+  }
+
+  const rawInput = Buffer.from(psd.imageData.data.buffer)
+  const rawOpts = { raw: { width: psd.width, height: psd.height, channels: 4 as const } }
+  const needsTwoPass = options.colorSpace === 'cmyk' && options.flatten
+
+  let inputBuf: Buffer | { data: Buffer; info: typeof rawOpts } = rawInput
+
+  // Two-pass for CMYK + flatten (flatten resets pipeline to RGB)
+  if (needsTwoPass) {
+    let flatPipeline = sharp(rawInput, rawOpts).flatten({ background: { r: 255, g: 255, b: 255 } })
+    if (options.maxWidth || options.maxHeight) {
+      flatPipeline = flatPipeline.resize(options.maxWidth, options.maxHeight, {
+        fit: 'inside', withoutEnlargement: true
+      })
+    }
+    inputBuf = await flatPipeline.png().toBuffer()
+  }
+
+  let pipeline = needsTwoPass
+    ? sharp(inputBuf as Buffer)
+    : sharp(rawInput, rawOpts)
+
+  if (options.colorSpace === 'cmyk') {
+    pipeline = pipeline.toColorspace('cmyk')
+  }
+
+  if (options.flatten && !needsTwoPass) {
+    pipeline = pipeline.flatten({ background: { r: 255, g: 255, b: 255 } })
+  }
+
+  if (!needsTwoPass && (options.maxWidth || options.maxHeight)) {
+    pipeline = pipeline.resize(options.maxWidth, options.maxHeight, {
+      fit: 'inside',
+      withoutEnlargement: true
+    })
+  }
+
+  switch (options.format) {
+    case 'tiff':
+      pipeline = pipeline.tiff({ compression: 'lzw', xres: options.dpi || 300, yres: options.dpi || 300 })
+      break
+    case 'png':
+      pipeline = pipeline.png({ compressionLevel: 6 })
+      break
+    case 'jpg':
+      pipeline = pipeline.jpeg({ quality: options.quality || 95 })
+      break
+  }
+
+  if (options.dpi) {
+    pipeline = pipeline.withMetadata({ density: options.dpi })
+  }
+
+  const outputBuffer = await pipeline.toBuffer()
+  await writeFile(outputPath, outputBuffer)
+
+  return {
+    success: true,
+    inputPath,
+    outputPath,
+    inputSize: 0,
+    outputSize: outputBuffer.length
+  }
+}

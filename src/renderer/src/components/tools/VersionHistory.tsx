@@ -46,7 +46,7 @@ export function VersionHistory() {
   if (loading) {
     return (
       <div style={{ padding: 20, textAlign: 'center' }}>
-        <Loader2 size={20} className="animate-spin" style={{ color: '#f58220', margin: '0 auto 8px' }} />
+        <Loader2 size={20} className="animate-spin" style={{ color: '#6ec8c8', margin: '0 auto 8px' }} />
       </div>
     )
   }
@@ -74,8 +74,8 @@ export function VersionHistory() {
           key={v.path}
           style={{
             padding: '10px 12px', borderRadius: 8,
-            background: v.isCurrent ? 'rgba(245,130,32,0.08)' : 'var(--th-bg-primary)',
-            border: `1px solid ${v.isCurrent ? 'rgba(245,130,32,0.3)' : 'var(--th-border)'}`,
+            background: v.isCurrent ? 'rgba(110,200,200,0.08)' : 'var(--th-bg-primary)',
+            border: `1px solid ${v.isCurrent ? 'rgba(110,200,200,0.3)' : 'var(--th-border)'}`,
             display: 'flex', alignItems: 'center', gap: 10,
             cursor: 'pointer',
           }}
@@ -98,8 +98,8 @@ export function VersionHistory() {
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
             <div style={{
               width: 10, height: 10, borderRadius: '50%',
-              background: v.isCurrent ? '#f58220' : i === 0 ? '#22c55e' : '#475569',
-              border: `2px solid ${v.isCurrent ? '#f58220' : i === 0 ? '#22c55e' : '#475569'}`,
+              background: v.isCurrent ? '#6ec8c8' : i === 0 ? '#22c55e' : '#475569',
+              border: `2px solid ${v.isCurrent ? '#6ec8c8' : i === 0 ? '#22c55e' : '#475569'}`,
             }} />
             {i < versions.length - 1 && (
               <div style={{ width: 2, height: 20, background: '#1e293b' }} />
@@ -108,16 +108,16 @@ export function VersionHistory() {
 
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <FileText size={13} style={{ color: v.isCurrent ? '#f58220' : '#64748b', flexShrink: 0 }} />
+              <FileText size={13} style={{ color: v.isCurrent ? '#6ec8c8' : '#64748b', flexShrink: 0 }} />
               <span style={{
                 fontSize: 13, fontWeight: v.isCurrent ? 600 : 400,
-                color: v.isCurrent ? '#f58220' : 'var(--th-text-primary)',
+                color: v.isCurrent ? '#6ec8c8' : 'var(--th-text-primary)',
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>
                 {v.name}
               </span>
               {v.isCurrent && (
-                <span style={{ fontSize: 10, color: '#f58220', background: 'rgba(245,130,32,0.1)', padding: '1px 6px', borderRadius: 4 }}>current</span>
+                <span style={{ fontSize: 10, color: '#6ec8c8', background: 'rgba(110,200,200,0.1)', padding: '1px 6px', borderRadius: 4 }}>current</span>
               )}
             </div>
             <div style={{ fontSize: 11, color: '#64748b', display: 'flex', gap: 8, marginTop: 2 }}>

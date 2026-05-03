@@ -521,7 +521,7 @@ export default function App() {
           boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-            <Loader2 size={16} style={{ color: '#f58220', animation: 'spin 1s linear infinite' }} />
+            <Loader2 size={16} style={{ color: '#6ec8c8', animation: 'spin 1s linear infinite' }} />
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--th-text-primary, #e2e8f0)' }}>
               Λήψη αρχείων...
             </span>
@@ -536,7 +536,7 @@ export default function App() {
                 overflow: 'hidden',
               }}>
                 <div style={{
-                  height: '100%', borderRadius: 2, background: '#f58220',
+                  height: '100%', borderRadius: 2, background: '#6ec8c8',
                   width: `${Math.round((dlProgress.current / dlProgress.total) * 100)}%`,
                   transition: 'width 0.3s ease',
                 }} />

@@ -115,7 +115,7 @@ export function EmailAttach() {
                 opacity: excludedPaths.has(f.path) ? 0.4 : 1,
               }}
             >
-              <Paperclip size={12} style={{ color: '#f58220', flexShrink: 0 }} />
+              <Paperclip size={12} style={{ color: '#6ec8c8', flexShrink: 0 }} />
               <span style={{ fontSize: 12, color: 'var(--th-text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {f.name}
               </span>
@@ -137,7 +137,7 @@ export function EmailAttach() {
       {/* Preflight report */}
       {preflight && (
         <label className="flex items-center cursor-pointer" style={{ gap: 8, padding: '6px 10px', borderRadius: 6 }}>
-          <input type="checkbox" checked={includePreflight} onChange={e => setIncludePreflight(e.target.checked)} style={{ width: 14, height: 14, accentColor: '#f58220' }} />
+          <input type="checkbox" checked={includePreflight} onChange={e => setIncludePreflight(e.target.checked)} style={{ width: 14, height: 14, accentColor: '#6ec8c8' }} />
           <FileText size={12} style={{ color: 'var(--th-text-muted)' }} />
           <span style={{ fontSize: 12, color: 'var(--th-text-secondary)' }}>Preflight report ({preflight.overallStatus})</span>
         </label>
@@ -192,7 +192,7 @@ export function EmailAttach() {
         style={{
           width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
           gap: 8, padding: '10px 16px', borderRadius: 8, border: 'none',
-          background: sent ? '#22c55e' : '#f58220', color: '#fff',
+          background: sent ? '#22c55e' : '#6ec8c8', color: '#fff',
           fontSize: 13, fontWeight: 600, cursor: sending ? 'default' : 'pointer',
           opacity: (sending || !to || !subject) ? 0.5 : 1,
         }}

@@ -26,11 +26,11 @@ export function AppDialog() {
             className="flex items-center justify-center rounded-lg"
             style={{
               width: 36, height: 36,
-              background: isChoice ? 'rgba(245,130,32,0.12)' : 'rgba(239,68,68,0.12)',
+              background: isChoice ? 'rgba(110,200,200,0.12)' : 'rgba(239,68,68,0.12)',
             }}
           >
             {isChoice
-              ? <HelpCircle size={20} style={{ color: '#f58220' }} />
+              ? <HelpCircle size={20} style={{ color: '#6ec8c8' }} />
               : <AlertTriangle size={20} style={{ color: '#ef4444' }} />
             }
           </div>
@@ -91,7 +91,7 @@ function DialogButton({ label, primary, danger, onClick, autoFocus }: {
   const bg = danger
     ? '#ef4444'
     : primary
-      ? '#f58220'
+      ? '#6ec8c8'
       : 'var(--th-bg-primary)'
   const color = (primary || danger) ? '#fff' : 'var(--th-text-secondary)'
   const border = (primary || danger) ? 'none' : '1px solid var(--th-border)'

@@ -70,8 +70,8 @@ export function FileBrowser() {
       {pickFileMode && (
         <div style={{
           padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10,
-          background: linked ? 'rgba(34,197,94,0.1)' : 'rgba(245,130,32,0.1)',
-          borderBottom: `1px solid ${linked ? 'rgba(34,197,94,0.3)' : 'rgba(245,130,32,0.3)'}`,
+          background: linked ? 'rgba(34,197,94,0.1)' : 'rgba(110,200,200,0.1)',
+          borderBottom: `1px solid ${linked ? 'rgba(34,197,94,0.3)' : 'rgba(110,200,200,0.3)'}`,
           flexShrink: 0,
         }}>
           {linked ? (
@@ -81,18 +81,18 @@ export function FileBrowser() {
             </>
           ) : linking ? (
             <>
-              <Loader2 size={16} className="animate-spin" style={{ color: '#f58220' }} />
-              <span style={{ fontSize: 13, color: '#f58220', flex: 1 }}>Σύνδεση...</span>
+              <Loader2 size={16} className="animate-spin" style={{ color: '#6ec8c8' }} />
+              <span style={{ fontSize: 13, color: '#6ec8c8', flex: 1 }}>Σύνδεση...</span>
             </>
           ) : (
             <>
-              <Link2 size={16} style={{ color: '#f58220' }} />
-              <span style={{ fontSize: 13, color: '#f58220', fontWeight: 600, flex: 1 }}>
+              <Link2 size={16} style={{ color: '#6ec8c8' }} />
+              <span style={{ fontSize: 13, color: '#6ec8c8', fontWeight: 600, flex: 1 }}>
                 Επιλέξτε αρχείο για σύνδεση με είδος προσφοράς
               </span>
               <button
                 onClick={() => useAppStore.setState({ pickFileMode: null })}
-                style={{ border: 'none', background: 'transparent', color: '#f58220', cursor: 'pointer' }}
+                style={{ border: 'none', background: 'transparent', color: '#6ec8c8', cursor: 'pointer' }}
               >
                 <X size={16} />
               </button>
@@ -241,7 +241,7 @@ function NewFolderInline({ onSubmit, onCancel }: { onSubmit: (name: string) => v
         }}
         onBlur={() => onSubmit(inputRef.current?.value || '')}
         style={{
-          width: 200, border: '1px solid #f58220', borderRadius: 4,
+          width: 200, border: '1px solid #6ec8c8', borderRadius: 4,
           padding: '4px 8px', fontSize: 12, outline: 'none',
           background: 'var(--th-bg-primary)', color: 'var(--th-text-primary)',
         }}

@@ -183,7 +183,7 @@ function PresscalSettings() {
           disabled={testing || !url || !apiKey}
           style={{
             padding: '12px 32px', borderRadius: 8, border: 'none', cursor: 'pointer',
-            background: '#f58220', color: '#fff', fontSize: 14, fontWeight: 600,
+            background: '#6ec8c8', color: '#fff', fontSize: 14, fontWeight: 600,
             opacity: (testing || !url || !apiKey) ? 0.5 : 1,
           }}
         >
@@ -256,7 +256,7 @@ function DropboxSettings() {
           <button onClick={connect} disabled={connecting || !clientId}
             style={{
               padding: '12px 32px', borderRadius: 8, border: 'none', cursor: 'pointer',
-              background: '#f58220', color: '#fff', fontSize: 14, fontWeight: 600,
+              background: '#6ec8c8', color: '#fff', fontSize: 14, fontWeight: 600,
               opacity: (connecting || !clientId) ? 0.5 : 1,
             }}>
             {connecting ? 'Connecting...' : 'Connect Dropbox'}
@@ -322,14 +322,14 @@ function PreflightSettings() {
 
       <Field>
         <label className="flex items-center cursor-pointer" style={{ gap: 12 }} onClick={() => { setRequireCmyk(!requireCmyk); setTimeout(save, 0) }}>
-          <input type="checkbox" checked={requireCmyk} readOnly style={{ width: 18, height: 18, accentColor: '#f58220' }} />
+          <input type="checkbox" checked={requireCmyk} readOnly style={{ width: 18, height: 18, accentColor: '#6ec8c8' }} />
           <span style={{ fontSize: 14, color: 'var(--th-text-primary)' }}>Require CMYK color space</span>
         </label>
       </Field>
 
       <Field>
         <label className="flex items-center cursor-pointer" style={{ gap: 12 }} onClick={() => { setRequireBleed(!requireBleed); setTimeout(save, 0) }}>
-          <input type="checkbox" checked={requireBleed} readOnly style={{ width: 18, height: 18, accentColor: '#f58220' }} />
+          <input type="checkbox" checked={requireBleed} readOnly style={{ width: 18, height: 18, accentColor: '#6ec8c8' }} />
           <span style={{ fontSize: 14, color: 'var(--th-text-primary)' }}>Require bleed</span>
         </label>
       </Field>
@@ -347,16 +347,16 @@ function UiSettings() {
           <button
             style={{
               padding: '10px 24px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14,
-              background: viewMode === 'grid' ? 'rgba(245,130,32,0.1)' : 'var(--th-bg-primary)',
-              color: viewMode === 'grid' ? '#f58220' : 'var(--th-text-muted)',
+              background: viewMode === 'grid' ? 'rgba(110,200,200,0.1)' : 'var(--th-bg-primary)',
+              color: viewMode === 'grid' ? '#6ec8c8' : 'var(--th-text-muted)',
             }}
             onClick={() => setViewMode('grid')}
           >Grid</button>
           <button
             style={{
               padding: '10px 24px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14,
-              background: viewMode === 'list' ? 'rgba(245,130,32,0.1)' : 'var(--th-bg-primary)',
-              color: viewMode === 'list' ? '#f58220' : 'var(--th-text-muted)',
+              background: viewMode === 'list' ? 'rgba(110,200,200,0.1)' : 'var(--th-bg-primary)',
+              color: viewMode === 'list' ? '#6ec8c8' : 'var(--th-text-muted)',
             }}
             onClick={() => setViewMode('list')}
           >List</button>
@@ -364,7 +364,7 @@ function UiSettings() {
       </Field>
 
       <Field label={`Thumbnail Size: ${thumbnailSize}px`}>
-        <input type="range" min={64} max={256} step={16} value={thumbnailSize} onChange={e => setThumbnailSize(Number(e.target.value))} style={{ width: '100%', accentColor: '#f58220' }} />
+        <input type="range" min={64} max={256} step={16} value={thumbnailSize} onChange={e => setThumbnailSize(Number(e.target.value))} style={{ width: '100%', accentColor: '#6ec8c8' }} />
       </Field>
     </div>
   )

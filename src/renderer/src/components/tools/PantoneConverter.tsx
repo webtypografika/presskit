@@ -97,8 +97,8 @@ export function PantoneConverter() {
           <button key={m} onClick={() => setMode(m)} style={{
             flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600,
             border: 'none', cursor: 'pointer',
-            background: mode === m ? 'rgba(245,130,32,0.15)' : 'transparent',
-            color: mode === m ? '#f58220' : '#94a3b8',
+            background: mode === m ? 'rgba(110,200,200,0.15)' : 'transparent',
+            color: mode === m ? '#6ec8c8' : '#94a3b8',
           }}>
             {m === 'search' ? 'Pantone' : m.toUpperCase()}
           </button>
@@ -133,13 +133,13 @@ export function PantoneConverter() {
           </div>
           <button onClick={findFromRgb} style={{
             padding: '8px 16px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 600,
-            background: '#f58220', color: '#fff', cursor: 'pointer',
+            background: '#6ec8c8', color: '#fff', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
           }}>
             <ArrowRightLeft size={14} /> Μετατροπή & Αναζήτηση Pantone
           </button>
           {convertedCmyk && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, background: 'rgba(245,130,32,0.06)', border: '1px solid rgba(245,130,32,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, background: 'rgba(110,200,200,0.06)', border: '1px solid rgba(110,200,200,0.2)' }}>
               <span style={{ fontSize: 11, color: '#94a3b8' }}>CMYK:</span>
               <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', fontFamily: 'monospace' }}>
                 {convertedCmyk.c}/{convertedCmyk.m}/{convertedCmyk.y}/{convertedCmyk.k}
@@ -168,13 +168,13 @@ export function PantoneConverter() {
           </div>
           <button onClick={convertCmykToRgb} style={{
             padding: '8px 16px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 600,
-            background: '#f58220', color: '#fff', cursor: 'pointer',
+            background: '#6ec8c8', color: '#fff', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
           }}>
             <ArrowRightLeft size={14} /> Μετατροπή & Αναζήτηση Pantone
           </button>
           {convertedRgb && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, background: 'rgba(245,130,32,0.06)', border: '1px solid rgba(245,130,32,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, background: 'rgba(110,200,200,0.06)', border: '1px solid rgba(110,200,200,0.2)' }}>
               <div style={{ width: 20, height: 20, borderRadius: 4, background: `rgb(${convertedRgb.r},${convertedRgb.g},${convertedRgb.b})`, border: '1px solid var(--th-border)' }} />
               <span style={{ fontSize: 11, color: '#94a3b8' }}>RGB:</span>
               <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', fontFamily: 'monospace' }}>

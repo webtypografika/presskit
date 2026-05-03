@@ -69,8 +69,8 @@ export function StatusBar() {
                     style={{
                       padding: '1px 8px', borderRadius: 4, fontSize: 11, fontWeight: 500,
                       border: 'none', cursor: 'pointer',
-                      background: picksFilter === f ? (f === 'picked' ? 'rgba(34,197,94,0.15)' : f === 'unpicked' ? 'rgba(234,179,8,0.15)' : 'rgba(245,130,32,0.15)') : 'transparent',
-                      color: picksFilter === f ? (f === 'picked' ? '#22c55e' : f === 'unpicked' ? '#eab308' : '#f58220') : '#64748b',
+                      background: picksFilter === f ? (f === 'picked' ? 'rgba(34,197,94,0.15)' : f === 'unpicked' ? 'rgba(234,179,8,0.15)' : 'rgba(110,200,200,0.15)') : 'transparent',
+                      color: picksFilter === f ? (f === 'picked' ? '#22c55e' : f === 'unpicked' ? '#eab308' : '#6ec8c8') : '#64748b',
                     }}
                   >
                     {f === 'all' ? 'All' : f === 'picked' ? 'Picked' : 'Unpicked'}

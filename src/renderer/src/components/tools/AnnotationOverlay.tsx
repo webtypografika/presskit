@@ -258,8 +258,8 @@ export function AnnotationOverlay({ previewWidth, previewHeight }: { previewWidt
       title={label}
       style={{
         padding: 6, borderRadius: 6, border: 'none', cursor: 'pointer',
-        background: tool === t ? 'rgba(245,130,32,0.2)' : 'transparent',
-        color: tool === t ? '#f58220' : '#94a3b8',
+        background: tool === t ? 'rgba(110,200,200,0.2)' : 'transparent',
+        color: tool === t ? '#6ec8c8' : '#94a3b8',
       }}
     >
       {icon}
@@ -328,7 +328,7 @@ export function AnnotationOverlay({ previewWidth, previewHeight }: { previewWidt
             key={c}
             onClick={() => setColor(c)}
             style={{
-              width: 16, height: 16, borderRadius: '50%', border: color === c ? '2px solid #f58220' : '1px solid rgba(255,255,255,0.2)',
+              width: 16, height: 16, borderRadius: '50%', border: color === c ? '2px solid #6ec8c8' : '1px solid rgba(255,255,255,0.2)',
               background: c, cursor: 'pointer', padding: 0, flexShrink: 0,
             }}
           />
@@ -340,7 +340,7 @@ export function AnnotationOverlay({ previewWidth, previewHeight }: { previewWidt
         <input
           type="range" min={1} max={8} value={strokeWidth}
           onChange={e => setStrokeWidth(Number(e.target.value))}
-          style={{ width: 50, accentColor: '#f58220' }}
+          style={{ width: 50, accentColor: '#6ec8c8' }}
         />
 
         <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
@@ -355,7 +355,7 @@ export function AnnotationOverlay({ previewWidth, previewHeight }: { previewWidt
         </button>
         {hasChanges && (
           <button onClick={save} title="Save annotations"
-            style={{ padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', background: '#f58220', color: '#fff', fontSize: 11, fontWeight: 600 }}>
+            style={{ padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', background: '#6ec8c8', color: '#fff', fontSize: 11, fontWeight: 600 }}>
             <Save size={12} />
           </button>
         )}

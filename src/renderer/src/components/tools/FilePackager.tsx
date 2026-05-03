@@ -58,7 +58,7 @@ export function FilePackager({ onClose }: { onClose: () => void }) {
       }}>
         {/* Header */}
         <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--th-border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Package size={18} style={{ color: '#f58220' }} />
+          <Package size={18} style={{ color: '#6ec8c8' }} />
           <span style={{ fontSize: 15, fontWeight: 600, flex: 1, color: 'var(--th-text-primary)' }}>Collect / Package Files</span>
           <button onClick={onClose} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: 18 }}>&times;</button>
         </div>
@@ -69,16 +69,16 @@ export function FilePackager({ onClose }: { onClose: () => void }) {
             <button onClick={() => setMode('directory')} style={{
               flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600,
               border: 'none', cursor: 'pointer',
-              background: mode === 'directory' ? 'rgba(245,130,32,0.15)' : 'transparent',
-              color: mode === 'directory' ? '#f58220' : '#94a3b8',
+              background: mode === 'directory' ? 'rgba(110,200,200,0.15)' : 'transparent',
+              color: mode === 'directory' ? '#6ec8c8' : '#94a3b8',
             }}>
               Φάκελος εργασίας
             </button>
             <button onClick={() => setMode('selected')} style={{
               flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600,
               border: 'none', cursor: 'pointer',
-              background: mode === 'selected' ? 'rgba(245,130,32,0.15)' : 'transparent',
-              color: mode === 'selected' ? '#f58220' : '#94a3b8',
+              background: mode === 'selected' ? 'rgba(110,200,200,0.15)' : 'transparent',
+              color: mode === 'selected' ? '#6ec8c8' : '#94a3b8',
             }}>
               Επιλεγμένα αρχεία
             </button>
@@ -147,7 +147,7 @@ export function FilePackager({ onClose }: { onClose: () => void }) {
             disabled={!targetDir || collecting || (mode === 'directory' && scannedFiles.length === 0)}
             style={{
               padding: '10px 16px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 600,
-              background: result ? '#22c55e' : '#f58220', color: '#fff', cursor: 'pointer',
+              background: result ? '#22c55e' : '#6ec8c8', color: '#fff', cursor: 'pointer',
               opacity: !targetDir || collecting ? 0.5 : 1,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             }}

@@ -1,0 +1,305 @@
+import { useEffect, useState } from 'react'
+import { AppLayout } from './components/layout/AppLayout'
+import { useAppStore } from './stores/app-store'
+import { Loader2 } from 'lucide-react'
+import type { PresscalCustomer } from './lib/ipc'
+
+interface DeepLinkProgress {
+  step: string
+  current: number
+  total: number
+  done: boolean
+}
+
+// ─── Customer-by-folder cache ─────────────────────────────────────────────
+// Used to auto-fill the customer email in the Send Email dialog whenever
+// the user is browsing inside a customer's folder. Cached because the
+// customer list rarely changes within a session and we lookup on every
+// navigation.
+let customersCache: PresscalCustomer[] | null = null
+let customersCachedAt = 0
+const CUSTOMERS_CACHE_MS = 5 * 60 * 1000 // 5 minutes
+
+async function getCachedCustomers(): Promise<PresscalCustomer[]> {
+  const now = Date.now()
+  if (customersCache && now - customersCachedAt < CUSTOMERS_CACHE_MS) {
+    return customersCache
+  }
+  try {
+    const customers = await window.api.presscal.getCustomers()
+    customersCache = customers
+    customersCachedAt = now
+    return customers
+  } catch {
+    return customersCache || []
+  }
+}
+
+// Return the customer whose folderPath is the longest prefix match of
+// `path`. Longest-match handles nested customer folders correctly.
+function findCustomerByPath(customers: PresscalCustomer[], path: string): PresscalCustomer | null {
+  const norm = path.replace(/\\/g, '/').toLowerCase()
+  let best: PresscalCustomer | null = null
+  let bestLen = 0
+  for (const c of customers) {
+    if (!c.folderPath) continue
+    const folder = c.folderPath.replace(/\\/g, '/').toLowerCase()
+    if ((norm === folder || norm.startsWith(folder + '/')) && folder.length > bestLen) {
+      best = c
+      bestLen = folder.length
+    }
+  }
+  return best
+}
+
+export default function App() {
+  const loadSettings = useAppStore(s => s.loadSettings)
+  const selectFile = useAppStore(s => s.selectFile)
+  const navigateTo = useAppStore(s => s.navigateTo)
+  const [dlProgress, setDlProgress] = useState<DeepLinkProgress | null>(null)
+
+  useEffect(() => {
+    loadSettings()
+    // Build search index in background after 3s delay (let UI load first)
+    const timer = setTimeout(() => {
+      window.api.search.buildIndex().then(r => {
+        if (r.count > 0) console.log(`Search index: ${r.count} files in ${r.ms}ms`)
+      }).catch(() => {})
+    }, 3000)
+    return () => clearTimeout(timer)
+  }, [loadSettings])
+
+  // Tab keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Escape closes fullscreen preview
+      if (e.key === 'Escape' && useAppStore.getState().fullscreenPreview) {
+        useAppStore.setState({ fullscreenPreview: false })
+        return
+      }
+      // Use e.code for shortcuts — works regardless of keyboard layout (EN/GR)
+      if (e.ctrlKey && e.code === 'KeyT') {
+        e.preventDefault()
+        useAppStore.getState().addTab()
+      }
+      if (e.ctrlKey && e.code === 'KeyW') {
+        e.preventDefault()
+        const { tabs, activeTabId, closeTab } = useAppStore.getState()
+        if (tabs.length > 1) closeTab(activeTabId)
+      }
+      if (e.ctrlKey && e.key === 'Tab') {
+        e.preventDefault()
+        const { tabs, activeTabId, setActiveTab } = useAppStore.getState()
+        const idx = tabs.findIndex(t => t.id === activeTabId)
+        const nextIdx = e.shiftKey
+          ? (idx - 1 + tabs.length) % tabs.length
+          : (idx + 1) % tabs.length
+        setActiveTab(tabs[nextIdx].id)
+      }
+      // File operations — only when not typing in an input
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (e.code === 'Space') {
+        e.preventDefault()
+        const { fullscreenPreview, selectedFile } = useAppStore.getState()
+        if (fullscreenPreview) {
+          useAppStore.setState({ fullscreenPreview: false })
+        } else if (selectedFile && !selectedFile.isDirectory) {
+          useAppStore.setState({ fullscreenPreview: true })
+        }
+      }
+      if (e.ctrlKey && e.code === 'KeyC') {
+        e.preventDefault()
+        useAppStore.getState().copyFiles()
+      }
+      if (e.ctrlKey && e.code === 'KeyX') {
+        e.preventDefault()
+        useAppStore.getState().cutFiles()
+      }
+      if (e.ctrlKey && e.code === 'KeyV') {
+        e.preventDefault()
+        useAppStore.getState().pasteFiles()
+      }
+      if (e.ctrlKey && e.code === 'KeyA') {
+        e.preventDefault()
+        useAppStore.getState().selectAll()
+      }
+      // P key — toggle pick on selected files
+      if (e.code === 'KeyP' && !e.ctrlKey) {
+        e.preventDefault()
+        useAppStore.getState().togglePickSelected()
+      }
+      // Delete key — trash selected files
+      if (e.key === 'Delete') {
+        const { selectedFiles, selectedFile, clearSelection, refreshDirectory } = useAppStore.getState()
+        const filesToDelete = selectedFiles.length > 0
+          ? selectedFiles
+          : selectedFile ? [selectedFile] : []
+        if (filesToDelete.length === 0) return
+        e.preventDefault()
+        const names = filesToDelete.length === 1
+          ? `"${filesToDelete[0].name}"`
+          : `${filesToDelete.length} αρχεία`
+        if (confirm(`Διαγραφή ${names};`)) {
+          window.api.fs.trash(filesToDelete.map(f => f.path)).then((results: any[]) => {
+            const failed = results.filter((r: any) => !r.ok)
+            if (failed.length > 0) {
+              alert(`Αποτυχία διαγραφής ${failed.length} αρχείων:\n${failed.map((f: any) => f.error).join('\n')}`)
+            }
+            // Small delay before refresh — let filesystem settle (Dropbox, indexer, etc.)
+            clearSelection()
+            setTimeout(() => refreshDirectory(), 200)
+          })
+        }
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
+  // Listen for deep link attachments from PressCal
+  useEffect(() => {
+    const cleanup = window.api.deepLink.onOpenAttachment(({ tempPath, filename, mime, quoteId }) => {
+      const ext = '.' + filename.split('.').pop()
+      const type = mime.startsWith('image/') ? 'jpg'
+        : mime === 'application/pdf' ? 'pdf'
+        : 'other'
+
+      useAppStore.setState({ attachmentQuoteId: quoteId || '' })
+
+      // Open preview panel if closed
+      if (!useAppStore.getState().previewOpen) {
+        useAppStore.getState().togglePreview()
+      }
+
+      selectFile(null as any)
+      setTimeout(() => {
+        selectFile({
+          name: filename,
+          path: tempPath,
+          size: 0,
+          isDirectory: false,
+          type,
+          extension: ext,
+          modified: new Date().toISOString()
+        })
+      }, 50)
+    })
+
+    return cleanup
+  }, [selectFile])
+
+  // Listen for folder navigation from PressCal
+  useEffect(() => {
+    const cleanup = window.api.deepLink.onNavigateToFolder(({ path, email, quoteId }: any) => {
+      navigateTo(path)
+      if (email) {
+        useAppStore.setState({ lastCustomerEmail: email })
+      }
+      // Remember which quote this folder belongs to
+      if (quoteId) {
+        useAppStore.setState({ attachmentQuoteId: quoteId })
+      }
+      // Auto-open preview panel when navigating from PressCal
+      if (!useAppStore.getState().previewOpen) {
+        useAppStore.getState().togglePreview()
+      }
+    })
+
+    return cleanup
+  }, [navigateTo])
+
+  // File system watcher — auto refresh when files change
+  useEffect(() => {
+    const cleanup = window.api.fs.onChanged((dirPath: string) => {
+      const { currentPath, refreshDirectory } = useAppStore.getState()
+      if (currentPath === dirPath) {
+        refreshDirectory()
+      }
+    })
+    return cleanup
+  }, [])
+
+  // Auto-detect customer email from current folder. When the user is
+  // browsing inside a customer's folder (as known to PressCal), preload
+  // that customer's email + quote context so the Send Email dialog can
+  // pre-fill "Προς" without waiting for a deep link.
+  const currentPath = useAppStore(s => s.currentPath)
+  const presscalConnected = useAppStore(s => s.presscalConnected)
+  useEffect(() => {
+    if (!currentPath || !presscalConnected) return
+    let cancelled = false
+    getCachedCustomers().then(customers => {
+      if (cancelled) return
+      const match = findCustomerByPath(customers, currentPath)
+      if (match?.email) {
+        useAppStore.setState({ lastCustomerEmail: match.email })
+      }
+    })
+    return () => { cancelled = true }
+  }, [currentPath, presscalConnected])
+
+  // Listen for pick-file mode from PressCal
+  useEffect(() => {
+    const cleanup = window.api.deepLink.onPickFileMode(({ quoteId, itemId }) => {
+      useAppStore.setState({
+        pickFileMode: { quoteId, itemId }
+      })
+    })
+
+    return cleanup
+  }, [])
+
+  // Deep link progress (download-to-folder etc.)
+  useEffect(() => {
+    const cleanup = window.api.deepLink.onProgress((data) => {
+      if (data.done) {
+        // Keep visible briefly so user sees "done"
+        setTimeout(() => setDlProgress(null), 800)
+      }
+      setDlProgress(data)
+    })
+    return cleanup
+  }, [])
+
+  return (
+    <>
+      <AppLayout />
+      {dlProgress && !dlProgress.done && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
+          background: 'var(--th-bg-tertiary, #1e293b)', border: '1px solid var(--th-border, #334155)',
+          borderRadius: 12, padding: '16px 20px', minWidth: 280, maxWidth: 360,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <Loader2 size={16} style={{ color: '#f58220', animation: 'spin 1s linear infinite' }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--th-text-primary, #e2e8f0)' }}>
+              Λήψη αρχείων...
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--th-text-secondary, #94a3b8)', marginBottom: 8 }}>
+            {dlProgress.step}
+          </div>
+          {dlProgress.total > 0 && (
+            <>
+              <div style={{
+                height: 4, borderRadius: 2, background: 'var(--th-bg-primary, #0f172a)',
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  height: '100%', borderRadius: 2, background: '#f58220',
+                  width: `${Math.round((dlProgress.current / dlProgress.total) * 100)}%`,
+                  transition: 'width 0.3s ease',
+                }} />
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--th-text-muted, #64748b)', marginTop: 6, textAlign: 'right' }}>
+                {dlProgress.current} / {dlProgress.total}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </>
+  )
+}

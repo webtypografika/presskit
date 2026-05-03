@@ -7,8 +7,11 @@
   WriteRegStr HKCU "Software\Classes\presscal-fh\DefaultIcon" "" "$INSTDIR\PressKit.exe,0"
   WriteRegStr HKCU "Software\Classes\presscal-fh\shell\open\command" "" '"$INSTDIR\PressKit.exe" "%1"'
 
-  ; Pin to taskbar (Windows 10/11 — creates shortcut in TaskBar folder)
-  CreateShortCut "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\PressKit.lnk" "$INSTDIR\PressKit.exe" "" "$INSTDIR\PressKit.exe" 0
+  ; Pin to taskbar — delete first to force Windows to re-read the icon.
+  ; Without the delete, Windows holds onto the cached icon from the previous
+  ; install (especially after we changed icons mid-version).
+  Delete "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\PressKit.lnk"
+  CreateShortCut "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\PressKit.lnk" "$INSTDIR\PressKit.exe" "" "$INSTDIR\resources\icon.ico" 0
 
   ; Check if Ghostscript is already installed
   IfFileExists "$PROGRAMFILES\gs\gs*\bin\gswin64c.exe" gsFound gsNotFound
