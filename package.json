@@ -1,13 +1,13 @@
 {
   "name": "presskit",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "PressKit - Print & Design File Manager",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "package": "electron-builder",
+    "package": "electron-vite build && electron-builder",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
