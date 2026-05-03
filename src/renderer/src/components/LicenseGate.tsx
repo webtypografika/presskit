@@ -3,6 +3,21 @@ import { createPortal } from 'react-dom'
 import { Lock, KeyRound, WifiOff, AlertTriangle, ShoppingCart, RefreshCw, Loader2 } from 'lucide-react'
 
 const CHECKOUT_URL = 'https://presscal.com/el/checkout'
+// Default sign-in target. If the user has already configured a custom PressCal
+// URL (e.g. pro.presscal.com), we send them there instead — see openGoogleSignIn.
+const DEFAULT_PRESSCAL_BASE = 'https://demo.gr.presscal.com'
+
+// Google "G" logo, official colors. lucide-react has no brand icons.
+function GoogleIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A10.99 10.99 0 0 0 12 23z"/>
+      <path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.07H2.18A11 11 0 0 0 1 12c0 1.78.43 3.46 1.18 4.93l3.66-2.83z"/>
+      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.83C6.71 7.31 9.14 5.38 12 5.38z"/>
+    </svg>
+  )
+}
 
 type LicenseState =
   | 'not_configured'
@@ -136,11 +151,21 @@ function openSettings(): void {
   window.dispatchEvent(new CustomEvent('open-settings', { detail: { tab: 'presscal' } }))
 }
 
+async function openGoogleSignIn(): Promise<void> {
+  // Honor a previously configured server (e.g. pro.presscal.com) so re-auth
+  // after a key revoke goes back to the same instance. Falls back to demo for
+  // first-time users who haven't configured anything yet.
+  const stored = (await window.api.settings.get('presscal.url')) as string | undefined
+  const base = (stored?.trim() || DEFAULT_PRESSCAL_BASE).replace(/\/$/, '')
+  void window.api.shell.openExternal(`${base}/auth/presskit-link`)
+}
+
 function LockScreen({
   icon,
   title: t,
   message,
   primary,
+  manualSetup,
   status,
   onRefresh,
   refreshing,
@@ -149,6 +174,9 @@ function LockScreen({
   title: string
   message: ReactNode
   primary: { label: string; onClick: () => void; icon?: ReactNode }
+  // If provided, renders a small text link beneath the buttons for users who
+  // want the old API-key flow. Only used in not_configured / unauthorized.
+  manualSetup?: boolean
   status: LicenseStatus | null
   onRefresh: () => void
   refreshing: boolean
@@ -169,6 +197,17 @@ function LockScreen({
             Επανέλεγχος
           </button>
         </div>
+        {manualSetup && (
+          <div style={{ marginTop: 20, fontSize: 12 }}>
+            <a
+              href="#"
+              onClick={(e) => { e.preventDefault(); openSettings() }}
+              style={{ color: 'var(--th-text-muted, #94a3b8)', textDecoration: 'underline' }}
+            >
+              Manual setup με API key
+            </a>
+          </div>
+        )}
         {status?.orgName && (
           <div style={{ marginTop: 24, fontSize: 12, color: 'var(--th-text-muted, #64748b)' }}>
             {status.orgName}
@@ -233,17 +272,20 @@ function pickLockProps(status: LicenseStatus, refresh: () => void, refreshing: b
   switch (status.state) {
     case 'not_configured':
       return {
-        icon: <KeyRound size={32} color="#f58220" />,
+        icon: <KeyRound size={32} color="#00707c" />,
         title: 'Σύνδεση με PressCal',
         message: (
           <>
-            Για να ενεργοποιήσεις το PressKit πρέπει πρώτα να συνδεθείς με τον λογαριασμό σου στο PressCal.
+            Συνδέσου με τον λογαριασμό σου στο PressCal για να ενεργοποιήσεις το PressKit.
             <br />
             <br />
-            Πήγαινε στο <strong>Settings → API Key</strong> στο PressCal και αντίγραψε το key εδώ.
+            <span style={{ fontSize: 12, color: 'var(--th-text-muted, #64748b)' }}>
+              Νέοι χρήστες παίρνουν αυτόματα <strong>15 ημέρες δοκιμή</strong>.
+            </span>
           </>
         ),
-        primary: { label: 'Άνοιγμα ρυθμίσεων', onClick: openSettings, icon: <KeyRound size={16} /> },
+        primary: { label: 'Σύνδεση με Google', onClick: openGoogleSignIn, icon: <GoogleIcon size={16} /> },
+        manualSetup: true,
         status,
         onRefresh: refresh,
         refreshing,
@@ -251,9 +293,10 @@ function pickLockProps(status: LicenseStatus, refresh: () => void, refreshing: b
     case 'unauthorized':
       return {
         icon: <Lock size={32} color="#dc2626" />,
-        title: 'Μη έγκυρο API Key',
-        message: 'Το API key δεν αναγνωρίζεται από το PressCal. Έλεγξε ότι το αντέγραψες σωστά ή δημιούργησε καινούριο από τις ρυθμίσεις του PressCal.',
-        primary: { label: 'Άνοιγμα ρυθμίσεων', onClick: openSettings, icon: <KeyRound size={16} /> },
+        title: 'Η σύνδεση δεν είναι έγκυρη',
+        message: 'Το API key δεν αναγνωρίζεται πλέον από το PressCal. Συνδέσου ξανά για να γίνει αυτόματη ανανέωση.',
+        primary: { label: 'Σύνδεση με Google', onClick: openGoogleSignIn, icon: <GoogleIcon size={16} /> },
+        manualSetup: true,
         status,
         onRefresh: refresh,
         refreshing,
