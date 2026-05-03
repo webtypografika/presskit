@@ -917,9 +917,9 @@ function NewFolderInput({ defaultName, onSubmit, onCancel, viewMode, thumbnailSi
 
   if (viewMode === 'list') {
     return (
-      <div className="flex items-center gap-2" style={{ padding: '8px 20px', background: 'rgba(245,130,32,0.08)', borderLeft: '2px solid #f58220' }}>
+      <div className="flex items-center gap-2" style={{ padding: '8px 20px', background: 'rgba(110,200,200,0.10)', borderLeft: '2px solid #6ec8c8' }}>
         <span className="w-6 flex-shrink-0 flex justify-center">
-          <Folder size={16} color="#f58220" fill="#f58220" fillOpacity={0.15} strokeWidth={1.5} />
+          <Folder size={16} color="#6ec8c8" fill="#6ec8c8" fillOpacity={0.15} strokeWidth={1.5} />
         </span>
         <input
           ref={inputRef}
@@ -927,7 +927,7 @@ function NewFolderInput({ defaultName, onSubmit, onCancel, viewMode, thumbnailSi
           onKeyDown={handleKeyDown}
           onBlur={() => onSubmit(inputRef.current?.value || '')}
           style={{
-            flex: 1, border: '1px solid #f58220', borderRadius: 4,
+            flex: 1, border: '1px solid #6ec8c8', borderRadius: 4,
             padding: '4px 8px', fontSize: 12, outline: 'none',
             background: 'var(--th-bg-primary)', color: 'var(--th-text-primary)',
           }}
@@ -939,9 +939,9 @@ function NewFolderInput({ defaultName, onSubmit, onCancel, viewMode, thumbnailSi
   // Grid view
   const size = thumbnailSize || 128
   return (
-    <div className="flex flex-col items-center" style={{ padding: 4, border: '1px solid #f58220', borderRadius: 10, background: 'rgba(245,130,32,0.08)' }}>
+    <div className="flex flex-col items-center" style={{ padding: 4, border: '1px solid #6ec8c8', borderRadius: 10, background: 'rgba(110,200,200,0.10)' }}>
       <div className="flex items-center justify-center" style={{ width: size, height: size }}>
-        <FolderPlus size={size * 0.4} color="#f58220" strokeWidth={1.5} />
+        <FolderPlus size={size * 0.4} color="#6ec8c8" strokeWidth={1.5} />
       </div>
       <div className="mt-1.5 w-full text-center">
         <input

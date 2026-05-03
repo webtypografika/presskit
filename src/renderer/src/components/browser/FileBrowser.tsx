@@ -231,7 +231,7 @@ function NewFolderInline({ onSubmit, onCancel }: { onSubmit: (name: string) => v
   }, [])
   return (
     <div className="flex items-center gap-2" style={{ padding: '8px 20px' }}>
-      <FolderPlus size={16} color="#f58220" />
+      <FolderPlus size={16} color="#6ec8c8" />
       <input
         ref={inputRef}
         defaultValue="Νέος Φάκελος"

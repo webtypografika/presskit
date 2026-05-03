@@ -331,10 +331,27 @@ label {
   border-color: var(--th-accent) !important;
 }
 
-/* Translucent orange overlays / glows */
+/* Compound borders (border / border-left / border-bottom / outline / box-shadow) */
+[style*="solid #f58220"],
+[style*="solid#f58220"],
+[style*="dashed #f58220"],
+[style*="dashed#f58220"] {
+  border-color: var(--th-accent) !important;
+  outline-color: var(--th-accent) !important;
+}
+
+/* Translucent orange overlays / glows / accentColor */
 [style*="rgba(245,130,32"],
 [style*="rgba(245, 130, 32"] {
   background: var(--th-accent-subtle) !important;
+}
+
+/* Native form accentColor (checkboxes, ranges, progress) */
+input[style*="accentColor: #f58220"],
+input[style*="accentColor:#f58220"],
+input[style*="accent-color: #f58220"],
+input[style*="accent-color:#f58220"] {
+  accent-color: var(--th-accent) !important;
 }
 
 
