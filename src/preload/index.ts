@@ -105,6 +105,18 @@ const api = {
     postToApi: (endpoint: string, data: any) => ipcRenderer.invoke('presscal:postToApi', endpoint, data)
   },
 
+  // Profiles
+  profiles: {
+    list: () => ipcRenderer.invoke('profiles:list'),
+    active: () => ipcRenderer.invoke('profiles:active'),
+    switch: (id: string) => ipcRenderer.invoke('profiles:switch', id),
+    create: (data: { name: string; email?: string; presscalUrl?: string }) =>
+      ipcRenderer.invoke('profiles:create', data),
+    update: (id: string, patch: Record<string, unknown>) =>
+      ipcRenderer.invoke('profiles:update', id, patch),
+    delete: (id: string) => ipcRenderer.invoke('profiles:delete', id)
+  },
+
   // License
   license: {
     get: () => ipcRenderer.invoke('license:get'),

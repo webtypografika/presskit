@@ -4,6 +4,8 @@ import { useShallow } from 'zustand/react/shallow'
 import { formatFileSize } from '@/lib/file-types'
 import { HardDrive, Cloud, Link2, Scan, Settings, Sun, Moon, CircleCheck, CircleDashed } from 'lucide-react'
 import { SettingsDialog } from '../tools/SettingsDialog'
+import { ProfileSwitcher } from '../ProfileSwitcher'
+import { ManageProfilesDialog } from '../ManageProfilesDialog'
 
 export function StatusBar() {
   const files = useAppStore(s => s.files)
@@ -21,6 +23,7 @@ export function StatusBar() {
   const clearPicks = useAppStore(s => s.clearPicks)
 
   const [showSettings, setShowSettings] = useState(false)
+  const [showManageProfiles, setShowManageProfiles] = useState(false)
   const isDark = theme === 'dark'
 
   // LicenseGate dispatches this when the user clicks "Άνοιγμα ρυθμίσεων".
@@ -141,10 +144,14 @@ export function StatusBar() {
           >
             <Settings size={14} />
           </button>
+
+          {/* Profile switcher */}
+          <ProfileSwitcher onManage={() => setShowManageProfiles(true)} />
         </div>
       </div>
 
       {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
+      {showManageProfiles && <ManageProfilesDialog onClose={() => setShowManageProfiles(false)} />}
     </>
   )
 }

@@ -1,25 +1,22 @@
 import { IpcMain } from 'electron'
-import Store from 'electron-store'
+import { getActiveStore } from './profile-manager'
 
-export const store = new Store()
-
-// Migrate: remove flat dot-keys that conflict with nested values
-const FLAT_KEYS = [
-  'ui.sidebarWidth', 'ui.inspectorWidth', 'ui.viewMode', 'ui.thumbnailSize', 'ui.showHiddenFiles',
-  'paths.recent', 'paths.bookmarks',
-  'preflight.minDpi', 'preflight.maxTac', 'preflight.requireCmyk', 'preflight.requireBleed', 'preflight.bleedMm',
-  'presscal.url', 'presscal.apiKey', 'dropbox.clientId'
-]
-if (store.has('presscal.url' as any) && typeof store.store['presscal.url'] === 'string') {
-  // Config has flat dot-keys — migrate nested values and delete flat ones
-  const raw = store.store as Record<string, any>
-  for (const key of FLAT_KEYS) {
-    if (key in raw && typeof raw[key] !== 'object') {
-      delete raw[key]
-    }
-  }
-  store.store = raw
-}
+// `store` is no longer a single global — every read/write goes through the
+// active profile's store. The proxy exists so existing call sites keep using
+// `store.get(...)` / `store.set(...)` without needing to know about profiles.
+// initializeProfiles() must run before any of these are called.
+export const store = new Proxy({} as ReturnType<typeof getActiveStore>, {
+  get(_target, prop, receiver) {
+    const real = getActiveStore() as any
+    const value = real[prop]
+    return typeof value === 'function' ? value.bind(real) : value
+  },
+  set(_target, prop, value) {
+    const real = getActiveStore() as any
+    real[prop] = value
+    return true
+  },
+})
 
 export function registerSettingsHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('settings:get', async (_e, key: string) => {

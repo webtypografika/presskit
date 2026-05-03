@@ -13,6 +13,7 @@ import { registerColorHandlers } from './color-tools'
 import { registerSearchHandlers } from './search-engine'
 import { registerToolHandlers } from './tools-engine'
 import { registerLicenseHandlers, startLicensePoller, checkLicense } from './license-engine'
+import { initializeProfiles, registerProfileHandlers, createProfile, switchProfile } from './profile-manager'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -821,7 +822,38 @@ async function handleProtocolUrl(url: string): Promise<void> {
     if (parsed.hostname === 'connect') {
       const url = parsed.searchParams.get('url')
       const apiKey = parsed.searchParams.get('apiKey')
+      // ?addProfile=1 → create a NEW profile and switch to it (cold-swap restart).
+      // Without that flag → write into the active profile, like before.
+      const addProfile = parsed.searchParams.get('addProfile') === '1'
+      const orgName = parsed.searchParams.get('orgName') ?? undefined
+      const email = parsed.searchParams.get('email') ?? undefined
+
       if (url && apiKey) {
+        if (addProfile) {
+          // Suggest a name from email/orgName/host for the new profile.
+          const cleanUrl = url.replace(/\/$/, '')
+          const suggestedName = email || orgName || (() => {
+            try { return new URL(cleanUrl).hostname.replace(/^www\./, '') } catch { return 'New profile' }
+          })()
+          const profile = createProfile({ name: suggestedName, email, presscalUrl: cleanUrl })
+          // Stash the credentials in the new profile's store before we switch
+          // (we have to write them via a temp store since `store` proxies to
+          // the active profile, which is still the OLD one).
+          const StoreModule = await import('electron-store')
+          const path = await import('path')
+          const profileStore = new StoreModule.default({
+            name: 'config',
+            cwd: path.join(app.getPath('userData'), 'profiles', profile.id),
+          })
+          profileStore.set('presscal.url', cleanUrl)
+          profileStore.set('presscal.apiKey', apiKey)
+          deepLog('[DeepLink] Created profile:', profile.id, '→ switching')
+          // app.relaunch + exit; the alert won't render but the new profile
+          // will be active on next launch.
+          switchProfile(profile.id)
+          return
+        }
+
         store.set('presscal.url', url.replace(/\/$/, ''))
         store.set('presscal.apiKey', apiKey)
         deepLog('[DeepLink] Connected to PressCal:', url)
@@ -1257,6 +1289,7 @@ function registerHandlers(): void {
   registerSearchHandlers(ipcMain)
   registerToolHandlers(ipcMain)
   registerLicenseHandlers(ipcMain)
+  registerProfileHandlers(ipcMain)
 
   // User directories
   ipcMain.handle('system:userPaths', async () => {
@@ -1572,6 +1605,10 @@ if (!gotTheLock) {
     if (process.platform === 'win32') {
       app.setAppUserModelId('com.presscal.presskit')
     }
+    // Profiles must initialize BEFORE any handler that touches the store
+    // (settings/presscal/license/etc.) — they all proxy through the active
+    // profile's electron-store. Also performs the v1.x → v2.x migration.
+    initializeProfiles()
     registerHandlers()
     startFileServer()
     createWindow()
