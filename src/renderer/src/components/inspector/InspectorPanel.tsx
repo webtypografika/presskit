@@ -93,8 +93,8 @@ export function InspectorPanel() {
                       display: 'flex', alignItems: 'center', gap: 4,
                       padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500,
                       border: 'none', cursor: disabled ? 'default' : 'pointer',
-                      background: toolSubTab === sub.id ? 'rgba(245,130,32,0.15)' : 'transparent',
-                      color: toolSubTab === sub.id ? '#f58220' : disabled ? '#334155' : '#94a3b8',
+                      background: toolSubTab === sub.id ? 'var(--th-accent-subtle)' : 'transparent',
+                      color: toolSubTab === sub.id ? 'var(--th-accent)' : disabled ? 'var(--th-text-muted)' : 'var(--th-text-secondary)',
                       opacity: disabled ? 0.4 : 1,
                     }}
                   >

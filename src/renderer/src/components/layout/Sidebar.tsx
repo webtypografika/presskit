@@ -306,11 +306,11 @@ function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath
       }`}
       style={{
         padding: '12px 32px',
-        background: highlight ? 'rgba(245,130,32,0.15)' : active ? 'var(--th-bg-hover)' : undefined,
-        borderLeft: active ? '3px solid #f58220' : '3px solid transparent',
+        background: highlight ? 'var(--th-accent-subtle)' : active ? 'var(--th-bg-hover)' : undefined,
+        borderLeft: active ? '3px solid var(--th-accent)' : '3px solid transparent',
         paddingLeft: 29,
-        borderTop: isDropTarget ? '2px solid #f58220' : '2px solid transparent',
-        outline: dragOver ? '2px dashed #f58220' : undefined,
+        borderTop: isDropTarget ? '2px solid var(--th-accent)' : '2px solid transparent',
+        outline: dragOver ? '2px dashed var(--th-accent)' : undefined,
         outlineOffset: -2,
         fontWeight: active ? 600 : undefined,
       }}

@@ -999,9 +999,11 @@ async function processPendingArchives() {
 function createWindow(): void {
   const savedTheme = store.get('ui.theme', 'light') as string
   const isLight = savedTheme === 'light'
-  const bgColor = isLight ? '#e4e8ee' : '#0a0e1a'
-  const overlayColor = isLight ? '#e4e8ee' : '#0f1525'
-  const symbolColor = isLight ? '#374151' : '#94a3b8'
+  // Match the new teal palette so the splash flash before React mounts isn't
+  // jarringly wrong-colored.
+  const bgColor = isLight ? '#f5f9f9' : '#173a49'
+  const overlayColor = isLight ? '#ebf3f3' : '#12303d'
+  const symbolColor = isLight ? '#173a49' : '#dcdcdc'
 
   // Without this, BrowserWindow falls back to the default Electron atom
   // logo for the taskbar / window icon, even though electron-builder
@@ -1563,6 +1565,13 @@ if (!gotTheLock) {
   })
 
   app.whenReady().then(() => {
+    // Tell Windows which app this is — without it the OS may attribute the
+    // running app to a generic Electron entry in the shell, which is one
+    // reason the taskbar icon could show the default atom logo even when
+    // BrowserWindow.icon is set correctly.
+    if (process.platform === 'win32') {
+      app.setAppUserModelId('com.presscal.presskit')
+    }
     registerHandlers()
     startFileServer()
     createWindow()

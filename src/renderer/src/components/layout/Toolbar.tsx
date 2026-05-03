@@ -187,8 +187,8 @@ export function Toolbar() {
             className="flex items-center rounded transition-colors"
             style={{
               gap: 4, padding: '2px 10px', fontSize: 12, minHeight: 'auto',
-              background: source === 'local' ? '#1e2a4a' : 'transparent',
-              color: source === 'local' ? '#f58220' : '#94a3b8',
+              background: source === 'local' ? 'var(--th-accent-subtle)' : 'transparent',
+              color: source === 'local' ? 'var(--th-accent)' : 'var(--th-text-secondary)',
             }}
             onClick={() => setSource('local')}
           >
@@ -198,8 +198,8 @@ export function Toolbar() {
             className="flex items-center rounded transition-colors"
             style={{
               gap: 4, padding: '2px 10px', fontSize: 12, minHeight: 'auto',
-              background: source === 'dropbox' ? '#1e2a4a' : 'transparent',
-              color: source === 'dropbox' ? '#f58220' : '#94a3b8',
+              background: source === 'dropbox' ? 'var(--th-accent-subtle)' : 'transparent',
+              color: source === 'dropbox' ? 'var(--th-accent)' : 'var(--th-text-secondary)',
             }}
             onClick={() => setSource('dropbox')}
           >
