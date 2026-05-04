@@ -17,11 +17,11 @@
   IfFileExists "$PROGRAMFILES\gs\gs*\bin\gswin64c.exe" gsFound gsNotFound
 
   gsNotFound:
-    MessageBox MB_YESNO|MB_ICONINFORMATION "Για να μετατρέπει αρχεία PDF, το PressKit χρειάζεται το Ghostscript (δωρεάν εργαλείο της Artifex).$\n$\nΤο PressKit θα κατεβάσει το installer στον browser σας — αρκεί να το τρέξετε μετά. Διαρκεί 1-2 λεπτά.$\n$\nΣυνέχεια;" IDYES gsOpen IDNO gsDone
+    MessageBox MB_YESNO|MB_ICONINFORMATION "PressKit needs Ghostscript (free tool by Artifex) to convert PDF files.$\n$\nPressKit will open the download in your browser — just run the installer afterwards. It takes 1-2 minutes.$\n$\nContinue?" IDYES gsOpen IDNO gsDone
 
   gsOpen:
     ExecShell "open" "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10050/gs10050w64.exe"
-    MessageBox MB_OK "Άνοιξε ο browser για το download.$\n$\nΟταν ολοκληρωθεί, τρέξτε το αρχείο gs10050w64.exe και ακολουθήστε τις οδηγίες. Μετά μπορείτε να ανοίξετε κανονικά το PressKit."
+    MessageBox MB_OK "The download has opened in your browser.$\n$\nOnce complete, run gs10050w64.exe and follow the instructions. You can then open PressKit normally."
     Goto gsDone
 
   gsFound:

@@ -89,18 +89,18 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
         <PanelHeader onClose={onClose} />
         <div style={{ padding: 24 }}>
           <div style={{ fontSize: 13, color: 'var(--th-text-muted)', lineHeight: 1.6 }}>
-            Η μετατροπή PDF χρειάζεται το Ghostscript που δεν βρέθηκε στο σύστημα.
+            PDF conversion requires Ghostscript, which was not found on your system.
             <br /><br />
             <a
               href="#"
               onClick={(e) => { e.preventDefault(); window.open('https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10050/gs10050w64.exe') }}
               style={{ color: 'var(--th-accent)', textDecoration: 'underline', cursor: 'pointer' }}
             >
-              Κατέβασε το Ghostscript (64-bit)
+              Download Ghostscript (64-bit)
             </a>
             <br />
             <span style={{ fontSize: 11, color: 'var(--th-text-muted)' }}>
-              Μετά την εγκατάσταση, κάνε επανεκκίνηση το PressKit.
+              After installation, restart PressKit.
             </span>
           </div>
         </div>

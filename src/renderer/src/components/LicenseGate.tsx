@@ -243,6 +243,7 @@ function TrialBanner({ daysLeft, expiresAt }: { daysLeft: number; expiresAt: str
     fontSize: 12,
     fontWeight: 500,
     boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
+    WebkitAppRegion: 'no-drag' as any,
   }
   const expiresText = expiresAt
     ? new Date(expiresAt).toLocaleDateString('el-GR', { day: '2-digit', month: 'short', year: 'numeric' })
