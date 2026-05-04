@@ -13,7 +13,7 @@ import { registerColorHandlers } from './color-tools'
 import { registerSearchHandlers } from './search-engine'
 import { registerToolHandlers } from './tools-engine'
 import { registerLicenseHandlers, startLicensePoller, checkLicense } from './license-engine'
-import { initializeProfiles, registerProfileHandlers, createProfile, switchProfile } from './profile-manager'
+import { initializeProfiles, registerProfileHandlers, createProfile, switchProfile, getActiveProfile, updateProfile } from './profile-manager'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -854,8 +854,24 @@ async function handleProtocolUrl(url: string): Promise<void> {
           return
         }
 
-        store.set('presscal.url', url.replace(/\/$/, ''))
+        const cleanUrl = url.replace(/\/$/, '')
+        store.set('presscal.url', cleanUrl)
         store.set('presscal.apiKey', apiKey)
+
+        // Update active profile metadata so the ProfileSwitcher shows a
+        // meaningful name instead of "Default".
+        const activeProfile = getActiveProfile()
+        if (activeProfile) {
+          const patch: Record<string, string> = { presscalUrl: cleanUrl }
+          if (email) patch.email = email
+          if (orgName) patch.orgName = orgName
+          // Update name only if it's still the generic "Default"
+          if (activeProfile.name === 'Default') {
+            patch.name = email || orgName || activeProfile.name
+          }
+          updateProfile(activeProfile.id, patch)
+        }
+
         deepLog('[DeepLink] Connected to PressCal:', url)
         mainWindow?.webContents.send('presscal-connected', { url, apiKey })
 

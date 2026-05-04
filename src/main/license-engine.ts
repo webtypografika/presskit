@@ -1,5 +1,6 @@
 import { IpcMain, BrowserWindow } from 'electron'
 import { store } from './settings'
+import { getActiveProfile, updateProfile } from './profile-manager'
 
 // Polled every 6h while the app is open. Initial check fires on app ready.
 const POLL_INTERVAL_MS = 6 * 60 * 60 * 1000
@@ -115,6 +116,13 @@ export async function checkLicense(): Promise<LicenseStatus> {
     store.set(STORE_KEYS.cache, status)
     store.set(STORE_KEYS.lastOk, Date.now())
     lastStatus = status
+
+    // Auto-rename "Default" profile to something meaningful
+    const activeProfile = getActiveProfile()
+    if (activeProfile && activeProfile.name === 'Default' && data.orgName) {
+      updateProfile(activeProfile.id, { name: data.orgName, orgName: data.orgName })
+    }
+
     return status
   } catch (e) {
     // Network failure — honor cache within grace window so a brief outage

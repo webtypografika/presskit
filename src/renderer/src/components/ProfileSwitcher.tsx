@@ -133,9 +133,9 @@ export function ProfileSwitcher({ onManage }: { onManage?: () => void }) {
         <div
           style={{
             position: 'absolute',
-            top: '100%',
+            bottom: '100%',
             right: 0,
-            marginTop: 6,
+            marginBottom: 6,
             minWidth: 280,
             background: 'var(--th-bg-secondary)',
             border: '1px solid var(--th-border)',
