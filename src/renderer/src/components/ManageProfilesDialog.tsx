@@ -19,7 +19,7 @@ const PROFILE_COLORS = [
 ]
 
 function formatHost(url?: string): string {
-  if (!url) return 'not configured'
+  if (!url) return 'μη συνδεδεμένο'
   try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url }
 }
 

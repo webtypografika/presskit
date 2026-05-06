@@ -177,7 +177,7 @@ export function ProfileSwitcher({ onManage }: { onManage?: () => void }) {
                     {p.name}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--th-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {formatHost(p.presscalUrl) || 'not configured'}
+                    {formatHost(p.presscalUrl) || 'μη συνδεδεμένο'}
                   </div>
                 </div>
                 {isActive && <Check size={14} style={{ color: 'var(--th-accent)', flexShrink: 0 }} />}

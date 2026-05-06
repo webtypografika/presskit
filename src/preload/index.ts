@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 const api = {
   // Window controls
@@ -29,6 +29,8 @@ const api = {
 
   // File System
   fs: {
+    // Electron 33+: File.path removed — use webUtils.getPathForFile instead
+    getFilePath: (file: File): string => webUtils.getPathForFile(file),
     listDirectory: (path: string) => ipcRenderer.invoke('fs:listDirectory', path),
     getMetadata: (path: string) => ipcRenderer.invoke('fs:getMetadata', path),
     readFile: (path: string) => ipcRenderer.invoke('fs:readFile', path),

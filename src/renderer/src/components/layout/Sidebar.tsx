@@ -285,7 +285,7 @@ function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath
     const isInternal = internalPaths.length > 0
     const sourcePaths = isInternal
       ? [...internalPaths]
-      : Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
+      : Array.from(e.dataTransfer.files).map(f => window.api.fs.getFilePath(f)).filter(Boolean)
     if (!sourcePaths.length) return
     const validPaths = sourcePaths.filter(p => p !== dropPath && !dropPath.startsWith(p + '/') && !dropPath.startsWith(p + '\\'))
     if (!validPaths.length) return
@@ -366,7 +366,7 @@ function SidebarFolders() {
     const isInternal = internalPaths.length > 0
     const sourcePaths = isInternal
       ? [...internalPaths]
-      : Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
+      : Array.from(e.dataTransfer.files).map(f => window.api.fs.getFilePath(f)).filter(Boolean)
     if (!sourcePaths.length) return
     const validPaths = sourcePaths.filter(p => p !== targetPath && !targetPath.startsWith(p + '/') && !targetPath.startsWith(p + '\\'))
     if (!validPaths.length) return

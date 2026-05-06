@@ -522,16 +522,22 @@ async function handleProtocolUrl(url: string): Promise<void> {
       console.log('[DeepLink] Target folder:', targetDir)
       await mkdir(targetDir, { recursive: true })
 
-      // 3. Filter files that already exist locally
-      const filesToDownload: typeof files = []
-      for (const file of files) {
-        const saveName = file.fileName || basename(file.filePath)
-        const saveDir = file.subfolder ? pathJoin(targetDir, file.subfolder) : targetDir
-        try {
-          await fsAccess(pathJoin(saveDir, saveName))
-          console.log(`[DeepLink] Exists, skipping: ${saveName}`)
-        } catch {
-          filesToDownload.push(file)
+      // 3. Filter files that already exist locally (skip when onlyNew — PressCal already filtered)
+      let filesToDownload: typeof files
+      if (onlyNew) {
+        // PressCal says these are new — download even if same filename exists (corrected files)
+        filesToDownload = files
+      } else {
+        filesToDownload = []
+        for (const file of files) {
+          const saveName = file.fileName || basename(file.filePath)
+          const saveDir = file.subfolder ? pathJoin(targetDir, file.subfolder) : targetDir
+          try {
+            await fsAccess(pathJoin(saveDir, saveName))
+            console.log(`[DeepLink] Exists, skipping: ${saveName}`)
+          } catch {
+            filesToDownload.push(file)
+          }
         }
       }
 

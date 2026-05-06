@@ -119,8 +119,14 @@ export async function checkLicense(): Promise<LicenseStatus> {
 
     // Auto-rename "Default" profile to something meaningful
     const activeProfile = getActiveProfile()
-    if (activeProfile && activeProfile.name === 'Default' && data.orgName) {
-      updateProfile(activeProfile.id, { name: data.orgName, orgName: data.orgName })
+    if (activeProfile && activeProfile.name === 'Default') {
+      // Prefer email (account name) over orgName for the display name
+      const displayName = activeProfile.email || data.orgName
+      if (displayName) {
+        const patch: Record<string, string> = { name: displayName }
+        if (data.orgName) patch.orgName = data.orgName
+        updateProfile(activeProfile.id, patch)
+      }
     }
 
     return status

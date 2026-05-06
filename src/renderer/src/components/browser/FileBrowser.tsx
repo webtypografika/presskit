@@ -169,7 +169,7 @@ function EmptyFolderView() {
     const { currentPath } = useAppStore.getState()
     if (!currentPath) return
     if (e.dataTransfer.files.length > 0) {
-      const paths = Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
+      const paths = Array.from(e.dataTransfer.files).map(f => window.api.fs.getFilePath(f)).filter(Boolean)
       if (paths.length > 0) {
         await window.api.fs.copy(paths, currentPath)
         useAppStore.getState().refreshDirectory()

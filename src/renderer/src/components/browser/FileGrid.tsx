@@ -10,6 +10,10 @@ import { renderPdfThumbnail } from '@/lib/pdf-thumbnail'
 import type { ViewMode } from '@/stores/app-store'
 import { useDialogStore } from '@/stores/dialog-store'
 
+// Helper: get native file paths from a drop event (Electron 33+ compatible)
+const getDropPaths = (e: React.DragEvent): string[] =>
+  Array.from(e.dataTransfer.files).map(f => window.api.fs.getFilePath(f)).filter(Boolean)
+
 // ─── Thumbnail queue (max 3 concurrent) ─────────────────────────────
 const THUMB_CONCURRENCY = 3
 let thumbRunning = 0
@@ -389,6 +393,8 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   }, [])
 
   const handleExternalDrop = useCallback(async (e: React.DragEvent, targetFolder: FileEntry) => {
+    console.log('[DROP-EXT] fired on:', targetFolder.name, 'isDir:', targetFolder.isDirectory, 'dragActive:', dragState.isActive(),
+      'files:', e.dataTransfer.files.length, 'paths:', getDropPaths(e))
     if (dragState.isActive()) return
     e.preventDefault()
     e.stopPropagation()
@@ -398,8 +404,8 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     const destDir = targetFolder.isDirectory ? targetFolder.path : useAppStore.getState().currentPath
     if (!destDir) return
 
-    const sourcePaths = Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
-    if (!sourcePaths.length) return
+    const sourcePaths = getDropPaths(e)
+    if (!sourcePaths.length) { console.warn('[DROP-EXT] no valid paths'); return }
 
     console.log('[DROP-EXT] copying', sourcePaths.length, 'files to', destDir)
     try {
@@ -417,17 +423,17 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   }, [refreshDirectory])
 
   const handleBgDrop = useCallback(async (e: React.DragEvent) => {
+    console.log('[DROP-BG] fired, dragActive:', dragState.isActive(),
+      'files:', e.dataTransfer.files.length, 'paths:', getDropPaths(e))
     if (dragState.isActive()) return
-    const target = e.target as HTMLElement
-    if (target.closest('[data-file-item]')) return
     e.preventDefault()
     e.stopPropagation()
 
     const { currentPath } = useAppStore.getState()
     if (!currentPath) return
 
-    const sourcePaths = Array.from(e.dataTransfer.files).map(f => f.path).filter(Boolean)
-    if (!sourcePaths.length) return
+    const sourcePaths = getDropPaths(e)
+    if (!sourcePaths.length) { console.warn('[DROP-BG] no valid paths'); return }
 
     console.log('[DROP-BG] copying', sourcePaths.length, 'files to', currentPath)
     try {
