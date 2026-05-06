@@ -1328,6 +1328,19 @@ function startFileServer(): void {
       return
     }
 
+    // Refresh: GET /?refresh=C:\path\to\folder → tells renderer to navigate/refresh that folder
+    if (parsed.query.refresh) {
+      const refreshPath = parsed.query.refresh as string
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('navigate-to-folder', { path: refreshPath })
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.focus()
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true }))
+      return
+    }
+
     // Directory listing: GET /?list=C:\path\to\folder → returns JSON array of PDF filenames
     const listDir = parsed.query.list as string
     if (listDir) {
