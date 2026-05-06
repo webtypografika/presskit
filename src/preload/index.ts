@@ -278,6 +278,15 @@ const api = {
     togglePick: (dirPath: string, fileName: string) => ipcRenderer.invoke('tools:togglePick', dirPath, fileName),
     setPicks: (dirPath: string, fileNames: string[]) => ipcRenderer.invoke('tools:setPicks', dirPath, fileNames),
     clearPicks: (dirPath: string) => ipcRenderer.invoke('tools:clearPicks', dirPath),
+  },
+
+  // Auto-update
+  update: {
+    onStatus: (callback: (data: { status: string; version: string }) => void) => {
+      ipcRenderer.on('update-status', (_e, data) => callback(data))
+      return () => ipcRenderer.removeAllListeners('update-status')
+    },
+    install: () => ipcRenderer.send('install-update'),
   }
 }
 

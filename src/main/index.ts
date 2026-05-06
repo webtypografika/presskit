@@ -1,6 +1,7 @@
 import { app, BrowserWindow, shell, ipcMain, dialog, nativeTheme } from 'electron'
 import { join, resolve } from 'path'
 import { is } from '@electron-toolkit/utils'
+import { autoUpdater } from 'electron-updater'
 import { registerFileSystemHandlers } from './file-system'
 import { registerPreviewHandlers } from './preview-engine'
 import { registerPreflightHandlers } from './preflight-engine'
@@ -16,6 +17,35 @@ import { registerLicenseHandlers, startLicensePoller, checkLicense } from './lic
 import { initializeProfiles, registerProfileHandlers, createProfile, switchProfile, getActiveProfile, updateProfile } from './profile-manager'
 
 let mainWindow: BrowserWindow | null = null
+
+// ─── Auto-updater ───
+function setupAutoUpdater(): void {
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('update-available', (info) => {
+    console.log('[AutoUpdate] Update available:', info.version)
+    mainWindow?.webContents.send('update-status', { status: 'downloading', version: info.version })
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log('[AutoUpdate] Update downloaded:', info.version)
+    mainWindow?.webContents.send('update-status', { status: 'ready', version: info.version })
+  })
+
+  autoUpdater.on('error', (err) => {
+    console.log('[AutoUpdate] Error:', err.message)
+  })
+
+  // Check now and every 2 hours
+  autoUpdater.checkForUpdates().catch(() => {})
+  setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 2 * 60 * 60 * 1000)
+}
+
+// IPC: renderer can trigger install
+ipcMain.on('install-update', () => {
+  autoUpdater.quitAndInstall(false, true)
+})
 
 /** Show an error via in-app modal (avoids native dialog going behind windows). */
 function showError(title: string, message: string) {
@@ -311,6 +341,28 @@ async function handleProtocolUrl(url: string): Promise<void> {
         } catch {}
       }
 
+      // If we have a quoteId, check for new files and download them automatically
+      if (quoteId) {
+        const presscalUrl = (store.get('presscal.url') as string)?.replace(/\/$/, '')
+        const apiKey = store.get('presscal.apiKey') as string
+        if (presscalUrl && apiKey) {
+          try {
+            const checkUrl = `${presscalUrl}/api/filehelper/files?quoteId=${encodeURIComponent(quoteId)}&target=global&onlyNew=1`
+            const res = await fetch(checkUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } })
+            if (res.ok) {
+              const data = await res.json() as { newCount?: number }
+              if (data.newCount && data.newCount > 0) {
+                console.log(`[DeepLink] open-folder: ${data.newCount} new files, triggering download`)
+                await handleProtocolUrl(`presscal-fh://download-to-folder?quoteId=${encodeURIComponent(quoteId)}&target=global&onlyNew=1`)
+                return
+              }
+            }
+          } catch (err) {
+            console.warn('[DeepLink] open-folder: failed to check for new files:', err)
+          }
+        }
+      }
+
       if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore()
         mainWindow.showInactive()
@@ -507,11 +559,16 @@ async function handleProtocolUrl(url: string): Promise<void> {
             ? file.filePath
             : `${presscalUrl}${file.filePath.startsWith('/') ? '' : '/'}${file.filePath}`
 
-          console.log(`[DeepLink] Downloading: ${saveName} (source: ${file.source || 'unknown'})`)
+          console.log(`[DeepLink] Downloading: ${saveName} from ${fileUrl} (source: ${file.source || 'unknown'}, id: ${file.id || '-'})`)
 
           const dlResult = await httpGet(fileUrl)
           if (dlResult.status !== 200) {
-            console.warn(`[DeepLink] Failed ${saveName}: ${dlResult.status}`)
+            console.warn(`[DeepLink] Failed ${saveName}: HTTP ${dlResult.status} — ${dlResult.body.toString('utf8').slice(0, 300)}`)
+            continue
+          }
+
+          if (dlResult.body.length === 0) {
+            console.warn(`[DeepLink] Empty body for ${saveName}, skipping`)
             continue
           }
 
@@ -545,15 +602,29 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       console.log(`[DeepLink] Done: ${downloaded}/${filesToDownload.length} to ${targetDir}`)
 
-      // 5. Mark files as saved
+      // 5. Mark files as saved (only the ones actually downloaded)
       if (downloaded > 0) {
         try {
           await fetch(`${presscalUrl}/api/filehelper/files`, {
             method: 'PATCH',
             headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ quoteId, savedToPath: targetDir }),
+            body: JSON.stringify({
+              quoteId,
+              savedToPath: targetDir,
+              ...(downloadedFileIds.length > 0 ? { fileIds: downloadedFileIds } : {}),
+            }),
           })
         } catch {}
+      }
+
+      // Report failures to user
+      const failed = filesToDownload.length - downloaded
+      if (failed > 0) {
+        console.warn(`[DeepLink] ${failed} file(s) failed to download`)
+        mainWindow?.webContents.send('show-alert', {
+          title: 'Λήψη αρχείων',
+          message: `${failed} αρχεί${failed === 1 ? 'ο' : 'α'} δεν κατέβηκ${failed === 1 ? 'ε' : 'αν'}. Δοκίμασε ξανά.`,
+        })
       }
 
       // 6. Save quote context
@@ -1628,6 +1699,9 @@ if (!gotTheLock) {
     registerHandlers()
     startFileServer()
     createWindow()
+
+    // Auto-update (production only)
+    if (!is.dev) setupAutoUpdater()
 
     // Check if launched with protocol URL (Windows: passed as arg)
     const protocolUrl = process.argv.find(arg => arg.startsWith(`${PROTOCOL}://`))
