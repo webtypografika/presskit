@@ -109,9 +109,12 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="flex flex-col overflow-y-auto" style={{ background: 'var(--th-bg-secondary)', maxHeight: '80vh' }}>
+    <div className="flex flex-col" style={{ background: 'var(--th-bg-secondary)', maxHeight: '85vh' }}>
       {/* Header */}
       <PanelHeader onClose={onClose} />
+
+      {/* Scrollable options area */}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
 
       {/* Source file */}
       <Section>
@@ -301,8 +304,10 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* Convert button / Result */}
-      <div style={{ padding: '20px 24px', marginTop: 'auto' }}>
+      </div>{/* end scrollable area */}
+
+      {/* Convert button / Result — always visible */}
+      <div style={{ padding: '20px 24px', borderTop: '1px solid var(--th-border)', flexShrink: 0 }}>
         {result ? (
           <div style={{
             padding: 16, borderRadius: 10,
