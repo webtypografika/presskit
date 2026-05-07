@@ -301,11 +301,8 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* Spacer */}
-      <div style={{ flex: 1 }} />
-
       {/* Convert button / Result */}
-      <div style={{ padding: '20px 24px' }}>
+      <div style={{ padding: '20px 24px', marginTop: 'auto' }}>
         {result ? (
           <div style={{
             padding: 16, borderRadius: 10,
