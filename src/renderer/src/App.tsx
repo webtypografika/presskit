@@ -329,6 +329,7 @@ export default function App() {
         console.log(`[email-autofill] resolving via quoteId: ${knownQuoteId}`)
         let resolvedCustomerId: string | null = null
         let resolvedCustomerName: string | null = null
+        let directEmail: string | null = null // contactEmail or senderEmail fallback
 
         // 1a) Single-quote endpoint
         try {
@@ -336,6 +337,8 @@ export default function App() {
           if (cancelled) return
           if (quote?.customerId) resolvedCustomerId = quote.customerId
           else if (quote?.customerName) resolvedCustomerName = quote.customerName
+          // Capture direct email fallbacks from quote response
+          directEmail = quote?.contactEmail || quote?.senderEmail || null
         } catch (err: any) {
           console.log('[email-autofill] getQuote failed, trying list:', err.message || err)
         }
@@ -393,6 +396,16 @@ export default function App() {
             return
           }
           console.warn('[email-autofill] resolved customer has no email:', customer || { resolvedCustomerId, resolvedCustomerName })
+        }
+
+        // 1e) Fallback: use contactEmail or senderEmail directly from quote
+        if (directEmail) {
+          console.log(`[email-autofill] FALLBACK via contactEmail/senderEmail: ${directEmail}`)
+          useAppStore.setState({
+            lastCustomerEmail: directEmail,
+            lastCustomerEmailOptions: [{ label: directEmail, email: directEmail, kind: 'contact' as const }]
+          })
+          return
         }
       }
 
