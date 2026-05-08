@@ -3,9 +3,8 @@ import Database from 'better-sqlite3'
 import { readdir, stat } from 'fs/promises'
 import { join, extname } from 'path'
 import { existsSync } from 'fs'
-import Store from 'electron-store'
-
-const store = new Store()
+import * as everything from './everything-engine'
+import { store } from './settings'
 
 let db: Database.Database | null = null
 let indexing = false
@@ -332,22 +331,34 @@ export function registerSearchHandlers(ipcMain: IpcMain): void {
   })
 
   ipcMain.handle('search:query', async (_e, query: string, limit?: number) => {
-    // Don't block on index build — search whatever is available
+    const n = limit || 50
+
+    // Primary: Everything (instant, always fresh, searches full paths)
+    if (everything.isAvailable()) {
+      const results = await everything.search(query, n)
+      console.log(`[SEARCH] query="${query}" → ${results.length} results (Everything)`)
+      return results
+    }
+
+    // Fallback: SQLite index
     if (!indexed && !indexing) {
       buildIndex().catch(() => {})
     }
-    const results = search(query, limit || 50)
-    console.log(`[SEARCH] query="${query}" → ${results.length} results (indexed=${indexed}, indexing=${indexing})`)
+    const results = search(query, n)
+    console.log(`[SEARCH] query="${query}" → ${results.length} results (SQLite, indexed=${indexed})`)
     return results
   })
 
   ipcMain.handle('search:stats', async () => {
+    if (everything.isAvailable()) {
+      return { indexed: true, count: -1, engine: 'everything' }
+    }
     try {
       const d = getDb()
       const count = (d.prepare('SELECT COUNT(*) as c FROM files').get() as any).c
-      return { indexed: true, count }
+      return { indexed: true, count, engine: 'sqlite' }
     } catch {
-      return { indexed: false, count: 0 }
+      return { indexed: false, count: 0, engine: 'none' }
     }
   })
 

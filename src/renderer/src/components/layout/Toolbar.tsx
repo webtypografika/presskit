@@ -377,6 +377,15 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
   const [error, setError] = useState('')
   const [emailMenuOpen, setEmailMenuOpen] = useState(false)
 
+  // Sync when auto-detect resolves after dialog opened
+  const prevEmail = useRef(lastCustomerEmail)
+  useEffect(() => {
+    if (lastCustomerEmail && lastCustomerEmail !== prevEmail.current && !to) {
+      setTo(lastCustomerEmail)
+    }
+    prevEmail.current = lastCustomerEmail
+  }, [lastCustomerEmail]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Customer search autocomplete — live search via API
   const [customerSuggestions, setCustomerSuggestions] = useState<PresscalCustomer[]>([])
   const [showCustomerSearch, setShowCustomerSearch] = useState(false)

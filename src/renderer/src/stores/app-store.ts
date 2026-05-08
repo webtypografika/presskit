@@ -93,6 +93,7 @@ interface AppState {
   lastCustomerEmailOptions: Array<{ label: string; email: string; kind: 'company' | 'contact' }>
   pickFileMode: { quoteId: string; itemId: string } | null
   attachmentQuoteId: string
+  emailDetectSeq: number  // bump to force email-autofill re-run
 
   // Dropbox connection
   dropboxConnected: boolean
@@ -247,6 +248,7 @@ export const useAppStore = create<AppState>((set, get) => {
     lastCustomerEmailOptions: [],
     pickFileMode: null,
     attachmentQuoteId: '',
+    emailDetectSeq: 0,
     dropboxConnected: false,
     dropboxName: '',
 

@@ -9,6 +9,8 @@ import type { PresscalCustomer } from '@/lib/ipc'
 
 export function EmailAttach() {
   const { selectedFile, selectedFiles, preflight } = useAppStore()
+  const lastCustomerEmail = useAppStore(s => s.lastCustomerEmail)
+  const lastCustomerEmailOptions = useAppStore(s => s.lastCustomerEmailOptions)
   const [to, setTo] = useState('')
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
@@ -16,6 +18,15 @@ export function EmailAttach() {
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
   const [includePreflight, setIncludePreflight] = useState(false)
+
+  // Pre-fill "to" from store when email options arrive (deep link / auto-detect)
+  const appliedEmailRef = useRef('')
+  useEffect(() => {
+    if (lastCustomerEmail && lastCustomerEmail !== appliedEmailRef.current && !to) {
+      setTo(lastCustomerEmail)
+      appliedEmailRef.current = lastCustomerEmail
+    }
+  }, [lastCustomerEmail]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Collect files to attach: multi-selected or single selected
   const files = useMemo(() => {
@@ -145,6 +156,26 @@ export function EmailAttach() {
 
       {/* Form */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {/* Pre-resolved email options from PressCal (company, contacts, quote) */}
+        {lastCustomerEmailOptions.length > 1 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {lastCustomerEmailOptions.map(opt => (
+              <button
+                key={opt.email}
+                onClick={() => setTo(opt.email)}
+                style={{
+                  padding: '4px 10px', borderRadius: 12, border: 'none', cursor: 'pointer',
+                  fontSize: 11, fontWeight: 500,
+                  background: to === opt.email ? '#6ec8c8' : 'var(--th-bg-primary)',
+                  color: to === opt.email ? '#fff' : 'var(--th-text-secondary)',
+                }}
+              >
+                {opt.label !== opt.email ? `${opt.label} — ` : ''}{opt.email}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* To field with autocomplete */}
         <div style={{ position: 'relative' }}>
           <input

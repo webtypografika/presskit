@@ -65,6 +65,11 @@
       {
         "from": "resources/icon.ico",
         "to": "icon.ico"
+      },
+      {
+        "from": "vendor/Everything",
+        "to": "Everything",
+        "filter": ["**/*"]
       }
     ],
     "win": {

@@ -107,6 +107,31 @@ export function QuoteLinker() {
     )
   }, [fileLinks, selectedFile])
 
+  const navigateTo = useAppStore(s => s.navigateTo)
+
+  const openQuoteFolder = useCallback(async (quote: PresscalQuote) => {
+    // Try to get the full quote details to find the folder path
+    try {
+      const full = await window.api.presscal.getQuote(quote.id)
+      const folderPath = full?.jobFolderPath || full?.folderPath
+      if (folderPath) {
+        const exists = await window.api.fs.exists(folderPath)
+        if (exists) {
+          navigateTo(folderPath)
+          useAppStore.setState({ attachmentQuoteId: quote.id })
+          return
+        }
+      }
+    } catch {}
+    // Fallback: open quote in PressCal browser
+    try {
+      const presscalUrl = await window.api.settings.get('presscal.url') as string
+      if (presscalUrl) {
+        window.api.shell.openExternal(`${presscalUrl.replace(/\/$/, '')}/quotes/${quote.id}`)
+      }
+    } catch {}
+  }, [navigateTo])
+
   const toggleExpand = useCallback(async (quoteId: string) => {
     if (expandedQuote === quoteId) {
       setExpandedQuote(null)
@@ -236,10 +261,11 @@ export function QuoteLinker() {
             const expanded = expandedQuote === quote.id
             return (
               <div key={quote.id} className="rounded-lg overflow-hidden">
-                {/* Quote row */}
+                {/* Quote row — click to open quote folder */}
                 <div
                   className="flex items-center gap-3 rounded-lg hover:bg-bg-hover group cursor-pointer"
                   style={{ padding: '12px 12px' }}
+                  onClick={() => openQuoteFolder(quote)}
                 >
                   {/* Expand toggle */}
                   <button

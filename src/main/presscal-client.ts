@@ -297,7 +297,7 @@ export function registerPresscalHandlers(ipcMain: IpcMain): void {
     // Check total file size to decide route
     const sizes = await Promise.all(data.filePaths.map(f => fsStat(f.path).then(s => s.size)))
     const totalBytes = sizes.reduce((a, b) => a + b, 0)
-    const VERCEL_LIMIT = 4 * 1024 * 1024 // 4 MB
+    const VERCEL_LIMIT = 3 * 1024 * 1024 // 3 MB (base64 adds ~33%, Vercel body limit is 4.5 MB)
 
     console.log('[PressCal] sendEmailWithFiles →',
       `to=${data.to},`,

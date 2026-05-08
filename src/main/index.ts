@@ -12,6 +12,7 @@ import { registerBatchHandlers } from './batch-engine'
 import { registerConvertHandlers } from './convert-engine'
 import { registerColorHandlers } from './color-tools'
 import { registerSearchHandlers } from './search-engine'
+import * as everything from './everything-engine'
 import { registerToolHandlers } from './tools-engine'
 import { registerLicenseHandlers, startLicensePoller, checkLicense } from './license-engine'
 import { initializeProfiles, registerProfileHandlers, createProfile, switchProfile, getActiveProfile, updateProfile } from './profile-manager'
@@ -438,8 +439,9 @@ async function handleProtocolUrl(url: string): Promise<void> {
       let quoteFolderPath: string = data.folderPath || ''
       let customerFolderPath = ''
       let quoteName = quoteId
+      let quoteEmail = ''  // contactEmail or senderEmail from quote
 
-      // Fetch quote details (for folder name and customer folder)
+      // Fetch quote details (for folder name, customer folder, and email)
       try {
         const qRes = await httpGet(`${presscalUrl}/api/filehelper/quotes/${encodeURIComponent(quoteId)}`)
         if (qRes.status === 200) {
@@ -449,6 +451,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
           quoteName = customer ? `[${num}] ${customer}` : `[${num}]`
           quoteName = quoteName.replace(/[<>:"/\\|?*]/g, '_')
           if (quote.customerFolderPath) customerFolderPath = quote.customerFolderPath
+          quoteEmail = quote.contactEmail || quote.senderEmail || ''
         }
       } catch {}
 
@@ -545,7 +548,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       if (filesToDownload.length === 0) {
         sendProgress('Κανένα νέο αρχείο', 0, 0, true)
-        mainWindow?.webContents.send('navigate-to-folder', { path: targetDir, quoteId })
+        mainWindow?.webContents.send('navigate-to-folder', { path: targetDir, email: quoteEmail, quoteId })
         return
       }
 
@@ -640,7 +643,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       // 7. Navigate to folder
       sendProgress('Ολοκληρώθηκε', downloaded, filesToDownload.length, true)
-      mainWindow?.webContents.send('navigate-to-folder', { path: targetDir, quoteId })
+      mainWindow?.webContents.send('navigate-to-folder', { path: targetDir, email: quoteEmail, quoteId })
     }
     // Archive a quote folder: presscal-fh://archive-quote?folderPath=C:\...
     // PressCal MUST use the exact folder name "_01 Archive" — it pre-writes
@@ -1726,6 +1729,9 @@ if (!gotTheLock) {
     const protocolUrl = process.argv.find(arg => arg.startsWith(`${PROTOCOL}://`))
     if (protocolUrl) handleProtocolUrl(protocolUrl)
 
+    // Launch Everything search engine (non-blocking)
+    everything.launch().catch(err => console.error('[EVERYTHING] Launch failed:', err))
+
     // Start pending archives poller (checks every 30s)
     startPendingArchivesPoller()
 
@@ -1748,6 +1754,7 @@ if (!gotTheLock) {
 
   // Cleanup on quit
   app.on('before-quit', async () => {
+    everything.stop()
     if (pendingArchivesTimer) clearInterval(pendingArchivesTimer)
     try {
       const { rm } = await import('fs/promises')
