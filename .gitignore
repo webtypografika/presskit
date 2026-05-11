@@ -1,9 +1,12 @@
 node_modules/
 out/
 dist/
+release-dist/
 .env
 *.log
 .DS_Store
 Thumbs.db
 *.tmp.*
 *.tsbuildinfo
+vendor/Everything/Everything.db
+vendor/Everything/Everything.ini
