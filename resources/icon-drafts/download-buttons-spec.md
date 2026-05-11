@@ -8,6 +8,10 @@
 
 `vercel.json` static redirects can't express "find whatever `.exe` is attached to the latest release", so use a Next.js route handler instead. One handler covers both "latest" and "pin to a version".
 
+> ✅ **This is a one-time implementation — zero per-release maintenance.** Once the handler is deployed it resolves the latest release's installer at request time via the GitHub API, regardless of the asset's filename (`PressKit-Setup-2.2.2.exe`, `-2.2.3`, …). You never touch `vercel.json`, you never re-point a URL, you never re-upload anything. New PressKit releases are picked up automatically (within the ~10-min cache window in `resolve()`). Implement it once and forget it.
+>
+> _(Background: PressKit currently also publishes a stable-named `PressKit-Setup.exe` copy alongside the versioned one purely so the old hardcoded URL keeps working until this handler exists. After the handler ships, that copy is no longer needed and can be dropped from future releases.)_
+
 ```ts
 // app/downloads/presskit/route.ts          → /downloads/presskit  (latest)
 // app/downloads/presskit/[version]/route.ts → /downloads/presskit/v2.2.1 (pinned)
