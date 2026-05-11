@@ -129,6 +129,14 @@ const api = {
     }
   },
 
+  // Cloud roots (portable paths)
+  cloudRoots: {
+    get: () => ipcRenderer.invoke('cloudRoots:get'),
+    detect: () => ipcRenderer.invoke('cloudRoots:detect'),
+    save: (roots: any[]) => ipcRenderer.invoke('cloudRoots:save', roots),
+    migrate: () => ipcRenderer.invoke('cloudRoots:migrate'),
+  },
+
   // Settings
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),

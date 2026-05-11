@@ -16,6 +16,7 @@ import * as everything from './everything-engine'
 import { registerToolHandlers } from './tools-engine'
 import { registerLicenseHandlers, startLicensePoller, checkLicense } from './license-engine'
 import { initializeProfiles, registerProfileHandlers, createProfile, switchProfile, getActiveProfile, updateProfile } from './profile-manager'
+import { registerCloudRootsHandlers, getCloudRoots, resolvePortablePath, toPortablePath, detectCloudRoots } from './cloud-roots'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -100,6 +101,16 @@ async function handleProtocolUrl(url: string): Promise<void> {
   try {
     const parsed = new URL(url)
     deepLog('[DeepLink] hostname:', parsed.hostname, 'params:', parsed.searchParams.toString())
+
+    // Resolve portable paths in deep link params (e.g. <DROPBOX>\... → C:\Users\...\Dropbox\...)
+    const resolveDL = resolvePortablePath
+    for (const key of ['path', 'folder', 'folderPath']) {
+      const val = parsed.searchParams.get(key)
+      if (val && val.startsWith('<')) {
+        parsed.searchParams.set(key, resolveDL(val))
+      }
+    }
+
     if (parsed.hostname === 'attachment') {
       const messageId = parsed.searchParams.get('messageId')
       const attId = parsed.searchParams.get('attId')
@@ -225,7 +236,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
         await fetch(`${presscalUrl}/api/filehelper/customers`, {
           method: 'PATCH',
           headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: customerId, folderPath: selectedPath })
+          body: JSON.stringify({ id: customerId, folderPath: toPortablePath(selectedPath) })
         })
       }
 
@@ -454,6 +465,10 @@ async function handleProtocolUrl(url: string): Promise<void> {
           quoteEmail = quote.contactEmail || quote.senderEmail || ''
         }
       } catch {}
+
+      // Resolve portable paths from DB (e.g. <DROPBOX>\... → local absolute)
+      if (quoteFolderPath) quoteFolderPath = resolveDL(quoteFolderPath)
+      if (customerFolderPath) customerFolderPath = resolveDL(customerFolderPath)
 
       // If no quote folder, create a default name
       if (!quoteFolderPath) {
@@ -1274,9 +1289,23 @@ function startFileServer(): void {
 
     const parsed = urlMod.parse(req.url, true)
 
+    // Health check: GET /health → { ok: true }
+    if (parsed.pathname === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true }))
+      return
+    }
+
+    // Cloud roots: GET /roots → [{ placeholder, label, localPath }]
+    if (parsed.pathname === '/roots') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(getCloudRoots()))
+      return
+    }
+
     // POST /?save=C:\path\to\file.pdf — save uploaded file to disk
     if (req.method === 'POST' && parsed.query.save) {
-      const savePath = parsed.query.save as string
+      const savePath = resolvePortablePath(parsed.query.save as string)
       const chunks: Buffer[] = []
       req.on('data', (chunk: Buffer) => chunks.push(chunk))
       req.on('end', async () => {
@@ -1327,7 +1356,7 @@ function startFileServer(): void {
           if (result.canceled || result.filePaths.length === 0) {
             res.end(JSON.stringify({ canceled: true }))
           } else {
-            res.end(JSON.stringify({ path: result.filePaths[0] }))
+            res.end(JSON.stringify({ path: toPortablePath(result.filePaths[0]) }))
           }
         } catch (e: any) {
           res.writeHead(500, { 'Content-Type': 'application/json' })
@@ -1339,7 +1368,7 @@ function startFileServer(): void {
 
     // Refresh: GET /?refresh=C:\path\to\folder → tells renderer to navigate/refresh that folder
     if (parsed.query.refresh) {
-      const refreshPath = parsed.query.refresh as string
+      const refreshPath = resolvePortablePath(parsed.query.refresh as string)
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('navigate-to-folder', { path: refreshPath })
         if (mainWindow.isMinimized()) mainWindow.restore()
@@ -1351,7 +1380,7 @@ function startFileServer(): void {
     }
 
     // Directory listing: GET /?list=C:\path\to\folder → returns JSON array of PDF filenames
-    const listDir = parsed.query.list as string
+    const listDir = parsed.query.list ? resolvePortablePath(parsed.query.list as string) : null
     if (listDir) {
       if (!fs.existsSync(listDir)) { res.writeHead(404); res.end('[]'); return }
       try {
@@ -1362,7 +1391,7 @@ function startFileServer(): void {
       return
     }
 
-    const filePath = parsed.query.path as string
+    const filePath = parsed.query.path ? resolvePortablePath(parsed.query.path as string) : null
 
     if (!filePath || !fs.existsSync(filePath)) {
       res.writeHead(404); res.end('Not found'); return
@@ -1399,6 +1428,7 @@ function registerHandlers(): void {
   registerToolHandlers(ipcMain)
   registerLicenseHandlers(ipcMain)
   registerProfileHandlers(ipcMain)
+  registerCloudRootsHandlers(ipcMain)
 
   // User directories
   ipcMain.handle('system:userPaths', async () => {
@@ -1718,6 +1748,8 @@ if (!gotTheLock) {
     // (settings/presscal/license/etc.) — they all proxy through the active
     // profile's electron-store. Also performs the v1.x → v2.x migration.
     initializeProfiles()
+    // Detect cloud-sync roots (Dropbox, OneDrive, etc.) for portable paths
+    detectCloudRoots().catch(() => {})
     registerHandlers()
     startFileServer()
     createWindow()

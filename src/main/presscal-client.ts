@@ -2,6 +2,7 @@ import { IpcMain, app } from 'electron'
 import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { store } from './settings'
+import { toPortablePath } from './cloud-roots'
 
 const STORE_KEYS = {
   presscalUrl: 'presscal.url',
@@ -71,7 +72,7 @@ export async function linkFileToQuoteItem(quoteId: string, itemId: string, fileP
   const name = basename(filePath)
 
   const fileData: Record<string, any> = {
-    path: filePath,
+    path: toPortablePath(filePath),
     name,
     type: ext.replace('.', ''),
     size: stats.size,
@@ -219,7 +220,7 @@ export function registerPresscalHandlers(ipcMain: IpcMain): void {
   }) => {
     return presscalFetch<any>('/files/link', {
       method: 'POST',
-      body: JSON.stringify(data)
+      body: JSON.stringify({ ...data, filePath: toPortablePath(data.filePath) })
     })
   })
 
