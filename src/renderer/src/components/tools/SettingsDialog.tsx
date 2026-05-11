@@ -154,7 +154,7 @@ function PresscalSettings() {
           type="url"
           value={url}
           onChange={e => setUrl(e.target.value)}
-          placeholder="http://localhost:3000"
+          placeholder="https://pro.presscal.com"
           style={inputStyle}
         />
       </Field>

@@ -244,7 +244,13 @@ export function switchProfile(id: string): { ok: boolean; error?: string } {
   const profiles = profilesIndex.get('profiles')
   if (!profiles.some(p => p.id === id)) return { ok: false, error: 'Profile not found' }
   profilesIndex.set('activeId', id)
-  app.relaunch()
+  // Relaunch WITHOUT any `presscal-fh://` argv. If the app was started by a
+  // deep link (e.g. `presscal-fh://connect?...&addProfile=1`), passing argv
+  // through unchanged would make the restarted instance re-process that URL,
+  // create yet another profile, and relaunch again — an infinite
+  // create-profile-and-restart loop that the user can't even kill.
+  const cleanArgs = process.argv.slice(1).filter(a => !a.startsWith('presscal-fh://'))
+  app.relaunch({ args: cleanArgs })
   app.exit(0)
   return { ok: true }
 }

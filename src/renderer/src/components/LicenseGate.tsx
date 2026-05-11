@@ -3,9 +3,10 @@ import { createPortal } from 'react-dom'
 import { Lock, KeyRound, WifiOff, AlertTriangle, ShoppingCart, RefreshCw, Loader2 } from 'lucide-react'
 
 const CHECKOUT_URL = 'https://presscal.com/el/checkout'
-// Default sign-in target. If the user has already configured a custom PressCal
-// URL (e.g. pro.presscal.com), we send them there instead — see openGoogleSignIn.
-const DEFAULT_PRESSCAL_BASE = 'https://demo.gr.presscal.com'
+// Default sign-in target — the production PressCal instance. If the user has
+// already configured a different PressCal URL (e.g. demo.gr.presscal.com), we
+// send them there instead — see openGoogleSignIn.
+const DEFAULT_PRESSCAL_BASE = 'https://pro.presscal.com'
 
 // Google "G" logo, official colors. lucide-react has no brand icons.
 function GoogleIcon({ size = 16 }: { size?: number }) {

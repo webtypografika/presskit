@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef, type CSSProperties } from 'react'
 import { ChevronDown, Plus, Settings, Check, Loader2 } from 'lucide-react'
 
-const DEFAULT_PRESSCAL_BASE = 'https://demo.gr.presscal.com'
+// Production PressCal instance — used when a profile has no configured URL yet.
+const DEFAULT_PRESSCAL_BASE = 'https://pro.presscal.com'
 
 interface Profile {
   id: string

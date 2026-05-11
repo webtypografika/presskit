@@ -1,6 +1,6 @@
 {
   "name": "presskit",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "PressKit - Print & Design File Manager",
   "main": "./out/main/index.js",
   "scripts": {
@@ -77,7 +77,7 @@
         "nsis"
       ],
       "icon": "resources/icon.ico",
-      "artifactName": "PressKit-Setup.${ext}"
+      "artifactName": "PressKit-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
