@@ -2,31 +2,76 @@
 
 **Goal**: Users download PressKit from `presscal.com` (or its subdomains) without ever seeing `github.com`. Branded experience, single source of truth.
 
-## Step 1 — Add branded redirect to `vercel.json`
+> ⚠️ **Changed in PressKit v2.2.1** — the installer asset is now **versioned**: `PressKit-Setup-<version>.exe` (e.g. `PressKit-Setup-2.2.1.exe`), not the old fixed `PressKit-Setup.exe`. That means the GitHub URL `…/releases/latest/download/PressKit-Setup.exe` **no longer resolves** (you can't reference a versioned filename through the `/latest/` path without knowing the version). So a static `vercel.json` redirect won't work anymore — Step 1 below is now a small route handler that looks up the latest release's asset at request time. (Auto-update is unaffected — Electron reads `latest.yml`.)
 
-```json
-{
-  "redirects": [
-    {
-      "source": "/downloads/presskit",
-      "destination": "https://github.com/webtypografika/presskit/releases/latest/download/PressKit-Setup.exe",
-      "permanent": false
-    },
-    {
-      "source": "/downloads/presskit/:version",
-      "destination": "https://github.com/webtypografika/presskit/releases/download/:version/PressKit-Setup.exe",
-      "permanent": false
-    }
-  ]
+## Step 1 — Branded redirect via a route handler (resolves the versioned asset)
+
+`vercel.json` static redirects can't express "find whatever `.exe` is attached to the latest release", so use a Next.js route handler instead. One handler covers both "latest" and "pin to a version".
+
+```ts
+// app/downloads/presskit/route.ts          → /downloads/presskit  (latest)
+// app/downloads/presskit/[version]/route.ts → /downloads/presskit/v2.2.1 (pinned)
+import { NextResponse } from 'next/server'
+
+const REPO = 'webtypografika/presskit'
+
+// Find the Windows installer asset on a release payload. Matches the current
+// `PressKit-Setup-<version>.exe` naming and the legacy `PressKit-Setup.exe`.
+function findInstaller(release: any): string | null {
+  const asset = (release?.assets ?? []).find((a: any) =>
+    /^PressKit-Setup.*\.exe$/i.test(a.name) && !/\.blockmap$/i.test(a.name)
+  )
+  return asset?.browser_download_url ?? null
+}
+
+async function resolve(version?: string): Promise<string | null> {
+  const api = version
+    ? `https://api.github.com/repos/${REPO}/releases/tags/${encodeURIComponent(version)}`
+    : `https://api.github.com/repos/${REPO}/releases/latest`
+  const res = await fetch(api, {
+    headers: { Accept: 'application/vnd.github+json' },
+    next: { revalidate: 600 }, // 10 min cache — don't hammer the GitHub API
+  })
+  if (!res.ok) return null
+  return findInstaller(await res.json())
+}
+
+// /downloads/presskit
+export async function GET() {
+  const url = await resolve()
+  if (!url) return new NextResponse('PressKit download unavailable', { status: 502 })
+  return NextResponse.redirect(url, 302)
+}
+```
+
+```ts
+// app/downloads/presskit/[version]/route.ts
+import { NextResponse } from 'next/server'
+// (reuse resolve()/findInstaller() — extract to a shared lib if you prefer)
+
+export async function GET(_req: Request, { params }: { params: { version: string } }) {
+  // accept both "v2.2.1" and "2.2.1"
+  const tag = params.version.startsWith('v') ? params.version : `v${params.version}`
+  const url = await resolve(tag)
+  if (!url) return new NextResponse(`PressKit ${params.version} not found`, { status: 404 })
+  return NextResponse.redirect(url, 302)
 }
 ```
 
 After deploy:
-- `https://presscal.com/downloads/presskit` → always latest
-- `https://demo.gr.presscal.com/downloads/presskit` → also latest (same vercel.json applies)
-- `https://presscal.com/downloads/presskit/v1.1.3` → pin to specific version
+- `https://presscal.com/downloads/presskit` → 302 → latest `PressKit-Setup-<latest>.exe`
+- `https://demo.gr.presscal.com/downloads/presskit` → same handler, also latest
+- `https://presscal.com/downloads/presskit/v2.2.1` (or `/2.2.1`) → 302 → that release's installer
 
-User sees the GitHub URL only briefly during the 302 hop. Browser-level download dialog shows `PressKit-Setup.exe` as the filename.
+User sees the GitHub URL only briefly during the 302 hop. The browser download dialog shows the real filename, e.g. `PressKit-Setup-2.2.1.exe` (now version-stamped — nice for support: you can tell which build someone has).
+
+> If you'd rather avoid a route handler, the only `vercel.json`-only alternative is to **hardcode the current version** in the redirect destination and bump it on every PressKit release:
+> ```json
+> { "redirects": [ { "source": "/downloads/presskit",
+>   "destination": "https://github.com/webtypografika/presskit/releases/download/v2.2.1/PressKit-Setup-2.2.1.exe",
+>   "permanent": false } ] }
+> ```
+> Not recommended — it drifts the moment a new release ships.
 
 ## Step 2 — Place download buttons across the site
 
@@ -35,13 +80,14 @@ User sees the GitHub URL only briefly during the 302 hop. Browser-level download
 ```tsx
 <a href="/downloads/presskit" className="btn-primary-large">
   <DownloadIcon /> Κατέβασε το PressKit
-  <span className="version-tag">Windows · v1.1.4</span>
+  {/* version comes from /api/presskit-version (Step 3) — don't hardcode */}
+  <span className="version-tag">Windows · {version ?? '…'}</span>
 </a>
 ```
 
-### B. `demo.gr.presscal.com` — top nav or sidebar
+### B. App instances (`pro.presscal.com` — the production instance PressKit now defaults to — and `demo.gr.presscal.com`) — top nav or sidebar
 
-Always-visible "Download PressKit" link in the nav:
+Always-visible "Download PressKit" link in the nav, on every PressCal instance:
 
 ```tsx
 <a href="/downloads/presskit" className="nav-link nav-link-icon">
@@ -101,9 +147,9 @@ Anywhere there's a deep-link button (e.g. "Open file in PressKit", "Send to Pres
 </a>
 ```
 
-## Step 3 — Optional: dynamic version label
+## Step 3 — Dynamic version label (now also recommended, not optional)
 
-To show "v1.1.4" without manual updates, add a small server function that fetches the latest GitHub release tag (cached 1 hour):
+Since the download button can't carry a hardcoded version anymore (the filename is version-stamped), surface the version from this endpoint. Reuse the same GitHub fetch as Step 1 (extract `resolve()` to a shared lib if you like):
 
 ```ts
 // app/api/presskit-version/route.ts
@@ -112,10 +158,21 @@ import { NextResponse } from 'next/server'
 export const revalidate = 3600 // 1h cache
 
 export async function GET() {
-  const res = await fetch('https://api.github.com/repos/webtypografika/presskit/releases/latest')
+  const res = await fetch('https://api.github.com/repos/webtypografika/presskit/releases/latest', {
+    headers: { Accept: 'application/vnd.github+json' },
+  })
   if (!res.ok) return NextResponse.json({ version: null })
   const data = await res.json()
-  return NextResponse.json({ version: data.tag_name, name: data.name, publishedAt: data.published_at })
+  const installer = (data.assets ?? []).find((a: any) =>
+    /^PressKit-Setup.*\.exe$/i.test(a.name) && !/\.blockmap$/i.test(a.name)
+  )
+  return NextResponse.json({
+    version: data.tag_name,                    // "v2.2.1"
+    name: data.name,                           // release title
+    publishedAt: data.published_at,
+    downloadUrl: installer?.browser_download_url ?? null,
+    filename: installer?.name ?? null,         // "PressKit-Setup-2.2.1.exe"
+  })
 }
 ```
 
@@ -137,15 +194,17 @@ Future PressKit additions (separate work, not blocking this):
 
 ## Why a branded redirect, not hosted file
 
-- **Vercel limit**: 100MB max per asset on Hobby tier; PressKit installer is ~110MB
+- **Vercel limit**: 100MB max per asset on Hobby tier; PressKit installer is ~118MB
 - **Single source of truth**: GitHub Releases auto-tags every build. No risk of drift between PressCal and the actual binary.
 - **Free bandwidth**: GitHub serves all download traffic for free; Vercel only handles the 302 (negligible).
 - **Brand-clean URL**: user shares `presscal.com/downloads/presskit`, not a long GitHub URL.
 
 ## Testing checklist
 
-- [ ] `curl -I https://demo.gr.presscal.com/downloads/presskit` returns `302` with `Location: https://github.com/.../PressKit-Setup.exe`
-- [ ] Clicking the link in any browser triggers download (filename `PressKit-Setup.exe`, ~110MB)
+- [ ] `curl -I https://demo.gr.presscal.com/downloads/presskit` returns `302` with `Location` pointing at `…/releases/download/v<latest>/PressKit-Setup-<latest>.exe`
+- [ ] Clicking the link in any browser triggers a download (filename `PressKit-Setup-<version>.exe`, ~118MB)
+- [ ] `curl -I https://presscal.com/downloads/presskit/v2.2.1` → `302` to that release's `.exe`; a bogus version → `404`
+- [ ] `GET /api/presskit-version` returns `{ version, downloadUrl, filename }` with the current release
 - [ ] Navigation download button visible on every demo page
 - [ ] Settings → PressKit shows both "Open" and "Download" CTAs
 - [ ] Onboarding banner appears for fresh accounts
