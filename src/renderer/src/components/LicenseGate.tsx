@@ -3,10 +3,15 @@ import { createPortal } from 'react-dom'
 import { Lock, KeyRound, WifiOff, AlertTriangle, ShoppingCart, RefreshCw, Loader2 } from 'lucide-react'
 
 const CHECKOUT_URL = 'https://presscal.com/el/checkout'
-// Default sign-in target — the production PressCal instance. If the user has
-// already configured a different PressCal URL (e.g. demo.gr.presscal.com), we
-// send them there instead — see openGoogleSignIn.
-const DEFAULT_PRESSCAL_BASE = 'https://pro.presscal.com'
+
+// PressCal instances offered in the lock-screen picker. The first entry is the
+// default for brand-new installs. "Custom" (typed URL) is handled separately.
+const PRESSCAL_INSTANCES = [
+  { label: 'Production — gr.presscal.com', value: 'https://gr.presscal.com' },
+  { label: 'Demo / sandbox — demo.gr.presscal.com', value: 'https://demo.gr.presscal.com' },
+] as const
+const DEFAULT_PRESSCAL_BASE = PRESSCAL_INSTANCES[0].value
+const CUSTOM_INSTANCE = '__custom__'
 
 // Google "G" logo, official colors. lucide-react has no brand icons.
 function GoogleIcon({ size = 16 }: { size?: number }) {
@@ -157,13 +162,60 @@ function openSettings(): void {
   window.dispatchEvent(new CustomEvent('open-settings', { detail: { tab: 'presscal' } }))
 }
 
-async function openGoogleSignIn(): Promise<void> {
-  // Honor a previously configured server (e.g. pro.presscal.com) so re-auth
-  // after a key revoke goes back to the same instance. Falls back to demo for
-  // first-time users who haven't configured anything yet.
-  const stored = (await window.api.settings.get('presscal.url')) as string | undefined
-  const base = (stored?.trim() || DEFAULT_PRESSCAL_BASE).replace(/\/$/, '')
-  void window.api.shell.openExternal(`${base}/auth/presskit-link`)
+async function openGoogleSignIn(base?: string): Promise<void> {
+  // `base` is the instance the user picked on the lock screen. If it's empty
+  // (e.g. "Custom" with nothing typed), fall back to a previously configured
+  // server — so re-auth after a key revoke goes back to the same instance —
+  // then to the production default for first-time users.
+  let target = base?.trim()
+  if (!target) {
+    const stored = (await window.api.settings.get('presscal.url')) as string | undefined
+    target = stored?.trim() || DEFAULT_PRESSCAL_BASE
+  }
+  void window.api.shell.openExternal(`${target.replace(/\/$/, '')}/auth/presskit-link`)
+}
+
+// Lock-screen dropdown to pick which PressCal instance the Google sign-in
+// should target. Fully controlled — `base` is the effective URL, and any value
+// not matching a known instance is shown as "Custom" with a free-text field.
+function InstancePicker({ base, onChange }: { base: string; onChange: (v: string) => void }) {
+  const normBase = base.replace(/\/$/, '')
+  const known = PRESSCAL_INSTANCES.find(i => i.value === normBase)
+  const fieldStyle: CSSProperties = {
+    width: '100%',
+    padding: '9px 12px',
+    borderRadius: 8,
+    background: 'var(--th-bg-primary, #0f172a)',
+    color: 'var(--th-text-primary, #f1f5f9)',
+    border: '1px solid var(--th-border, #334155)',
+    fontSize: 13,
+  }
+  return (
+    <div style={{ marginBottom: 20, textAlign: 'left' }}>
+      <label style={{ display: 'block', fontSize: 12, color: 'var(--th-text-muted, #94a3b8)', marginBottom: 6 }}>
+        Διακομιστής PressCal
+      </label>
+      <select
+        value={known ? known.value : CUSTOM_INSTANCE}
+        onChange={e => onChange(e.target.value === CUSTOM_INSTANCE ? '' : e.target.value)}
+        style={fieldStyle}
+      >
+        {PRESSCAL_INSTANCES.map(i => (
+          <option key={i.value} value={i.value}>{i.label}</option>
+        ))}
+        <option value={CUSTOM_INSTANCE}>Άλλο instance…</option>
+      </select>
+      {!known && (
+        <input
+          type="url"
+          value={base}
+          onChange={e => onChange(e.target.value)}
+          placeholder="https://…"
+          style={{ ...fieldStyle, marginTop: 8, fontFamily: 'monospace' }}
+        />
+      )}
+    </div>
+  )
 }
 
 function LockScreen({
@@ -172,6 +224,7 @@ function LockScreen({
   message,
   primary,
   manualSetup,
+  signInPicker,
   status,
   onRefresh,
   refreshing,
@@ -183,6 +236,9 @@ function LockScreen({
   // If provided, renders a small text link beneath the buttons for users who
   // want the old API-key flow. Only used in not_configured / unauthorized.
   manualSetup?: boolean
+  // If provided, renders the PressCal-instance picker above the buttons.
+  // Only used in not_configured / unauthorized.
+  signInPicker?: { base: string; setBase: (v: string) => void }
   status: LicenseStatus | null
   onRefresh: () => void
   refreshing: boolean
@@ -193,6 +249,7 @@ function LockScreen({
         <div style={iconWrap}>{icon}</div>
         <div style={title}>{t}</div>
         <div style={body}>{message}</div>
+        {signInPicker && <InstancePicker base={signInPicker.base} onChange={signInPicker.setBase} />}
         <div>
           <button style={primaryBtn} onClick={primary.onClick}>
             {primary.icon}
@@ -278,7 +335,12 @@ function TrialBanner({ daysLeft, expiresAt }: { daysLeft: number; expiresAt: str
   )
 }
 
-function pickLockProps(status: LicenseStatus, refresh: () => void, refreshing: boolean): Parameters<typeof LockScreen>[0] | null {
+function pickLockProps(
+  status: LicenseStatus,
+  refresh: () => void,
+  refreshing: boolean,
+  signIn: { base: string; setBase: (v: string) => void },
+): Parameters<typeof LockScreen>[0] | null {
   switch (status.state) {
     case 'not_configured':
       return {
@@ -294,8 +356,9 @@ function pickLockProps(status: LicenseStatus, refresh: () => void, refreshing: b
             </span>
           </>
         ),
-        primary: { label: 'Σύνδεση με Google', onClick: openGoogleSignIn, icon: <GoogleIcon size={16} /> },
+        primary: { label: 'Σύνδεση με Google', onClick: () => void openGoogleSignIn(signIn.base), icon: <GoogleIcon size={16} /> },
         manualSetup: true,
+        signInPicker: signIn,
         status,
         onRefresh: refresh,
         refreshing,
@@ -305,8 +368,9 @@ function pickLockProps(status: LicenseStatus, refresh: () => void, refreshing: b
         icon: <Lock size={32} color="#dc2626" />,
         title: 'Η σύνδεση δεν είναι έγκυρη',
         message: 'Το API key δεν αναγνωρίζεται πλέον από το PressCal. Συνδέσου ξανά για να γίνει αυτόματη ανανέωση.',
-        primary: { label: 'Σύνδεση με Google', onClick: openGoogleSignIn, icon: <GoogleIcon size={16} /> },
+        primary: { label: 'Σύνδεση με Google', onClick: () => void openGoogleSignIn(signIn.base), icon: <GoogleIcon size={16} /> },
         manualSetup: true,
+        signInPicker: signIn,
         status,
         onRefresh: refresh,
         refreshing,
@@ -348,11 +412,22 @@ function pickLockProps(status: LicenseStatus, refresh: () => void, refreshing: b
 export function LicenseGate({ children }: { children: ReactNode }) {
   const { status, refresh, refreshing } = useLicense()
 
+  // Which PressCal instance the Google sign-in targets. Seeded from the stored
+  // PressCal URL (so re-auth on `unauthorized` returns to the same instance),
+  // falling back to the production default for fresh installs.
+  const [signInBase, setSignInBase] = useState<string>(DEFAULT_PRESSCAL_BASE)
+  useEffect(() => {
+    void window.api.settings.get('presscal.url').then((v) => {
+      const stored = (v as string | undefined)?.trim()
+      if (stored) setSignInBase(stored)
+    })
+  }, [])
+
   // Initial fetch in flight — render the app as-is rather than flashing a lock.
   // The first response broadcast will show the gate within ~200ms if needed.
   if (!status) return <>{children}</>
 
-  const lockProps = pickLockProps(status, refresh, refreshing)
+  const lockProps = pickLockProps(status, refresh, refreshing, { base: signInBase, setBase: setSignInBase })
 
   // Children are always mounted, even when locked. This keeps the SettingsDialog
   // (and other portals) reachable so the user can paste a fresh API key without

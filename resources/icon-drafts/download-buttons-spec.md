@@ -85,7 +85,7 @@ User sees the GitHub URL only briefly during the 302 hop. The browser download d
 </a>
 ```
 
-### B. App instances (`pro.presscal.com` — the production instance PressKit now defaults to — and `demo.gr.presscal.com`) — top nav or sidebar
+### B. App instances (`gr.presscal.com` — the production instance PressKit defaults to since v2.2.2 — plus `demo.gr.presscal.com` and any other) — top nav or sidebar
 
 Always-visible "Download PressKit" link in the nav, on every PressCal instance:
 
