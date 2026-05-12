@@ -8,14 +8,41 @@ Root cause was on the **PressKit** side: the "Σύνδεση με Google" button
 - `DEFAULT_PRESSCAL_BASE` → `https://gr.presscal.com` (the customer-facing production instance), was `demo.gr.presscal.com`.
 - Added a small **instance picker** on the lock screen (Production `gr.presscal.com` / Demo `demo.gr.presscal.com` / Custom URL), pre-selected to Production. So the "which instance" decision is now explicit, not guessed.
 
-**Why this checklist still matters:** PressCal-next reportedly serves the filehelper routes on any instance, so nothing is blocked — but we should *verify* that the two routes are actually reachable, that the `NEXT_PUBLIC_BASE_URL` env var is right on each instance (so the deep link carries the correct `url`), and that the license logic ranks a paid plan above the trial branch. Verification only; no big build.
+**Why this checklist matters:** PressKit v2.2.2 defaults to `https://gr.presscal.com` — but as of writing **that hostname does not resolve** (`DNS_PROBE_FINISHED_NXDOMAIN`; only `demo.gr.presscal.com` has a record). So the very first thing is to *create* `gr.presscal.com` (section A0). After that, verify the filehelper routes are reachable there, that `NEXT_PUBLIC_BASE_URL` is right (so the deep link carries the correct `url`), and that the license logic ranks a paid plan above the trial branch.
 
 > Route implementation reference: `google-login-spec.md` (same folder).
 
 **Instances in play:**
-- `https://gr.presscal.com` — **production, customer-facing**. PressKit defaults here. Must serve the routes correctly.
-- `https://pro.presscal.com` — where the spec author's own Pro subscription lives (used for testing the Pro path). Must also serve the routes correctly.
+- `https://gr.presscal.com` — **production, customer-facing**. PressKit defaults here (v2.2.2+). **Not deployed yet** — needs DNS + a PressCal deployment + auth wiring (section A0), then sections A and B.
+- `https://pro.presscal.com` — where the spec author's own Pro subscription lives (used for testing the Pro path; and the interim instance PressKit users connect to via the lock-screen "Custom" option until `gr.presscal.com` is live). Must serve the routes correctly.
 - `https://demo.gr.presscal.com` — sandbox; orgs there are always 15-day trials. Correct as-is, no changes.
+
+---
+
+## A0. Stand up `gr.presscal.com` (it doesn't exist yet)
+
+`gr.presscal.com` currently returns NXDOMAIN — there's no DNS record for the bare hostname (only `demo.gr.presscal.com` resolves). Until this is done, PressKit's default sign-in target is a dead URL (the "Σύνδεση με Google" button / "Προσθήκη profile" lands on *"This site can't be reached"*).
+
+1. **DNS** — add an A / CNAME record for `gr.presscal.com` pointing at wherever the PressCal Next.js app is hosted (Vercel project domain, etc.). Same for `www.` if you use it. Add it to the Vercel project's Domains list so it's served by the same app.
+
+2. **Routes on that deployment** — the PressCal app on `gr.presscal.com` must serve everything PressKit talks to:
+   - `GET /auth/presskit-link` (the Google sign-in landing — see `google-login-spec.md`)
+   - `GET /api/filehelper/license` and the rest of `/api/filehelper/*` (attachments, files, customers, generate-key, …)
+   - `GET /downloads/presskit` (+ `/downloads/presskit/[version]`) — the branded-download route handler from `download-buttons-spec.md`
+   - `GET /api/presskit-version`
+   (If `gr.presscal.com` is just another domain on the existing deployment, you get all of these for free — just confirm none are gated/host-restricted.)
+
+3. **Env vars on that deployment:**
+   - `NEXT_PUBLIC_BASE_URL=https://gr.presscal.com` — so `/auth/presskit-link` builds the deep link with `url=https://gr.presscal.com` (see B.4). Better: derive from the request host so it can't drift.
+   - `NEXTAUTH_URL=https://gr.presscal.com` — otherwise the NextAuth/Google OAuth callback breaks on this host.
+
+4. **Google OAuth** — in Google Cloud Console → the OAuth client → Authorized redirect URIs, add `https://gr.presscal.com/api/auth/callback/google` (match whatever path NextAuth actually uses). Without it, sign-in on `gr.presscal.com` errors with `redirect_uri_mismatch`.
+
+5. **Database** — make sure the `Org.presskitTrialStart` migration (see A.3) is applied to whatever DB this instance uses.
+
+6. **Smoke test** — `curl -I https://gr.presscal.com` → 200; open `https://gr.presscal.com/auth/presskit-link` logged in → renders the landing page (not 404, not an OAuth error).
+
+> Interim, before this is live: PressKit users (incl. the spec author) connect via the lock-screen **"Άλλο instance…"** option → `https://pro.presscal.com` — which means `pro.presscal.com` must satisfy sections A and B in the meantime.
 
 ---
 
@@ -57,7 +84,7 @@ Root cause was on the **PressKit** side: the "Σύνδεση με Google" button
 
 ## C. Decision — RESOLVED
 
-8. **Canonical production URL = `https://gr.presscal.com`.** PressKit v2.2.2 defaults the "Σύνδεση με Google" target and the Settings placeholder to it, and adds a lock-screen picker (Production / Demo / Custom). No further input needed from PressCal here — just make sure `gr.presscal.com` satisfies sections A and B above.
+8. **Canonical production URL = `https://gr.presscal.com`.** PressKit v2.2.2 already defaults the "Σύνδεση με Google" target and the Settings placeholder to it, and adds a lock-screen picker (Production / Demo / Custom). Nothing more to change on the PressKit side. The owner will stand up `gr.presscal.com` (section A0); then it just needs to satisfy sections A and B.
 
 ---
 
