@@ -3,10 +3,11 @@ import { createPortal } from 'react-dom'
 import { useAppStore } from '@/stores/app-store'
 import {
   Settings, X, Link2, Cloud, Scan, Monitor, FolderSync,
-  CheckCircle, XCircle, Eye, EyeOff, RefreshCw, Pencil, Loader2
+  CheckCircle, XCircle, Eye, EyeOff, RefreshCw, Pencil, Loader2,
+  Info, Download
 } from 'lucide-react'
 
-type SettingsTab = 'presscal' | 'dropbox' | 'paths' | 'preflight' | 'ui'
+type SettingsTab = 'presscal' | 'dropbox' | 'paths' | 'preflight' | 'ui' | 'about'
 
 /* Reusable field wrapper — gives each setting a card-like row */
 function Field({ label, description, children, noPad }: { label?: string; description?: string; children: ReactNode; noPad?: boolean }) {
@@ -62,7 +63,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             { id: 'dropbox', label: 'Dropbox', icon: <Cloud size={16} /> },
             { id: 'paths', label: 'Paths', icon: <FolderSync size={16} /> },
             { id: 'preflight', label: 'Preflight', icon: <Scan size={16} /> },
-            { id: 'ui', label: 'Display', icon: <Monitor size={16} /> }
+            { id: 'ui', label: 'Display', icon: <Monitor size={16} /> },
+            { id: 'about', label: 'About', icon: <Info size={16} /> }
           ] as const).map(t => (
             <button
               key={t.id}
@@ -86,6 +88,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           {tab === 'paths' && <PathsSettings />}
           {tab === 'preflight' && <PreflightSettings />}
           {tab === 'ui' && <UiSettings />}
+          {tab === 'about' && <AboutSettings />}
         </div>
       </div>
     </div>,
@@ -517,6 +520,85 @@ function UiSettings() {
 
       <Field label={`Thumbnail Size: ${thumbnailSize}px`}>
         <input type="range" min={64} max={256} step={16} value={thumbnailSize} onChange={e => setThumbnailSize(Number(e.target.value))} style={{ width: '100%', accentColor: '#6ec8c8' }} />
+      </Field>
+    </div>
+  )
+}
+
+function AboutSettings() {
+  const [version, setVersion] = useState('')
+  const [updateStatus, setUpdateStatus] = useState<string>('')
+  const [updateVersion, setUpdateVersion] = useState('')
+
+  useEffect(() => {
+    window.api.update.getVersion().then(setVersion)
+    const cleanup = window.api.update.onStatus((data) => {
+      setUpdateStatus(data.status)
+      if (data.version) setUpdateVersion(data.version)
+    })
+    return cleanup
+  }, [])
+
+  const checkForUpdates = () => {
+    setUpdateStatus('checking')
+    window.api.update.check()
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <Field label="PressKit">
+        <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--th-text-primary)' }}>
+          PressKit
+        </div>
+        <div style={{ fontSize: 14, color: 'var(--th-text-muted)', marginTop: 4 }}>
+          Version {version}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--th-text-muted)', marginTop: 2, opacity: 0.7 }}>
+          &copy; 2026 PressCal
+        </div>
+      </Field>
+
+      <Field label="Updates">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          {updateStatus === 'ready' ? (
+            <button
+              onClick={() => window.api.update.install()}
+              style={{
+                padding: '12px 28px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                background: '#22c55e', color: '#fff', fontSize: 14, fontWeight: 600,
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}
+            >
+              <Download size={16} /> Εγκατάσταση v{updateVersion} & Επανεκκίνηση
+            </button>
+          ) : (
+            <button
+              onClick={checkForUpdates}
+              disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+              style={{
+                padding: '12px 28px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                background: '#6ec8c8', color: '#fff', fontSize: 14, fontWeight: 600,
+                opacity: (updateStatus === 'checking' || updateStatus === 'downloading') ? 0.5 : 1,
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}
+            >
+              {updateStatus === 'checking' && <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Έλεγχος...</>}
+              {updateStatus === 'downloading' && <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Λήψη v{updateVersion}...</>}
+              {updateStatus !== 'checking' && updateStatus !== 'downloading' && <><RefreshCw size={16} /> Έλεγχος ενημερώσεων</>}
+            </button>
+          )}
+
+          {updateStatus === 'up-to-date' && (
+            <span className="flex items-center gap-2" style={{ color: '#22c55e', fontSize: 14 }}>
+              <CheckCircle size={16} /> Είστε ενημερωμένοι
+            </span>
+          )}
+          {updateStatus === 'error' && (
+            <span className="flex items-center gap-2" style={{ color: '#ef4444', fontSize: 14 }}>
+              <XCircle size={16} /> Σφάλμα ελέγχου
+            </span>
+          )}
+        </div>
       </Field>
     </div>
   )

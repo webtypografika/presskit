@@ -16,7 +16,7 @@ import * as everything from './everything-engine'
 import { registerToolHandlers } from './tools-engine'
 import { registerLicenseHandlers, startLicensePoller, checkLicense } from './license-engine'
 import { initializeProfiles, registerProfileHandlers, createProfile, switchProfile, getActiveProfile, updateProfile } from './profile-manager'
-import { registerCloudRootsHandlers, getCloudRoots, resolvePortablePath, toPortablePath, detectCloudRoots } from './cloud-roots'
+import { registerCloudRootsHandlers, getCloudRoots, resolvePortablePath, toPortablePath, detectCloudRoots, autoMigratePaths } from './cloud-roots'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -30,6 +30,11 @@ function setupAutoUpdater(): void {
     mainWindow?.webContents.send('update-status', { status: 'downloading', version: info.version })
   })
 
+  autoUpdater.on('update-not-available', () => {
+    console.log('[AutoUpdate] No update available')
+    mainWindow?.webContents.send('update-status', { status: 'up-to-date', version: '' })
+  })
+
   autoUpdater.on('update-downloaded', (info) => {
     console.log('[AutoUpdate] Update downloaded:', info.version)
     mainWindow?.webContents.send('update-status', { status: 'ready', version: info.version })
@@ -37,6 +42,7 @@ function setupAutoUpdater(): void {
 
   autoUpdater.on('error', (err) => {
     console.log('[AutoUpdate] Error:', err.message)
+    mainWindow?.webContents.send('update-status', { status: 'error', version: '' })
   })
 
   // Check now and every 2 hours
@@ -48,6 +54,19 @@ function setupAutoUpdater(): void {
 ipcMain.on('install-update', () => {
   autoUpdater.quitAndInstall(false, true)
 })
+
+// IPC: renderer can request a manual check
+ipcMain.handle('update:check', async () => {
+  mainWindow?.webContents.send('update-status', { status: 'checking', version: '' })
+  try {
+    await autoUpdater.checkForUpdates()
+  } catch {
+    mainWindow?.webContents.send('update-status', { status: 'error', version: '' })
+  }
+})
+
+// IPC: get app version
+ipcMain.handle('app:getVersion', () => app.getVersion())
 
 /** Show an error via in-app modal (avoids native dialog going behind windows). */
 function showError(title: string, message: string) {
@@ -1748,8 +1767,9 @@ if (!gotTheLock) {
     // (settings/presscal/license/etc.) — they all proxy through the active
     // profile's electron-store. Also performs the v1.x → v2.x migration.
     initializeProfiles()
-    // Detect cloud-sync roots (Dropbox, OneDrive, etc.) for portable paths
-    detectCloudRoots().catch(() => {})
+    // Detect cloud-sync roots (Dropbox, OneDrive, etc.) for portable paths,
+    // then silently auto-migrate PressCal paths to portable format.
+    detectCloudRoots().then(() => autoMigratePaths()).catch(() => {})
     registerHandlers()
     startFileServer()
     createWindow()

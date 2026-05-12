@@ -296,7 +296,9 @@ const api = {
       ipcRenderer.on('update-status', (_e, data) => callback(data))
       return () => ipcRenderer.removeAllListeners('update-status')
     },
+    check: () => ipcRenderer.invoke('update:check'),
     install: () => ipcRenderer.send('install-update'),
+    getVersion: () => ipcRenderer.invoke('app:getVersion') as Promise<string>,
   }
 }
 

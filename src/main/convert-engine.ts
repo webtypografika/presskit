@@ -390,17 +390,18 @@ async function convertImage(inputPath: string, outputPath: string, options: Conv
   }
 
   // Output format — DPI is set via format options (xres/yres for TIFF).
-  // IMPORTANT: Do NOT use withMetadata({ density }) — it silently resets CMYK back to sRGB.
+  // IMPORTANT: Do NOT use withMetadata({ density }) for TIFF — it silently resets CMYK back to sRGB.
+  // For JPG/PNG (always RGB) withMetadata is safe and needed to embed DPI metadata.
   const dpi = options.dpi || 300
   switch (options.format) {
     case 'tiff':
       pipeline = pipeline.tiff({ compression: 'lzw', xres: dpi, yres: dpi })
       break
     case 'png':
-      pipeline = pipeline.png({ compressionLevel: 6 })
+      pipeline = pipeline.withMetadata({ density: dpi }).png({ compressionLevel: 6 })
       break
     case 'jpg':
-      pipeline = pipeline.jpeg({ quality: options.quality || 95 })
+      pipeline = pipeline.withMetadata({ density: dpi }).jpeg({ quality: options.quality || 95 })
       break
   }
 
@@ -458,10 +459,10 @@ async function convertRaw(inputPath: string, outputPath: string, options: Conver
       pipeline = pipeline.tiff({ compression: 'lzw', xres: dpi, yres: dpi })
       break
     case 'png':
-      pipeline = pipeline.png({ compressionLevel: 6 })
+      pipeline = pipeline.withMetadata({ density: dpi }).png({ compressionLevel: 6 })
       break
     case 'jpg':
-      pipeline = pipeline.jpeg({ quality: options.quality || 95 })
+      pipeline = pipeline.withMetadata({ density: dpi }).jpeg({ quality: options.quality || 95 })
       break
   }
 
@@ -523,10 +524,10 @@ async function convertPsd(inputPath: string, outputPath: string, options: Conver
       pipeline = pipeline.tiff({ compression: 'lzw', xres: dpi, yres: dpi })
       break
     case 'png':
-      pipeline = pipeline.png({ compressionLevel: 6 })
+      pipeline = pipeline.withMetadata({ density: dpi }).png({ compressionLevel: 6 })
       break
     case 'jpg':
-      pipeline = pipeline.jpeg({ quality: options.quality || 95 })
+      pipeline = pipeline.withMetadata({ density: dpi }).jpeg({ quality: options.quality || 95 })
       break
   }
 

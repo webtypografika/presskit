@@ -155,6 +155,28 @@ export function isPortablePath(path: string): boolean {
   return /^<[A-Z]+(?::[A-Z0-9]+)?>/.test(path)
 }
 
+// ─── Auto-migration (runs silently at startup) ───
+
+/** Silently migrate PressCal paths to portable format. Safe to run every startup. */
+export async function autoMigratePaths(): Promise<void> {
+  const presscalUrl = (store.get('presscal.url') as string)?.replace(/\/$/, '')
+  const apiKey = store.get('presscal.apiKey') as string
+  if (!presscalUrl || !apiKey) return // not configured — skip silently
+
+  const roots = getCloudRoots().filter(r => r.placeholder !== '<HOME>')
+  if (!roots.length) return // no cloud roots — skip silently
+
+  try {
+    await fetch(`${presscalUrl}/api/filehelper/migrate-paths`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roots: roots.map(r => ({ placeholder: r.placeholder, localPath: r.localPath })) }),
+    })
+  } catch {
+    // Network error, server down, etc. — ignore silently
+  }
+}
+
 // ─── IPC handlers ───
 
 export function registerCloudRootsHandlers(ipcMain: IpcMain): void {
