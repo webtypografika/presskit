@@ -132,6 +132,41 @@ async function cropToTrimBox(
   await writeFile(imagePath, buf)
 }
 
+// ─── Resize raster image ────────────────────────────────────────────
+
+async function resizeImage(imagePath: string, options: ConvertOptions): Promise<void> {
+  const sharp = (await import('sharp')).default
+  const meta = await sharp(imagePath).metadata()
+  if (!meta.width || !meta.height) return
+
+  // Already within bounds — skip
+  const w = options.maxWidth || Infinity
+  const h = options.maxHeight || Infinity
+  if (meta.width <= w && meta.height <= h) return
+
+  let pipeline = sharp(imagePath).resize(
+    options.maxWidth || undefined,
+    options.maxHeight || undefined,
+    { fit: 'inside' }
+  )
+
+  const dpi = options.dpi || 300
+  switch (options.format) {
+    case 'tiff':
+      pipeline = pipeline.tiff({ compression: 'lzw', xres: dpi, yres: dpi })
+      break
+    case 'png':
+      pipeline = pipeline.withMetadata({ density: dpi }).png({ compressionLevel: 6 })
+      break
+    case 'jpg':
+      pipeline = pipeline.withMetadata({ density: dpi }).jpeg({ quality: options.quality || 95 })
+      break
+  }
+
+  const buf = await pipeline.toBuffer()
+  await writeFile(imagePath, buf)
+}
+
 // ─── Ghostscript PDF conversion ──────────────────────────────────────
 
 async function convertPdfWithGs(inputPath: string, outputPath: string, options: ConvertOptions): Promise<ConvertResult> {
@@ -209,6 +244,15 @@ async function convertPdfWithGs(inputPath: string, outputPath: string, options: 
         }
       } catch (cropErr) {
         console.warn('TrimBox crop failed, keeping full page:', cropErr)
+      }
+    }
+
+    // Resize raster output if requested
+    if (options.format !== 'pdf' && (options.maxWidth || options.maxHeight)) {
+      try {
+        await resizeImage(outputPath, options)
+      } catch (resizeErr) {
+        console.warn('Resize failed, keeping original size:', resizeErr)
       }
     }
 
@@ -381,11 +425,11 @@ async function convertImage(inputPath: string, outputPath: string, options: Conv
     pipeline = pipeline.toColorspace('srgb')
   }
 
-  // Resize
+  // Resize — fit: 'inside' scales proportionally to fit within the given box.
+  // No withoutEnlargement: if the user specifies dimensions, honour them (upscale if needed).
   if (options.maxWidth || options.maxHeight) {
     pipeline = pipeline.resize(options.maxWidth || undefined, options.maxHeight || undefined, {
       fit: 'inside',
-      withoutEnlargement: true
     })
   }
 
@@ -449,7 +493,7 @@ async function convertRaw(inputPath: string, outputPath: string, options: Conver
 
   if (options.maxWidth || options.maxHeight) {
     pipeline = pipeline.resize(options.maxWidth || undefined, options.maxHeight || undefined, {
-      fit: 'inside', withoutEnlargement: true
+      fit: 'inside',
     })
   }
 
@@ -514,7 +558,6 @@ async function convertPsd(inputPath: string, outputPath: string, options: Conver
   if (options.maxWidth || options.maxHeight) {
     pipeline = pipeline.resize(options.maxWidth, options.maxHeight, {
       fit: 'inside',
-      withoutEnlargement: true
     })
   }
 
