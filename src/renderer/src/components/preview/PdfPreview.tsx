@@ -8,7 +8,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString()
 
-export function PdfPreview({ data }: { data: string }) {
+export function PdfPreview({ data, fullscreen }: { data: string; fullscreen?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const pdfRef = useRef<any>(null)
@@ -198,30 +198,49 @@ export function PdfPreview({ data }: { data: string }) {
     }
   }, [renderPage])
 
+  const toolbarCls = fullscreen
+    ? 'h-7 flex items-center justify-center gap-2 flex-shrink-0'
+    : 'h-7 flex items-center justify-center gap-2 bg-bg-tertiary border-b border-border flex-shrink-0'
+
+  const toolbarBtnCls = fullscreen
+    ? 'p-0.5 hover:opacity-100'
+    : 'p-0.5 text-text-muted hover:text-text-primary'
+
+  const toolbarTextCls = fullscreen
+    ? 'text-sm w-12 text-center'
+    : 'text-sm text-text-secondary w-12 text-center'
+
+  const pageTextCls = fullscreen
+    ? 'text-sm'
+    : 'text-sm text-text-secondary'
+
   return (
     <div className="h-full flex flex-col">
       {/* Zoom controls */}
-      <div className="h-7 flex items-center justify-center gap-2 bg-bg-tertiary border-b border-border flex-shrink-0">
+      <div
+        className={toolbarCls}
+        style={fullscreen ? { background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' } : undefined}
+      >
         <button
-          className="p-0.5 text-text-muted hover:text-text-primary"
+          className={toolbarBtnCls}
           onClick={() => setZoom(z => Math.max(0.1, z - 0.25))}
           title="Zoom out"
         >
           <ZoomOut size={14} />
         </button>
-        <span className="text-sm text-text-secondary w-12 text-center">
+        <span className={toolbarTextCls} style={fullscreen ? { color: 'rgba(255,255,255,0.6)' } : undefined}>
           {Math.round(zoom * 100)}%
         </span>
         <button
-          className="p-0.5 text-text-muted hover:text-text-primary"
+          className={toolbarBtnCls}
           onClick={() => setZoom(z => Math.min(10, z + 0.25))}
           title="Zoom in"
         >
           <ZoomIn size={14} />
         </button>
-        <div className="w-px h-4 bg-border mx-1" />
+        <div className="w-px h-4 mx-1" style={fullscreen ? { background: 'rgba(255,255,255,0.2)' } : undefined} />
         <button
-          className="p-0.5 text-text-muted hover:text-text-primary"
+          className={toolbarBtnCls}
           onClick={fitToView}
           title="Fit to view"
         >
@@ -231,21 +250,21 @@ export function PdfPreview({ data }: { data: string }) {
         {/* Page nav inline — only if multi-page */}
         {totalPages > 1 && (
           <>
-            <div className="w-px h-4 bg-border mx-1" />
+            <div className="w-px h-4 mx-1" style={fullscreen ? { background: 'rgba(255,255,255,0.2)' } : undefined} />
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page <= 1}
-              className="p-0.5 text-text-muted hover:text-text-primary disabled:opacity-30"
+              className={`${toolbarBtnCls} disabled:opacity-30`}
             >
               <ChevronLeft size={14} />
             </button>
-            <span className="text-sm text-text-secondary" style={{ fontSize: 11 }}>
+            <span className={pageTextCls} style={fullscreen ? { fontSize: 11, color: 'rgba(255,255,255,0.6)' } : { fontSize: 11 }}>
               {page} / {totalPages}
             </span>
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages}
-              className="p-0.5 text-text-muted hover:text-text-primary disabled:opacity-30"
+              className={`${toolbarBtnCls} disabled:opacity-30`}
             >
               <ChevronRight size={14} />
             </button>
@@ -257,7 +276,7 @@ export function PdfPreview({ data }: { data: string }) {
       <div
         ref={containerRef}
         className="flex-1 overflow-hidden flex items-center justify-center cursor-grab active:cursor-grabbing"
-        style={{ background: '#525659' }}
+        style={{ background: fullscreen ? 'transparent' : '#525659' }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}

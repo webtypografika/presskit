@@ -44,10 +44,12 @@ export function FullscreenPreview() {
     setPosition({ x: 0, y: 0 })
   }, [selectedFile?.path])
 
-  // Wheel zoom — native listener for non-passive
+  const isPdf = localPreview?.type === 'pdf-page'
+
+  // Wheel zoom — native listener for non-passive (skip for PDFs — PdfPreview handles its own)
   useEffect(() => {
     const el = contentRef.current
-    if (!el || !fullscreenPreview) return
+    if (!el || !fullscreenPreview || isPdf) return
     const handler = (e: WheelEvent) => {
       e.preventDefault()
       e.stopPropagation()
@@ -56,7 +58,7 @@ export function FullscreenPreview() {
     }
     el.addEventListener('wheel', handler, { passive: false })
     return () => el.removeEventListener('wheel', handler)
-  }, [fullscreenPreview])
+  }, [fullscreenPreview, isPdf])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return
@@ -179,14 +181,10 @@ export function FullscreenPreview() {
       )
     }
     if (preview.type === 'pdf-page') {
+      // PdfPreview has its own zoom/pan — no outer transform needed
       return (
-        <div style={{
-          width: '100%', height: '100%',
-          transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
-          transformOrigin: 'center center',
-          transition: dragging ? 'none' : 'transform 0.1s ease-out',
-        }}>
-          <PdfPreview data={preview.data} />
+        <div style={{ width: '100%', height: '100%' }}>
+          <PdfPreview data={preview.data} fullscreen />
         </div>
       )
     }
@@ -232,8 +230,8 @@ export function FullscreenPreview() {
           )}
         </span>
 
-        {/* Zoom controls */}
-        {preview && !loading && (
+        {/* Zoom controls — hidden for PDFs (PdfPreview has its own) */}
+        {preview && !loading && !isPdf && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <button
               style={zoomBtnStyle}
@@ -279,13 +277,13 @@ export function FullscreenPreview() {
         style={{
           flex: 1, overflow: 'hidden', position: 'relative',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          cursor: dragging ? 'grabbing' : 'grab',
+          cursor: isPdf ? 'default' : (dragging ? 'grabbing' : 'grab'),
         }}
         onClick={e => e.stopPropagation()}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseDown={isPdf ? undefined : handleMouseDown}
+        onMouseMove={isPdf ? undefined : handleMouseMove}
+        onMouseUp={isPdf ? undefined : handleMouseUp}
+        onMouseLeave={isPdf ? undefined : handleMouseUp}
       >
         {/* Previous button */}
         {hasPrev && (
