@@ -238,7 +238,7 @@ export function Toolbar() {
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}
           onClick={(e) => { if (e.target === e.currentTarget) setOverlay('none') }}
         >
-          <div style={{ width: 400, maxHeight: '80vh', borderRadius: 14, overflow: 'hidden', background: 'var(--th-bg-secondary)', boxShadow: '0 8px 40px rgba(0,0,0,0.25)', border: '1px solid var(--th-border)' }}>
+          <div style={{ width: 440, maxHeight: '70vh', borderRadius: 14, overflow: 'hidden', background: 'var(--th-bg-secondary)', boxShadow: '0 8px 40px rgba(0,0,0,0.25)', border: '1px solid var(--th-border)' }}>
             <ConvertDialog onClose={() => setOverlay('none')} />
           </div>
         </div>,

@@ -15,7 +15,7 @@ import { registerSearchHandlers } from './search-engine'
 import * as everything from './everything-engine'
 import { registerToolHandlers } from './tools-engine'
 import { registerLicenseHandlers, startLicensePoller, checkLicense } from './license-engine'
-import { initializeProfiles, registerProfileHandlers, createProfile, switchProfile, getActiveProfile, updateProfile } from './profile-manager'
+import { initializeProfiles, registerProfileHandlers, createProfile, switchProfile, getActiveProfile, getActiveProfileId, listProfiles, updateProfile } from './profile-manager'
 import { registerCloudRootsHandlers, getCloudRoots, resolvePortablePath, toPortablePath, detectCloudRoots, autoMigratePaths } from './cloud-roots'
 
 let mainWindow: BrowserWindow | null = null
@@ -120,6 +120,36 @@ async function handleProtocolUrl(url: string): Promise<void> {
   try {
     const parsed = new URL(url)
     deepLog('[DeepLink] hostname:', parsed.hostname, 'params:', parsed.searchParams.toString())
+
+    // ── Auto-switch profile if the deep link comes from a different PressCal instance ──
+    // Every deep link from PressCal carries &origin=https://pro.presscal.com (or eu, etc.).
+    // If the origin doesn't match the active profile, switch to the matching profile,
+    // save this deep link to a file, restart, and process it after relaunch.
+    if (parsed.hostname !== 'connect') {
+      const origin = parsed.searchParams.get('origin')
+      if (origin) {
+        const activeUrl = (store.get('presscal.url') as string)?.replace(/\/$/, '')
+        const cleanOrigin = origin.replace(/\/$/, '')
+        if (activeUrl && cleanOrigin && activeUrl.toLowerCase() !== cleanOrigin.toLowerCase()) {
+          const profiles = listProfiles()
+          const match = profiles.find(
+            p => p.presscalUrl?.replace(/\/$/, '').toLowerCase() === cleanOrigin.toLowerCase()
+          )
+          if (match && match.id !== getActiveProfileId()) {
+            deepLog('[DeepLink] Origin mismatch — active:', activeUrl, 'deep link:', cleanOrigin)
+            deepLog('[DeepLink] Auto-switching to profile:', match.id, `(${match.name})`)
+            // Save the deep link for processing after restart
+            const { writeFileSync } = await import('fs')
+            writeFileSync(join(app.getPath('userData'), 'pending-deeplink.txt'), url, 'utf-8')
+            switchProfile(match.id) // triggers app.relaunch + exit
+            return
+          }
+          if (!match) {
+            deepLog('[DeepLink] No profile found for origin:', cleanOrigin, '— proceeding with active profile')
+          }
+        }
+      }
+    }
 
     // Resolve portable paths in deep link params (e.g. <DROPBOX>\... → C:\Users\...\Dropbox\...)
     const resolveDL = resolvePortablePath
@@ -1279,6 +1309,261 @@ function createWindow(): void {
   }
 }
 
+// ─── Export imposition (server-side PDF generation) ───
+
+const MM_PT = 72 / 25.4 // mm → PDF points
+
+function findGsExe(): string | null {
+  const programFiles = process.env['ProgramFiles'] || 'C:\\Program Files'
+  const gsRoot = require('path').join(programFiles, 'gs')
+  const fs = require('fs')
+  if (!fs.existsSync(gsRoot)) return null
+  try {
+    const versions = fs.readdirSync(gsRoot, { withFileTypes: true })
+      .filter((d: any) => d.isDirectory() && d.name.startsWith('gs'))
+      .sort((a: any, b: any) => b.name.localeCompare(a.name))
+    for (const ver of versions) {
+      const exe = require('path').join(gsRoot, ver.name, 'bin', 'gswin64c.exe')
+      if (fs.existsSync(exe)) return exe
+    }
+  } catch {}
+  return null
+}
+
+async function handleExportImposition(body: any): Promise<{
+  success: boolean
+  outputPath?: string
+  error?: string
+}> {
+  try {
+    const { PDFDocument } = await import('pdf-lib')
+    const fs = await import('fs')
+    const fsp = await import('fs/promises')
+    const path = await import('path')
+    const os = await import('os')
+    const { execFile } = await import('child_process')
+
+    // Yield to event loop so UI stays responsive
+    const yieldEL = (): Promise<void> => new Promise(r => setImmediate(r))
+
+    const {
+      imposition: impo,
+      gangJobFilePaths,
+      gangCellAssign,
+      bleed,
+      gutter,
+      gutterY,
+      isDuplex,
+      duplexOrient,
+      contentScale,
+      outputPath,
+    } = body
+
+    const cols = impo.cols || 1
+    const rows = impo.rows || 1
+    const bleedPt = (bleed || 0) * MM_PT
+    const gutterPt = (gutter || 0) * MM_PT
+    const gutterYPt = (gutterY ?? gutter ?? 0) * MM_PT
+    const trimWpt = impo.trimW * MM_PT
+    const trimHpt = impo.trimH * MM_PT
+    const paperWpt = impo.paperW * MM_PT
+    const paperHpt = impo.paperH * MM_PT
+    const mL = (impo.marginL ?? 0) * MM_PT
+    const mB = (impo.marginB ?? 0) * MM_PT
+    const printableW = paperWpt - mL - (impo.marginR ?? 0) * MM_PT
+    const printableH = paperHpt - (impo.marginT ?? 0) * MM_PT - mB
+    const trimGridW = cols * trimWpt + Math.max(0, cols - 1) * gutterPt
+    const trimGridH = rows * trimHpt + Math.max(0, rows - 1) * gutterYPt
+    const cenX = mL + (printableW - trimGridW) / 2
+    const cenY = mB + (printableH - trimGridH) / 2
+    const trimStepW = trimWpt + gutterPt
+    const trimStepH = trimHpt + gutterYPt
+    const cScale = (contentScale || 100) / 100
+    const isH2F = duplexOrient === 'h2f'
+
+    // Load source PDFs ONCE — keep parsed docs in memory for reuse across sheets
+    interface TrimRect { x: number; y: number; width: number; height: number }
+    interface GangSource {
+      srcDoc: any          // PDFDocument — kept alive for embedding
+      pageCount: number
+      trims: TrimRect[]
+    }
+    const gangSources: GangSource[] = []
+    for (const filePath of gangJobFilePaths || []) {
+      if (!filePath) {
+        gangSources.push({ srcDoc: null, pageCount: 0, trims: [] })
+        continue
+      }
+      const resolved = resolvePortablePath(filePath)
+      await yieldEL()
+      let bytes: Buffer | null = await fsp.readFile(resolved)
+      await yieldEL()
+      const srcDoc = await PDFDocument.load(bytes, { ignoreEncryption: true })
+      bytes = null
+      await yieldEL()
+      const pages = srcDoc.getPages()
+      const trims: TrimRect[] = pages.map((p: any) => {
+        const tb = p.getTrimBox()
+        const mb = p.getMediaBox()
+        if (tb && (tb.x !== mb.x || tb.y !== mb.y || tb.width !== mb.width || tb.height !== mb.height)) {
+          return { x: tb.x, y: tb.y, width: tb.width, height: tb.height }
+        }
+        return { x: mb.x, y: mb.y, width: mb.width, height: mb.height }
+      })
+      gangSources.push({ srcDoc, pageCount: pages.length, trims })
+    }
+
+    // Calculate sheets — in gang mode each sheet side shows 1 source page per title
+    // (repeated across all rows), so each sheet consumes 1 (simplex) or 2 (duplex) pages
+    const pagesPerSheet = isDuplex ? 2 : 1
+    const maxPages = gangSources.reduce((mx, s) => Math.max(mx, s.pageCount), 0)
+    const totalSheets = Math.max(1, Math.ceil(maxPages / pagesPerSheet))
+    try { console.log(`[IMPOSITION] ${totalSheets} sheets, ${isDuplex ? 'duplex' : 'simplex'}`) } catch {}
+
+    // Create temp dir for per-sheet PDFs
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'impo-'))
+    const sheetFiles: string[] = []
+
+    // For each sheet: create a small PDF, embed only needed pages from cached source docs
+    for (let sheetIdx = 0; sheetIdx < totalSheets; sheetIdx++) {
+      const sheetDoc = await PDFDocument.create()
+
+      // Determine which source pages are needed for this sheet
+      const neededPages: Map<number, Set<number>> = new Map()
+      const sides = isDuplex ? [false, true] : [false]
+      for (const isBack of sides) {
+        for (let col = 0; col < cols; col++) {
+          const posIdx = col // just check first row — all rows have same page
+          const jobIdx = gangCellAssign?.[posIdx] ?? 0
+          const pageInBook = sheetIdx * pagesPerSheet + (isBack ? 1 : 0)
+          if (jobIdx < gangSources.length && pageInBook < gangSources[jobIdx].pageCount) {
+            if (!neededPages.has(jobIdx)) neededPages.set(jobIdx, new Set())
+            neededPages.get(jobIdx)!.add(pageInBook)
+          }
+        }
+      }
+
+      // Embed needed pages from cached source docs (no file re-reads!)
+      const embeddedMap: Map<string, any> = new Map()
+      for (const [jobIdx, pageIndices] of neededPages) {
+        const src = gangSources[jobIdx]
+        if (!src.srcDoc) continue
+        const srcPages = src.srcDoc.getPages()
+        for (const pi of pageIndices) {
+          const trim = src.trims[pi]
+          const [ep] = await sheetDoc.embedPages([srcPages[pi]], [{
+            left: trim.x,
+            bottom: trim.y,
+            right: trim.x + trim.width,
+            top: trim.y + trim.height,
+          }])
+          embeddedMap.set(`${jobIdx}:${pi}`, ep)
+        }
+        await yieldEL()
+      }
+
+      // Draw sides
+      const drawSide = (page: any, isBack: boolean): void => {
+        for (let row = 0; row < rows; row++) {
+          for (let col = 0; col < cols; col++) {
+            const posIdx = row * cols + col
+            const jobIdx = gangCellAssign?.[posIdx] ?? 0
+            const pageInBook = sheetIdx * pagesPerSheet + (isBack ? 1 : 0)
+            const ep = embeddedMap.get(`${jobIdx}:${pageInBook}`)
+            if (!ep) continue
+
+            const trim = gangSources[jobIdx].trims[pageInBook]
+            const frontTrimX = cenX + col * trimStepW
+            const trimYpos = cenY + (rows - 1 - row) * trimStepH
+
+            let trimX: number, trimY: number
+            if (isBack && isH2F) {
+              trimX = frontTrimX
+              trimY = paperHpt - trimYpos - trimHpt
+            } else if (isBack) {
+              trimX = paperWpt - frontTrimX - trimWpt
+              trimY = trimYpos
+            } else {
+              trimX = frontTrimX
+              trimY = trimYpos
+            }
+
+            const cellW = trimWpt + 2 * bleedPt
+            const cellH = trimHpt + 2 * bleedPt
+            const scaleX = (cellW / trim.width) * cScale
+            const scaleY = (cellH / trim.height) * cScale
+            const scale = Math.min(scaleX, scaleY)
+
+            page.drawPage(ep, {
+              x: trimX - bleedPt,
+              y: trimY - bleedPt,
+              xScale: scale,
+              yScale: scale,
+            })
+          }
+        }
+      }
+
+      const frontPage = sheetDoc.addPage([paperWpt, paperHpt])
+      drawSide(frontPage, false)
+      if (isDuplex) {
+        const backPage = sheetDoc.addPage([paperWpt, paperHpt])
+        drawSide(backPage, true)
+      }
+
+      // Save this sheet to temp file
+      const sheetPath = path.join(tmpDir, `sheet_${String(sheetIdx).padStart(4, '0')}.pdf`)
+      const sheetBytes = await sheetDoc.save()
+      await fsp.writeFile(sheetPath, sheetBytes)
+      sheetFiles.push(sheetPath)
+      await yieldEL()
+    }
+
+    // Merge all sheets with Ghostscript (handles any size, streams to disk)
+    const resolvedOutput = resolvePortablePath(outputPath)
+    await fsp.mkdir(path.dirname(resolvedOutput), { recursive: true })
+
+    const gs = findGsExe()
+    if (gs && sheetFiles.length > 1) {
+      try { console.log(`[IMPOSITION] Merging ${sheetFiles.length} sheets with Ghostscript...`) } catch {}
+      await new Promise<void>((resolve, reject) => {
+        execFile(gs, [
+          '-dNOPAUSE', '-dBATCH', '-dQUIET',
+          '-sDEVICE=pdfwrite',
+          '-dCompatibilityLevel=1.5',
+          `-sOutputFile=${resolvedOutput}`,
+          ...sheetFiles,
+        ], { timeout: 600000, windowsHide: true }, (err) => err ? reject(err) : resolve())
+      })
+    } else if (sheetFiles.length === 1) {
+      await fsp.copyFile(sheetFiles[0], resolvedOutput)
+    } else {
+      // Fallback: merge with pdf-lib (smaller jobs)
+      const mergedDoc = await PDFDocument.create()
+      for (const sf of sheetFiles) {
+        let bytes: Buffer | null = await fsp.readFile(sf)
+        const src = await PDFDocument.load(bytes, { ignoreEncryption: true })
+        bytes = null
+        const copied = await mergedDoc.copyPages(src, src.getPageIndices())
+        for (const p of copied) mergedDoc.addPage(p)
+        await yieldEL()
+      }
+      const merged = await mergedDoc.save()
+      await fsp.writeFile(resolvedOutput, merged)
+    }
+
+    // Cleanup temp files
+    for (const sf of sheetFiles) { try { await fsp.unlink(sf) } catch {} }
+    try { await fsp.rmdir(tmpDir) } catch {}
+
+    try { console.log(`[IMPOSITION] Done: ${resolvedOutput}`) } catch {}
+    return { success: true, outputPath: resolvedOutput }
+  } catch (err) {
+    try { console.error('[IMPOSITION] Error:', err) } catch {}
+    return { success: false, error: (err as Error).message }
+  }
+}
+
 // Register all IPC handlers
 // Local file server — serves files to the browser for Calculator/imposition
 let fileServerStarted = false
@@ -1348,6 +1633,24 @@ function startFileServer(): void {
         } catch (e: any) {
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: e.message }))
+        }
+      })
+      return
+    }
+
+    // POST /?exportImposition=1 — server-side PDF imposition export
+    if (req.method === 'POST' && parsed.query.exportImposition) {
+      let bodyStr = ''
+      req.on('data', (chunk: string) => (bodyStr += chunk))
+      req.on('end', async () => {
+        try {
+          const payload = JSON.parse(bodyStr)
+          const result = await handleExportImposition(payload)
+          res.writeHead(result.success ? 200 : 500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(result))
+        } catch (err: any) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ success: false, error: 'Invalid JSON' }))
         }
       })
       return
@@ -1780,6 +2083,25 @@ if (!gotTheLock) {
     // Check if launched with protocol URL (Windows: passed as arg)
     const protocolUrl = process.argv.find(arg => arg.startsWith(`${PROTOCOL}://`))
     if (protocolUrl) handleProtocolUrl(protocolUrl)
+
+    // Process pending deep link from a profile auto-switch restart.
+    // When a deep link arrives for a different profile, we save it to a file,
+    // switch profiles (restart), and now process it with the correct credentials.
+    const pendingDeepLinkFile = join(app.getPath('userData'), 'pending-deeplink.txt')
+    try {
+      const fs = require('fs')
+      if (fs.existsSync(pendingDeepLinkFile)) {
+        const pendingUrl = fs.readFileSync(pendingDeepLinkFile, 'utf-8').trim()
+        fs.unlinkSync(pendingDeepLinkFile)
+        if (pendingUrl) {
+          console.log('[DeepLink] Processing pending deep link after profile switch:', pendingUrl)
+          // Small delay to let the window fully initialize before handling
+          setTimeout(() => handleProtocolUrl(pendingUrl), 2000)
+        }
+      }
+    } catch (e) {
+      console.warn('[DeepLink] Failed to process pending deep link:', e)
+    }
 
     // Launch Everything search engine (non-blocking)
     everything.launch().catch(err => console.error('[EVERYTHING] Launch failed:', err))

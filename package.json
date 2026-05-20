@@ -1,10 +1,10 @@
 {
   "name": "presskit",
-  "version": "2.2.4",
+  "version": "2.2.5",
   "description": "PressKit - Print & Design File Manager",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "set NODE_OPTIONS=--max-old-space-size=8192&& electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "package": "electron-vite build && electron-builder",
@@ -60,6 +60,9 @@
     "files": [
       "out/**/*",
       "resources/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**"
     ],
     "extraResources": [
       {

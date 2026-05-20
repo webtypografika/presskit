@@ -122,11 +122,20 @@ export function ProfileSwitcher({ onManage }: { onManage?: () => void }) {
           minHeight: 32,
           color: 'var(--th-text-primary)',
           fontSize: 12,
-          maxWidth: 180,
+          maxWidth: 220,
         }}
       >
         <Avatar profile={active} size={22} />
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{active.name}</span>
+        <div style={{ overflow: 'hidden', textAlign: 'left', lineHeight: 1.2 }}>
+          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 500 }}>
+            {active.name}
+          </div>
+          {active.presscalUrl && (
+            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10, color: 'var(--th-text-muted)' }}>
+              {formatHost(active.presscalUrl)}
+            </div>
+          )}
+        </div>
         <ChevronDown size={12} style={{ opacity: 0.6, flexShrink: 0 }} />
       </button>
 
