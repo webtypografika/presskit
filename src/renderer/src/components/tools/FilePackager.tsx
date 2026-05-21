@@ -1,49 +1,59 @@
 import { useState, useCallback } from 'react'
 import { useAppStore } from '@/stores/app-store'
-import { Package, FolderOpen, Loader2, Check, AlertTriangle } from 'lucide-react'
+import { Package, FolderOpen, Loader2, Check, AlertTriangle, Copy, Move } from 'lucide-react'
+
+const FILE_TYPE_GROUPS = [
+  { label: 'PDF', extensions: ['.pdf'] },
+  { label: 'InDesign', extensions: ['.indd', '.idml'] },
+  { label: 'Illustrator', extensions: ['.ai', '.eps', '.epsf'] },
+  { label: 'Photoshop', extensions: ['.psd', '.psb'] },
+  { label: 'Images', extensions: ['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.bmp', '.gif', '.svg'] },
+  { label: 'RAW', extensions: ['.cr2', '.cr3', '.nef', '.arw', '.dng', '.raf', '.orf', '.rw2'] },
+  { label: 'Fonts', extensions: ['.otf', '.ttf', '.woff', '.woff2'] },
+  { label: 'Documents', extensions: ['.doc', '.docx', '.txt', '.rtf', '.xls', '.xlsx', '.csv'] },
+  { label: 'Archives', extensions: ['.zip', '.rar', '.7z'] },
+]
 
 export function FilePackager({ onClose }: { onClose: () => void }) {
-  const { currentPath, selectedFiles, selectedFile } = useAppStore()
+  const currentPath = useAppStore(s => s.currentPath)
+  const [selected, setSelected] = useState<Set<number>>(new Set([0])) // PDF selected by default
+  const [moveMode, setMoveMode] = useState(false)
   const [targetDir, setTargetDir] = useState('')
-  const [scanning, setScanning] = useState(false)
-  const [scannedFiles, setScannedFiles] = useState<string[]>([])
-  const [collecting, setCollecting] = useState(false)
-  const [result, setResult] = useState<{ copied: number; errors: string[] } | null>(null)
-  const [mode, setMode] = useState<'selected' | 'directory'>('directory')
+  const [running, setRunning] = useState(false)
+  const [result, setResult] = useState<{ processed: number; errors: string[] } | null>(null)
 
-  const scanDirectory = useCallback(async () => {
-    if (!currentPath) return
-    setScanning(true)
-    try {
-      const files = await window.api.tools.collectJobFiles(currentPath)
-      setScannedFiles(files)
-    } catch {}
-    setScanning(false)
-  }, [currentPath])
+  const toggleGroup = (idx: number) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
+  }
+
+  const selectAll = () => setSelected(new Set(FILE_TYPE_GROUPS.map((_, i) => i)))
+  const selectNone = () => setSelected(new Set())
 
   const pickTarget = useCallback(async () => {
-    const result = await window.api.dialog.openDirectory()
-    if (result) setTargetDir(result)
+    const dir = await window.api.dialog.openDirectory()
+    if (dir) setTargetDir(dir)
   }, [])
 
   const doCollect = useCallback(async () => {
-    if (!targetDir) return
-
-    const filesToCollect = mode === 'selected'
-      ? (selectedFiles.length > 0 ? selectedFiles : selectedFile ? [selectedFile] : []).map(f => f.path)
-      : scannedFiles
-
-    if (filesToCollect.length === 0) return
-
-    setCollecting(true)
+    if (!targetDir || !currentPath || selected.size === 0) return
+    const extensions = Array.from(selected).flatMap(i => FILE_TYPE_GROUPS[i].extensions)
+    setRunning(true)
+    setResult(null)
     try {
-      const res = await window.api.tools.collectFiles(filesToCollect, targetDir)
+      const res = await window.api.tools.collectByType(currentPath, extensions, targetDir, moveMode)
       setResult(res)
     } catch (err) {
-      setResult({ copied: 0, errors: [String(err)] })
+      setResult({ processed: 0, errors: [String(err)] })
     }
-    setCollecting(false)
-  }, [targetDir, mode, selectedFiles, selectedFile, scannedFiles])
+    setRunning(false)
+  }, [targetDir, currentPath, selected, moveMode])
+
+  const selectedExtCount = Array.from(selected).reduce((sum, i) => sum + FILE_TYPE_GROUPS[i].extensions.length, 0)
 
   return (
     <div style={{
@@ -52,73 +62,77 @@ export function FilePackager({ onClose }: { onClose: () => void }) {
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
       <div style={{
-        width: 500, background: 'var(--th-bg-secondary)', borderRadius: 14,
+        width: 460, background: 'var(--th-bg-secondary)', borderRadius: 14,
         border: '1px solid var(--th-border)', display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
       }}>
         {/* Header */}
         <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--th-border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Package size={18} style={{ color: '#6ec8c8' }} />
-          <span style={{ fontSize: 15, fontWeight: 600, flex: 1, color: 'var(--th-text-primary)' }}>Collect / Package Files</span>
-          <button onClick={onClose} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: 18 }}>&times;</button>
+          <Package size={18} style={{ color: 'var(--th-accent)' }} />
+          <span style={{ fontSize: 15, fontWeight: 600, flex: 1, color: 'var(--th-text-primary)' }}>Συλλογή αρχείων</span>
+          <button onClick={onClose} style={{ border: 'none', background: 'transparent', color: 'var(--th-text-muted)', cursor: 'pointer', fontSize: 18 }}>&times;</button>
         </div>
 
-        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Mode */}
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Source */}
+          <div style={{ fontSize: 12, color: 'var(--th-text-muted)' }}>
+            Από: <span style={{ fontFamily: 'monospace', color: 'var(--th-text-secondary)' }}>{currentPath}</span>
+          </div>
+
+          {/* File type checkboxes */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 11, color: 'var(--th-text-muted)', fontWeight: 600, flex: 1 }}>Τύποι αρχείων</span>
+              <button onClick={selectAll} style={{ border: 'none', background: 'transparent', color: 'var(--th-accent)', cursor: 'pointer', fontSize: 11 }}>Όλα</button>
+              <button onClick={selectNone} style={{ border: 'none', background: 'transparent', color: 'var(--th-text-muted)', cursor: 'pointer', fontSize: 11 }}>Κανένα</button>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {FILE_TYPE_GROUPS.map((group, idx) => {
+                const isOn = selected.has(idx)
+                return (
+                  <button
+                    key={group.label}
+                    onClick={() => toggleGroup(idx)}
+                    style={{
+                      padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+                      border: `1px solid ${isOn ? 'var(--th-accent)' : 'var(--th-border)'}`,
+                      background: isOn ? 'var(--th-accent-subtle)' : 'transparent',
+                      color: isOn ? 'var(--th-accent)' : 'var(--th-text-muted)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {group.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Copy / Move toggle */}
           <div style={{ display: 'flex', gap: 4, background: 'var(--th-bg-primary)', borderRadius: 8, padding: 3 }}>
-            <button onClick={() => setMode('directory')} style={{
+            <button onClick={() => setMoveMode(false)} style={{
               flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600,
               border: 'none', cursor: 'pointer',
-              background: mode === 'directory' ? 'rgba(110,200,200,0.15)' : 'transparent',
-              color: mode === 'directory' ? '#6ec8c8' : '#94a3b8',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+              background: !moveMode ? 'var(--th-accent-subtle)' : 'transparent',
+              color: !moveMode ? 'var(--th-accent)' : 'var(--th-text-muted)',
             }}>
-              Φάκελος εργασίας
+              <Copy size={13} /> Αντιγραφή
             </button>
-            <button onClick={() => setMode('selected')} style={{
+            <button onClick={() => setMoveMode(true)} style={{
               flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600,
               border: 'none', cursor: 'pointer',
-              background: mode === 'selected' ? 'rgba(110,200,200,0.15)' : 'transparent',
-              color: mode === 'selected' ? '#6ec8c8' : '#94a3b8',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+              background: moveMode ? 'var(--th-accent-subtle)' : 'transparent',
+              color: moveMode ? 'var(--th-accent)' : 'var(--th-text-muted)',
             }}>
-              Επιλεγμένα αρχεία
+              <Move size={13} /> Μεταφορά
             </button>
           </div>
 
-          {/* Source info */}
-          {mode === 'directory' && (
-            <>
-              <div style={{ fontSize: 12, color: '#94a3b8' }}>
-                Φάκελος: <span style={{ fontFamily: 'monospace', color: '#cbd5e1' }}>{currentPath}</span>
-              </div>
-              <button onClick={scanDirectory} disabled={scanning} style={{
-                padding: '8px 16px', borderRadius: 8, border: '1px solid var(--th-border)',
-                background: 'transparent', color: 'var(--th-text-secondary)', fontSize: 12,
-                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              }}>
-                {scanning ? <Loader2 size={14} className="animate-spin" /> : <FolderOpen size={14} />}
-                {scanning ? 'Σάρωση...' : 'Σάρωση για print αρχεία'}
-              </button>
-              {scannedFiles.length > 0 && (
-                <div style={{ fontSize: 12, color: '#22c55e' }}>
-                  Βρέθηκαν {scannedFiles.length} αρχεία εκτύπωσης
-                </div>
-              )}
-            </>
-          )}
-
-          {mode === 'selected' && (
-            <div style={{ fontSize: 12, color: '#94a3b8' }}>
-              {selectedFiles.length > 0
-                ? `${selectedFiles.length} αρχεία επιλεγμένα`
-                : selectedFile
-                  ? `1 αρχείο: ${selectedFile.name}`
-                  : 'Δεν υπάρχουν επιλεγμένα αρχεία'}
-            </div>
-          )}
-
-          {/* Target */}
+          {/* Target folder */}
           <div>
-            <label style={{ fontSize: 11, color: '#64748b', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+            <label style={{ fontSize: 11, color: 'var(--th-text-muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>
               Φάκελος προορισμού
             </label>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -136,35 +150,39 @@ export function FilePackager({ onClose }: { onClose: () => void }) {
                 padding: '8px 12px', borderRadius: 8, border: '1px solid var(--th-border)',
                 background: 'transparent', color: 'var(--th-text-secondary)', fontSize: 12, cursor: 'pointer',
               }}>
-                Browse
+                <FolderOpen size={14} />
               </button>
             </div>
           </div>
 
-          {/* Collect button */}
+          {/* Action button */}
           <button
             onClick={doCollect}
-            disabled={!targetDir || collecting || (mode === 'directory' && scannedFiles.length === 0)}
+            disabled={!targetDir || running || selected.size === 0}
             style={{
               padding: '10px 16px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 600,
-              background: result ? '#22c55e' : '#6ec8c8', color: '#fff', cursor: 'pointer',
-              opacity: !targetDir || collecting ? 0.5 : 1,
+              background: result ? '#22c55e' : 'var(--th-accent)', color: '#fff', cursor: 'pointer',
+              opacity: !targetDir || running || selected.size === 0 ? 0.5 : 1,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             }}
           >
-            {collecting ? <Loader2 size={14} className="animate-spin" /> : result ? <Check size={14} /> : <Package size={14} />}
-            {collecting ? 'Collecting...' : result ? `${result.copied} αρχεία collected!` : 'Collect Files'}
+            {running ? <Loader2 size={14} className="animate-spin" /> : result ? <Check size={14} /> : <Package size={14} />}
+            {running
+              ? 'Εκτέλεση...'
+              : result
+                ? `${result.processed} αρχεία ${moveMode ? 'μεταφέρθηκαν' : 'αντιγράφηκαν'}!`
+                : `${moveMode ? 'Μεταφορά' : 'Αντιγραφή'} (${selectedExtCount} τύποι)`}
           </button>
 
-          {/* Result errors */}
+          {/* Errors */}
           {result && result.errors.length > 0 && (
             <div style={{ padding: '8px 10px', borderRadius: 6, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                 <AlertTriangle size={12} style={{ color: '#ef4444' }} />
-                <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>{result.errors.length} errors</span>
+                <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>{result.errors.length} σφάλματα</span>
               </div>
               {result.errors.slice(0, 5).map((err, i) => (
-                <div key={i} style={{ fontSize: 11, color: '#64748b' }}>{err}</div>
+                <div key={i} style={{ fontSize: 11, color: 'var(--th-text-muted)' }}>{err}</div>
               ))}
             </div>
           )}

@@ -218,7 +218,7 @@ export function QuoteLinker() {
             style={{
               padding: '4px 10px', borderRadius: 6, fontSize: 11, border: 'none', cursor: 'pointer',
               background: !filterStatus ? 'rgba(110,200,200,0.12)' : 'transparent',
-              color: !filterStatus ? '#6ec8c8' : 'var(--th-text-muted)',
+              color: !filterStatus ? 'var(--th-accent)' : 'var(--th-text-muted)',
             }}
             onClick={() => setFilterStatus('')}
           >
@@ -230,7 +230,7 @@ export function QuoteLinker() {
               style={{
                 padding: '4px 10px', borderRadius: 6, fontSize: 11, border: 'none', cursor: 'pointer',
                 background: filterStatus === status ? 'rgba(110,200,200,0.12)' : 'transparent',
-                color: filterStatus === status ? '#6ec8c8' : 'var(--th-text-muted)',
+                color: filterStatus === status ? 'var(--th-accent)' : 'var(--th-text-muted)',
                 textTransform: 'capitalize',
               }}
               onClick={() => setFilterStatus(status)}

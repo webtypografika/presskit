@@ -106,7 +106,7 @@ function CostingConfirm({ filePath, fileName, quoteId, onClose }: CostingDialogP
         {/* Header */}
         <div className="flex items-center justify-between" style={{ padding: '20px 24px', borderBottom: '1px solid var(--th-border)' }}>
           <div className="flex items-center gap-3">
-            <Calculator size={20} style={{ color: '#6ec8c8' }} />
+            <Calculator size={20} style={{ color: 'var(--th-accent)' }} />
             <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--th-text-primary)' }}>Κοστολόγηση</span>
           </div>
           <button onClick={onClose} style={{ padding: 6, background: 'none', border: 'none', cursor: 'pointer', borderRadius: 8, color: 'var(--th-text-muted)' }}>
@@ -129,7 +129,7 @@ function CostingConfirm({ filePath, fileName, quoteId, onClose }: CostingDialogP
             </div>
           ) : quote && (
             <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(110,200,200,0.06)', border: '1px solid rgba(110,200,200,0.15)' }}>
-              <div style={{ fontSize: 13, color: '#6ec8c8', fontWeight: 600 }}>Προσφορά #{quote.number}</div>
+              <div style={{ fontSize: 13, color: 'var(--th-accent)', fontWeight: 600 }}>Προσφορά #{quote.number}</div>
               {quote.customerName && quote.customerName !== '–' && <div style={{ fontSize: 12, color: 'var(--th-text-secondary)', marginTop: 2 }}>{quote.customerName}</div>}
             </div>
           )}
@@ -141,8 +141,8 @@ function CostingConfirm({ filePath, fileName, quoteId, onClose }: CostingDialogP
               style={{ gap: 10, padding: '12px 14px', borderRadius: 8, background: 'var(--th-bg-tertiary)', border: '1px solid var(--th-border)' }}
               onClick={() => setSaveToFolder(!saveToFolder)}
             >
-              <input type="checkbox" checked={saveToFolder} readOnly style={{ width: 16, height: 16, accentColor: '#6ec8c8' }} />
-              <FolderOpen size={14} style={{ color: saveToFolder ? '#6ec8c8' : 'var(--th-text-muted)', flexShrink: 0 }} />
+              <input type="checkbox" checked={saveToFolder} readOnly style={{ width: 16, height: 16, accentColor: 'var(--th-accent)' }} />
+              <FolderOpen size={14} style={{ color: saveToFolder ? 'var(--th-accent)' : 'var(--th-text-muted)', flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 13, color: 'var(--th-text-primary)' }}>Αποθήκευση στον φάκελο πελάτη</div>
                 <div className="truncate" style={{ fontSize: 11, color: 'var(--th-text-muted)', marginTop: 2 }}>{customerFolder}</div>
@@ -166,7 +166,7 @@ function CostingConfirm({ filePath, fileName, quoteId, onClose }: CostingDialogP
             disabled={uploading || loading}
             style={{
               padding: '10px 24px', borderRadius: 8, border: 'none', cursor: 'pointer',
-              background: '#6ec8c8', color: '#fff', fontSize: 13, fontWeight: 600,
+              background: 'var(--th-accent)', color: '#fff', fontSize: 13, fontWeight: 600,
               opacity: (uploading || loading) ? 0.5 : 1,
               display: 'flex', alignItems: 'center', gap: 8,
             }}
@@ -247,7 +247,7 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
         {/* Header */}
         <div className="flex items-center justify-between" style={{ padding: '20px 24px', borderBottom: '1px solid var(--th-border)' }}>
           <div className="flex items-center gap-3">
-            <Calculator size={20} style={{ color: '#6ec8c8' }} />
+            <Calculator size={20} style={{ color: 'var(--th-accent)' }} />
             <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--th-text-primary)' }}>Αποθήκευση & Κοστολόγηση</span>
           </div>
           <button onClick={onClose} style={{ padding: 6, background: 'none', border: 'none', cursor: 'pointer', borderRadius: 8, color: 'var(--th-text-muted)' }}>
@@ -269,7 +269,7 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
               flex: 1, padding: '10px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               background: target === 'customer' ? 'rgba(110,200,200,0.12)' : 'var(--th-bg-tertiary)',
-              color: target === 'customer' ? '#6ec8c8' : 'var(--th-text-secondary)',
+              color: target === 'customer' ? 'var(--th-accent)' : 'var(--th-text-secondary)',
             }}
           >
             <User size={15} />
@@ -281,7 +281,7 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
               flex: 1, padding: '10px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               background: target === 'quote' ? 'rgba(110,200,200,0.12)' : 'var(--th-bg-tertiary)',
-              color: target === 'quote' ? '#6ec8c8' : 'var(--th-text-secondary)',
+              color: target === 'quote' ? 'var(--th-accent)' : 'var(--th-text-secondary)',
             }}
           >
             <FileText size={15} />
@@ -323,14 +323,14 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
               onClick={() => setSelectedId(c.id)}
               style={{
                 width: '100%', textAlign: 'left', padding: '10px 14px', borderRadius: 8, marginBottom: 4,
-                border: selectedId === c.id ? '1px solid #6ec8c8' : '1px solid transparent',
+                border: selectedId === c.id ? '1px solid var(--th-accent)' : '1px solid transparent',
                 background: selectedId === c.id ? 'rgba(110,200,200,0.08)' : 'var(--th-bg-tertiary)',
                 cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12,
               }}
             >
-              <User size={14} style={{ color: selectedId === c.id ? '#6ec8c8' : 'var(--th-text-muted)', flexShrink: 0 }} />
+              <User size={14} style={{ color: selectedId === c.id ? 'var(--th-accent)' : 'var(--th-text-muted)', flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}>
-                <div className="truncate" style={{ fontSize: 13, color: selectedId === c.id ? '#6ec8c8' : 'var(--th-text-primary)', fontWeight: 500 }}>
+                <div className="truncate" style={{ fontSize: 13, color: selectedId === c.id ? 'var(--th-accent)' : 'var(--th-text-primary)', fontWeight: 500 }}>
                   {c.name}
                 </div>
                 {c.company && (
@@ -345,15 +345,15 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
               onClick={() => setSelectedId(q.id)}
               style={{
                 width: '100%', textAlign: 'left', padding: '10px 14px', borderRadius: 8, marginBottom: 4,
-                border: selectedId === q.id ? '1px solid #6ec8c8' : '1px solid transparent',
+                border: selectedId === q.id ? '1px solid var(--th-accent)' : '1px solid transparent',
                 background: selectedId === q.id ? 'rgba(110,200,200,0.08)' : 'var(--th-bg-tertiary)',
                 cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12,
               }}
             >
-              <FileText size={14} style={{ color: selectedId === q.id ? '#6ec8c8' : 'var(--th-text-muted)', flexShrink: 0 }} />
+              <FileText size={14} style={{ color: selectedId === q.id ? 'var(--th-accent)' : 'var(--th-text-muted)', flexShrink: 0 }} />
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div className="flex items-center gap-2">
-                  <span style={{ fontSize: 13, color: selectedId === q.id ? '#6ec8c8' : 'var(--th-text-primary)', fontWeight: 600 }}>
+                  <span style={{ fontSize: 13, color: selectedId === q.id ? 'var(--th-accent)' : 'var(--th-text-primary)', fontWeight: 600 }}>
                     #{q.number}
                   </span>
                   <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'var(--th-bg-hover)', color: 'var(--th-text-secondary)' }}>
@@ -379,7 +379,7 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
         {/* Footer */}
         <div style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--th-border)' }}>
           <div style={{ fontSize: 12, color: 'var(--th-text-muted)' }}>
-            {selectedLabel && <>Επιλεγμένο: <span style={{ color: '#6ec8c8' }}>{selectedLabel}</span></>}
+            {selectedLabel && <>Επιλεγμένο: <span style={{ color: 'var(--th-accent)' }}>{selectedLabel}</span></>}
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <button
@@ -396,7 +396,7 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
               disabled={!selectedId || uploading}
               style={{
                 padding: '10px 24px', borderRadius: 8, border: 'none', cursor: 'pointer',
-                background: '#6ec8c8', color: '#fff', fontSize: 13, fontWeight: 600,
+                background: 'var(--th-accent)', color: '#fff', fontSize: 13, fontWeight: 600,
                 opacity: (!selectedId || uploading) ? 0.5 : 1,
                 display: 'flex', alignItems: 'center', gap: 8,
               }}

@@ -53,7 +53,7 @@ export function IccProfileViewer() {
   if (loading) {
     return (
       <div style={{ padding: 20, textAlign: 'center' }}>
-        <Loader2 size={20} className="animate-spin" style={{ color: '#6ec8c8', margin: '0 auto 8px' }} />
+        <Loader2 size={20} className="animate-spin" style={{ color: 'var(--th-accent)', margin: '0 auto 8px' }} />
       </div>
     )
   }

@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   Folder, FileText, Image, Type, FileSpreadsheet,
-  Archive, File, Layers, FolderPlus, Clipboard
+  Archive, File, Layers, FolderPlus, Clipboard, ArrowUp, ArrowDown
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { FileEntry, FileType } from '@/lib/file-types'
@@ -200,12 +200,40 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     }
   }, [clearSelection])
 
+  // ─── Sort state (list view) ──────────────────────────────────────
+  type SortKey = 'name' | 'type' | 'modified' | 'size'
+  const [sortKey, setSortKey] = useState<SortKey>('name')
+  const [sortAsc, setSortAsc] = useState(true)
+  const toggleSort = useCallback((key: SortKey) => {
+    if (sortKey === key) setSortAsc(prev => !prev)
+    else { setSortKey(key); setSortAsc(key === 'name') }
+  }, [sortKey])
+
+  const sortedFiles = useMemo(() => {
+    const sorted = [...files]
+    sorted.sort((a, b) => {
+      if (a.isDirectory && !b.isDirectory) return -1
+      if (!a.isDirectory && b.isDirectory) return 1
+      let cmp = 0
+      switch (sortKey) {
+        case 'name': cmp = a.name.localeCompare(b.name); break
+        case 'type': cmp = (a.type || '').localeCompare(b.type || '') || a.name.localeCompare(b.name); break
+        case 'modified': cmp = new Date(a.modified || 0).getTime() - new Date(b.modified || 0).getTime(); break
+        case 'size': cmp = (a.size || 0) - (b.size || 0); break
+      }
+      return sortAsc ? cmp : -cmp
+    })
+    return sorted
+  }, [files, sortKey, sortAsc])
+
   const handleClick = useCallback((e: React.MouseEvent, file: FileEntry, index: number) => {
+    // Use sortedFiles for list view so shift-click ranges match visual order
+    const visibleFiles = viewMode === 'list' ? sortedFiles : files
     if (e.shiftKey && lastClickedIndexRef.current >= 0) {
       // Shift+click: select range
       const start = Math.min(lastClickedIndexRef.current, index)
       const end = Math.max(lastClickedIndexRef.current, index)
-      selectFileRange(files.slice(start, end + 1))
+      selectFileRange(visibleFiles.slice(start, end + 1))
     } else if (e.ctrlKey || e.metaKey) {
       // Ctrl+click: toggle single
       toggleFileSelection(file)
@@ -216,7 +244,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
       onSelect(file)
       lastClickedIndexRef.current = index
     }
-  }, [files, toggleFileSelection, selectFileRange, onSelect])
+  }, [files, sortedFiles, viewMode, toggleFileSelection, selectFileRange, onSelect])
 
   const handleContextMenu = useCallback((e: React.MouseEvent, file: FileEntry) => {
     e.preventDefault()
@@ -516,6 +544,15 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
       case 'newFolder':
         requestNewFolder()
         break
+      case 'extractZip': {
+        window.api.fs.extractZip(file.path).then((result) => {
+          if (!result.ok) {
+            showAlert(`Αποτυχία αποσυμπίεσης: ${result.error}`)
+          }
+          setTimeout(() => refreshDirectory(), 300)
+        })
+        break
+      }
       case 'delete': {
         // Collect all files to delete: multi-selected or just the right-clicked one
         const filesToDelete = selectedFiles.length > 1 && selectedFiles.some(f => f.path === file.path)
@@ -577,14 +614,14 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         >
           <span />
           <span />
-          <span>Name</span>
-          <ResizableHeader label="Type" onResize={(e) => onResizeStart(e, 'type')} />
-          <ResizableHeader label="Modified" onResize={(e) => onResizeStart(e, 'date')} align="right" />
-          <ResizableHeader label="Size" onResize={(e) => onResizeStart(e, 'size')} align="right" />
+          <SortableHeader label="Name" sortKey="name" currentKey={sortKey} asc={sortAsc} onSort={toggleSort} />
+          <ResizableHeader label="Type" onResize={(e) => onResizeStart(e, 'type')} align="center" sortKey="type" currentKey={sortKey} asc={sortAsc} onSort={toggleSort} />
+          <ResizableHeader label="Modified" onResize={(e) => onResizeStart(e, 'date')} align="center" sortKey="modified" currentKey={sortKey} asc={sortAsc} onSort={toggleSort} />
+          <ResizableHeader label="Size" onResize={(e) => onResizeStart(e, 'size')} align="right" sortKey="size" currentKey={sortKey} asc={sortAsc} onSort={toggleSort} />
         </div>
 
         {/* List items */}
-        {files.map((file, index) => {
+        {sortedFiles.map((file, index) => {
           const isSelected = selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path)
           return (
             <div
@@ -605,11 +642,11 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
               style={{
                 display: 'grid', gridTemplateColumns: colTemplate, alignItems: 'center',
                 padding: '6px 16px',
-                borderLeft: isSelected ? '2px solid #6ec8c8' : '2px solid transparent',
+                borderLeft: isSelected ? '2px solid var(--th-accent)' : '2px solid transparent',
                 background: dropTarget === file.path
-                  ? 'rgba(110,200,200,0.15)'
-                  : isSelected ? 'rgba(110,200,200,0.08)' : undefined,
-                outline: dropTarget === file.path ? '2px dashed #6ec8c8' : undefined,
+                  ? 'var(--th-accent-drop)'
+                  : isSelected ? 'var(--th-accent-subtle)' : undefined,
+                outline: dropTarget === file.path ? '2px dashed var(--th-accent)' : undefined,
                 outlineOffset: -2,
               }}
             >
@@ -621,7 +658,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
                   cursor: file.isDirectory ? 'default' : 'pointer',
                   ...((!file.isDirectory && pickedFiles.has(file.name)) ? {
                     borderStyle: 'solid', borderWidth: '6px 6px 0 0',
-                    borderColor: '#6ec8c8 #6ec8c8 transparent transparent',
+                    borderColor: 'var(--th-accent) var(--th-accent) transparent transparent',
                     borderRadius: '2px 0 0 0',
                   } : {}),
                 }}
@@ -653,12 +690,12 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
               </span>
 
               {/* Type */}
-              <span className="text-xs truncate" style={{ color: getFileTypeColor(file.type) }}>
+              <span className="text-xs truncate text-center" style={{ color: getFileTypeColor(file.type) }}>
                 {getFileTypeLabel(file.type)}
               </span>
 
               {/* Modified */}
-              <span className="text-xs text-text-muted text-right truncate">
+              <span className="text-xs text-text-muted text-center truncate">
                 {file.modified ? new Date(file.modified).toLocaleString('el-GR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
               </span>
 
@@ -737,13 +774,13 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
             style={{
               padding: 4,
               border: dropTarget === file.path
-                ? '2px dashed #6ec8c8'
+                ? '2px dashed var(--th-accent)'
                 : (selectedFile?.path === file.path || selectedFiles.some(f => f.path === file.path))
-                  ? '1px solid #6ec8c8' : '1px solid transparent',
+                  ? '1px solid var(--th-accent)' : '1px solid transparent',
               background: dropTarget === file.path
-                ? 'rgba(110,200,200,0.15)'
+                ? 'var(--th-accent-drop)'
                 : selectedFiles.some(f => f.path === file.path)
-                  ? 'rgba(110,200,200,0.08)' : 'transparent',
+                  ? 'var(--th-accent-subtle)' : 'transparent',
               borderRadius: 10,
             }}
           >
@@ -923,9 +960,9 @@ function NewFolderInput({ defaultName, onSubmit, onCancel, viewMode, thumbnailSi
 
   if (viewMode === 'list') {
     return (
-      <div className="flex items-center gap-2" style={{ padding: '8px 20px', background: 'rgba(110,200,200,0.10)', borderLeft: '2px solid #6ec8c8' }}>
+      <div className="flex items-center gap-2" style={{ padding: '8px 20px', background: 'var(--th-accent-subtle)', borderLeft: '2px solid var(--th-accent)' }}>
         <span className="w-6 flex-shrink-0 flex justify-center">
-          <Folder size={16} color="#6ec8c8" fill="#6ec8c8" fillOpacity={0.15} strokeWidth={1.5} />
+          <Folder size={16} color="var(--th-accent)" fill="var(--th-accent)" fillOpacity={0.15} strokeWidth={1.5} />
         </span>
         <input
           ref={inputRef}
@@ -933,7 +970,7 @@ function NewFolderInput({ defaultName, onSubmit, onCancel, viewMode, thumbnailSi
           onKeyDown={handleKeyDown}
           onBlur={() => onSubmit(inputRef.current?.value || '')}
           style={{
-            flex: 1, border: '1px solid #6ec8c8', borderRadius: 4,
+            flex: 1, border: '1px solid var(--th-accent)', borderRadius: 4,
             padding: '4px 8px', fontSize: 12, outline: 'none',
             background: 'var(--th-bg-primary)', color: 'var(--th-text-primary)',
           }}
@@ -945,9 +982,9 @@ function NewFolderInput({ defaultName, onSubmit, onCancel, viewMode, thumbnailSi
   // Grid view
   const size = thumbnailSize || 128
   return (
-    <div className="flex flex-col items-center" style={{ padding: 4, border: '1px solid #6ec8c8', borderRadius: 10, background: 'rgba(110,200,200,0.10)' }}>
+    <div className="flex flex-col items-center" style={{ padding: 4, border: '1px solid var(--th-accent)', borderRadius: 10, background: 'var(--th-accent-subtle)' }}>
       <div className="flex items-center justify-center" style={{ width: size, height: size }}>
-        <FolderPlus size={size * 0.4} color="#6ec8c8" strokeWidth={1.5} />
+        <FolderPlus size={size * 0.4} color="var(--th-accent)" strokeWidth={1.5} />
       </div>
       <div className="mt-1.5 w-full text-center">
         <input
@@ -956,7 +993,7 @@ function NewFolderInput({ defaultName, onSubmit, onCancel, viewMode, thumbnailSi
           onKeyDown={handleKeyDown}
           onBlur={() => onSubmit(inputRef.current?.value || '')}
           style={{
-            width: '100%', border: '1px solid #6ec8c8', borderRadius: 4,
+            width: '100%', border: '1px solid var(--th-accent)', borderRadius: 4,
             padding: '2px 6px', fontSize: 12, outline: 'none', textAlign: 'center',
             background: 'var(--th-bg-primary)', color: 'var(--th-text-primary)',
           }}
@@ -989,7 +1026,7 @@ function PickBadge({ picked, onClick }: { picked: boolean; onClick: (e: React.Mo
         width: 0, height: 0,
         borderStyle: 'solid',
         borderWidth: '0 22px 22px 0',
-        borderColor: `transparent ${picked ? '#6ec8c8' : 'rgba(100,100,100,0.5)'} transparent transparent`,
+        borderColor: `transparent ${picked ? 'var(--th-accent)' : 'rgba(100,100,100,0.5)'} transparent transparent`,
       }} />
     </div>
   )
@@ -1069,7 +1106,7 @@ function RenameInput({ name, onSubmit, onCancel }: {
       onClick={e => e.stopPropagation()}
       onDoubleClick={e => e.stopPropagation()}
       style={{
-        width: '100%', border: '1px solid #6ec8c8', borderRadius: 4,
+        width: '100%', border: '1px solid var(--th-accent)', borderRadius: 4,
         padding: '2px 6px', fontSize: 12, outline: 'none', textAlign: 'inherit',
         background: 'var(--th-bg-primary)', color: 'var(--th-text-primary)',
       }}
@@ -1077,26 +1114,57 @@ function RenameInput({ name, onSubmit, onCancel }: {
   )
 }
 
-function ResizableHeader({ label, onResize, align }: {
+function SortIndicator({ active, asc }: { active: boolean; asc: boolean }) {
+  if (!active) return null
+  return asc ? <ArrowUp size={10} style={{ flexShrink: 0 }} /> : <ArrowDown size={10} style={{ flexShrink: 0 }} />
+}
+
+function SortableHeader({ label, sortKey, currentKey, asc, onSort }: {
   label: string
-  onResize: (e: React.MouseEvent) => void
-  align?: 'right' | 'left'
+  sortKey: string
+  currentKey: string
+  asc: boolean
+  onSort: (key: any) => void
 }) {
   return (
+    <span
+      onClick={() => onSort(sortKey)}
+      style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, userSelect: 'none' }}
+    >
+      {label}
+      <SortIndicator active={currentKey === sortKey} asc={asc} />
+    </span>
+  )
+}
+
+function ResizableHeader({ label, onResize, align, sortKey, currentKey, asc, onSort }: {
+  label: string
+  onResize: (e: React.MouseEvent) => void
+  align?: 'right' | 'left' | 'center'
+  sortKey?: string
+  currentKey?: string
+  asc?: boolean
+  onSort?: (key: any) => void
+}) {
+  const justify = align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start'
+  return (
     <span style={{
-      position: 'relative', textAlign: align || 'left', userSelect: 'none',
-      display: 'flex', alignItems: 'center',
-      justifyContent: align === 'right' ? 'flex-end' : 'flex-start',
-    }}>
+      position: 'relative', userSelect: 'none',
+      display: 'flex', alignItems: 'center', gap: 3,
+      justifyContent: justify,
+      cursor: onSort ? 'pointer' : undefined,
+    }}
+      onClick={onSort && sortKey ? () => onSort(sortKey) : undefined}
+    >
       {/* Drag handle on the LEFT edge (border between this column and previous) */}
       <span
-        onMouseDown={onResize}
+        onMouseDown={(e) => { e.stopPropagation(); onResize(e) }}
         style={{
           position: 'absolute', left: -5, top: -8, bottom: -8, width: 10,
           cursor: 'col-resize', zIndex: 2,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
-        onMouseEnter={e => { const line = e.currentTarget.firstElementChild as HTMLElement; if (line) line.style.background = '#6ec8c8' }}
+        onMouseEnter={e => { const line = e.currentTarget.firstElementChild as HTMLElement; if (line) line.style.background = 'var(--th-accent)' }}
         onMouseLeave={e => { const line = e.currentTarget.firstElementChild as HTMLElement; if (line) line.style.background = 'var(--th-border)' }}
       >
         <span style={{
@@ -1106,6 +1174,7 @@ function ResizableHeader({ label, onResize, align }: {
         }} />
       </span>
       {label}
+      {sortKey && currentKey && <SortIndicator active={currentKey === sortKey} asc={asc ?? true} />}
     </span>
   )
 }

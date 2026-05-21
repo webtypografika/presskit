@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import {
   ExternalLink, FolderOpen, Scan, RefreshCw,
   Copy, Star, ChevronRight, Trash2, Scissors, Clipboard, CircleCheck, Circle,
-  FolderPlus, Pencil
+  FolderPlus, Pencil, PackageOpen
 } from 'lucide-react'
 import type { FileEntry } from '@/lib/file-types'
 import { useAppStore } from '@/stores/app-store'
@@ -89,6 +89,7 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
   const isFile = !file.isDirectory
   const isPrint = isFile && ['pdf', 'ai', 'psd', 'eps', 'indd', 'tiff'].includes(file.type)
   const canConvert = isFile && ['pdf', 'ai', 'psd', 'eps', 'tiff', 'png', 'jpg', 'svg', 'raw'].includes(file.type)
+  const isZip = isFile && file.name.toLowerCase().endsWith('.zip')
   const pickedFiles = useAppStore(s => s.pickedFiles)
   const isPicked = isFile && pickedFiles.has(file.name)
 
@@ -160,11 +161,12 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
 
       <Divider />
 
-      {/* Print / Convert actions */}
-      {(isPrint || canConvert) && (
+      {/* Print / Convert / Extract actions */}
+      {(isPrint || canConvert || isZip) && (
         <>
           {isPrint && <MenuItem icon={<Scan size={13} />} label="Run Preflight" onClick={() => onAction('preflight')} accent />}
           {canConvert && <MenuItem icon={<RefreshCw size={13} />} label="Convert..." onClick={() => onAction('convert')} />}
+          {isZip && <MenuItem icon={<PackageOpen size={13} />} label="Αποσυμπίεση εδώ" onClick={() => onAction('extractZip')} />}
           <Divider />
         </>
       )}

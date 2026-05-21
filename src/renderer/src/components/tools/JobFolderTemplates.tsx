@@ -58,18 +58,18 @@ export function JobFolderTemplates() {
             onClick={() => setSelected(t.name)}
             style={{
               padding: '10px 12px', borderRadius: 8, textAlign: 'left',
-              border: `1px solid ${selected === t.name ? '#6ec8c8' : 'var(--th-border)'}`,
+              border: `1px solid ${selected === t.name ? 'var(--th-accent)' : 'var(--th-border)'}`,
               background: selected === t.name ? 'rgba(110,200,200,0.08)' : 'var(--th-bg-primary)',
               cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
               color: 'var(--th-text-primary)',
             }}
           >
-            <FolderPlus size={16} style={{ color: selected === t.name ? '#6ec8c8' : '#64748b', flexShrink: 0 }} />
+            <FolderPlus size={16} style={{ color: selected === t.name ? 'var(--th-accent)' : '#64748b', flexShrink: 0 }} />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 500 }}>{t.name}</div>
               <div style={{ fontSize: 11, color: '#64748b' }}>{t.folders.length} φάκελοι</div>
             </div>
-            {selected === t.name && <Check size={14} style={{ color: '#6ec8c8' }} />}
+            {selected === t.name && <Check size={14} style={{ color: 'var(--th-accent)' }} />}
           </button>
         ))}
       </div>
@@ -83,7 +83,7 @@ export function JobFolderTemplates() {
             return (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 0', paddingLeft: depth * 16 }}>
                 {depth > 0 && <ChevronRight size={10} style={{ color: '#475569' }} />}
-                <FolderOpen size={12} style={{ color: '#6ec8c8' }} />
+                <FolderOpen size={12} style={{ color: 'var(--th-accent)' }} />
                 <span style={{ fontSize: 12, color: '#cbd5e1' }}>{f.split('/').pop()}</span>
               </div>
             )
@@ -116,7 +116,7 @@ export function JobFolderTemplates() {
             disabled={!jobName.trim() || creating}
             style={{
               padding: '10px 16px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 600,
-              background: created ? '#22c55e' : '#6ec8c8', color: '#fff', cursor: 'pointer',
+              background: created ? '#22c55e' : 'var(--th-accent)', color: '#fff', cursor: 'pointer',
               opacity: !jobName.trim() || creating ? 0.5 : 1,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             }}

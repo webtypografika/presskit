@@ -33,8 +33,10 @@ export function StatusBar() {
     return () => window.removeEventListener('open-settings', handler as EventListener)
   }, [])
 
+  const selectedFiles = useAppStore(s => s.selectedFiles)
   const fileCount = files.filter(f => !f.isDirectory).length
   const folderCount = files.filter(f => f.isDirectory).length
+  const selectedCount = selectedFiles.length
   const pickedCount = pickedFiles.size
 
   return (
@@ -55,6 +57,16 @@ export function StatusBar() {
             {folderCount === 0 && fileCount === 0 && 'Empty'}
           </span>
 
+          {/* Selected count */}
+          {selectedCount > 1 && (
+            <>
+              <div className="w-px h-4 bg-border" />
+              <span style={{ color: 'var(--th-accent)', fontWeight: 600 }}>
+                {selectedCount} selected
+              </span>
+            </>
+          )}
+
           {/* Picks counter + filter */}
           {pickedCount > 0 && (
             <>
@@ -73,7 +85,7 @@ export function StatusBar() {
                       padding: '1px 8px', borderRadius: 4, fontSize: 11, fontWeight: 500,
                       border: 'none', cursor: 'pointer',
                       background: picksFilter === f ? (f === 'picked' ? 'rgba(34,197,94,0.15)' : f === 'unpicked' ? 'rgba(234,179,8,0.15)' : 'rgba(110,200,200,0.15)') : 'transparent',
-                      color: picksFilter === f ? (f === 'picked' ? '#22c55e' : f === 'unpicked' ? '#eab308' : '#6ec8c8') : '#64748b',
+                      color: picksFilter === f ? (f === 'picked' ? '#22c55e' : f === 'unpicked' ? '#eab308' : 'var(--th-accent)') : '#64748b',
                     }}
                   >
                     {f === 'all' ? 'All' : f === 'picked' ? 'Picked' : 'Unpicked'}

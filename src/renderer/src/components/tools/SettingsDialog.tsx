@@ -188,7 +188,7 @@ function PresscalSettings() {
           disabled={testing || !url || !apiKey}
           style={{
             padding: '12px 32px', borderRadius: 8, border: 'none', cursor: 'pointer',
-            background: '#6ec8c8', color: '#fff', fontSize: 14, fontWeight: 600,
+            background: 'var(--th-accent)', color: '#fff', fontSize: 14, fontWeight: 600,
             opacity: (testing || !url || !apiKey) ? 0.5 : 1,
           }}
         >
@@ -261,7 +261,7 @@ function DropboxSettings() {
           <button onClick={connect} disabled={connecting || !clientId}
             style={{
               padding: '12px 32px', borderRadius: 8, border: 'none', cursor: 'pointer',
-              background: '#6ec8c8', color: '#fff', fontSize: 14, fontWeight: 600,
+              background: 'var(--th-accent)', color: '#fff', fontSize: 14, fontWeight: 600,
               opacity: (connecting || !clientId) ? 0.5 : 1,
             }}>
             {connecting ? 'Connecting...' : 'Connect Dropbox'}
@@ -327,14 +327,14 @@ function PreflightSettings() {
 
       <Field>
         <label className="flex items-center cursor-pointer" style={{ gap: 12 }} onClick={() => { setRequireCmyk(!requireCmyk); setTimeout(save, 0) }}>
-          <input type="checkbox" checked={requireCmyk} readOnly style={{ width: 18, height: 18, accentColor: '#6ec8c8' }} />
+          <input type="checkbox" checked={requireCmyk} readOnly style={{ width: 18, height: 18, accentColor: 'var(--th-accent)' }} />
           <span style={{ fontSize: 14, color: 'var(--th-text-primary)' }}>Require CMYK color space</span>
         </label>
       </Field>
 
       <Field>
         <label className="flex items-center cursor-pointer" style={{ gap: 12 }} onClick={() => { setRequireBleed(!requireBleed); setTimeout(save, 0) }}>
-          <input type="checkbox" checked={requireBleed} readOnly style={{ width: 18, height: 18, accentColor: '#6ec8c8' }} />
+          <input type="checkbox" checked={requireBleed} readOnly style={{ width: 18, height: 18, accentColor: 'var(--th-accent)' }} />
           <span style={{ fontSize: 14, color: 'var(--th-text-primary)' }}>Require bleed</span>
         </label>
       </Field>
@@ -419,7 +419,7 @@ function PathsSettings() {
               padding: '10px 14px', borderRadius: 8,
               background: 'var(--th-bg-secondary)', border: '1px solid var(--th-border)',
             }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#6ec8c8', fontFamily: 'monospace', minWidth: 100 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--th-accent)', fontFamily: 'monospace', minWidth: 100 }}>
                 {root.placeholder}
               </span>
               {editing === root.placeholder ? (
@@ -431,7 +431,7 @@ function PathsSettings() {
                     autoFocus
                     onKeyDown={e => { if (e.key === 'Enter') saveEdit(root.placeholder); if (e.key === 'Escape') setEditing(null) }}
                   />
-                  <button onClick={() => saveEdit(root.placeholder)} style={{ padding: '6px 16px', borderRadius: 6, border: 'none', background: '#6ec8c8', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  <button onClick={() => saveEdit(root.placeholder)} style={{ padding: '6px 16px', borderRadius: 6, border: 'none', background: 'var(--th-accent)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                     OK
                   </button>
                 </div>
@@ -468,7 +468,7 @@ function PathsSettings() {
             disabled={migrating}
             style={{
               padding: '12px 28px', borderRadius: 8, border: 'none', cursor: 'pointer',
-              background: '#6ec8c8', color: '#fff', fontSize: 14, fontWeight: 600,
+              background: 'var(--th-accent)', color: '#fff', fontSize: 14, fontWeight: 600,
               opacity: migrating ? 0.5 : 1, display: 'flex', alignItems: 'center', gap: 8,
             }}
           >
@@ -503,7 +503,7 @@ function UiSettings() {
             style={{
               padding: '10px 24px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14,
               background: viewMode === 'grid' ? 'rgba(110,200,200,0.1)' : 'var(--th-bg-primary)',
-              color: viewMode === 'grid' ? '#6ec8c8' : 'var(--th-text-muted)',
+              color: viewMode === 'grid' ? 'var(--th-accent)' : 'var(--th-text-muted)',
             }}
             onClick={() => setViewMode('grid')}
           >Grid</button>
@@ -511,7 +511,7 @@ function UiSettings() {
             style={{
               padding: '10px 24px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14,
               background: viewMode === 'list' ? 'rgba(110,200,200,0.1)' : 'var(--th-bg-primary)',
-              color: viewMode === 'list' ? '#6ec8c8' : 'var(--th-text-muted)',
+              color: viewMode === 'list' ? 'var(--th-accent)' : 'var(--th-text-muted)',
             }}
             onClick={() => setViewMode('list')}
           >List</button>
@@ -519,7 +519,7 @@ function UiSettings() {
       </Field>
 
       <Field label={`Thumbnail Size: ${thumbnailSize}px`}>
-        <input type="range" min={64} max={256} step={16} value={thumbnailSize} onChange={e => setThumbnailSize(Number(e.target.value))} style={{ width: '100%', accentColor: '#6ec8c8' }} />
+        <input type="range" min={64} max={256} step={16} value={thumbnailSize} onChange={e => setThumbnailSize(Number(e.target.value))} style={{ width: '100%', accentColor: 'var(--th-accent)' }} />
       </Field>
     </div>
   )
@@ -577,7 +577,7 @@ function AboutSettings() {
               disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
               style={{
                 padding: '12px 28px', borderRadius: 8, border: 'none', cursor: 'pointer',
-                background: '#6ec8c8', color: '#fff', fontSize: 14, fontWeight: 600,
+                background: 'var(--th-accent)', color: '#fff', fontSize: 14, fontWeight: 600,
                 opacity: (updateStatus === 'checking' || updateStatus === 'downloading') ? 0.5 : 1,
                 display: 'flex', alignItems: 'center', gap: 8,
               }}

@@ -626,6 +626,22 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
     }
   })
 
+  // Extract ZIP archive to same directory
+  ipcMain.handle('fs:extractZip', async (_e, zipPath: string): Promise<{ ok: boolean; error?: string }> => {
+    const targetDir = dirname(zipPath)
+    try {
+      const { execFile } = await import('child_process')
+      const { promisify } = await import('util')
+      await promisify(execFile)('powershell', [
+        '-NoProfile', '-Command',
+        `Expand-Archive -Path '${zipPath.replace(/'/g, "''")}' -DestinationPath '${targetDir.replace(/'/g, "''")}' -Force`
+      ], { timeout: 120000 })
+      return { ok: true }
+    } catch (err: any) {
+      return { ok: false, error: err.message || String(err) }
+    }
+  })
+
   // ─── File watcher ────────────────────────────────────────────────
   let watcher: any = null
 

@@ -107,7 +107,7 @@ export function JobFiles() {
             style={{
               padding: '4px 10px', borderRadius: 6, fontSize: 11, border: 'none', cursor: 'pointer',
               background: !filterStage ? 'rgba(110,200,200,0.12)' : 'transparent',
-              color: !filterStage ? '#6ec8c8' : 'var(--th-text-muted)',
+              color: !filterStage ? 'var(--th-accent)' : 'var(--th-text-muted)',
             }}
             onClick={() => setFilterStage('')}
           >
@@ -119,7 +119,7 @@ export function JobFiles() {
               style={{
                 padding: '4px 10px', borderRadius: 6, fontSize: 11, border: 'none', cursor: 'pointer',
                 background: filterStage === stage.id ? 'rgba(110,200,200,0.12)' : 'transparent',
-                color: filterStage === stage.id ? '#6ec8c8' : 'var(--th-text-muted)',
+                color: filterStage === stage.id ? 'var(--th-accent)' : 'var(--th-text-muted)',
               }}
               onClick={() => setFilterStage(stage.id)}
             >
@@ -146,11 +146,11 @@ export function JobFiles() {
               onClick={() => linkToJob(job.id)}
             >
               <div className="flex items-center" style={{ gap: 10 }}>
-                <Briefcase size={16} style={{ color: '#6ec8c8', flexShrink: 0 }} />
+                <Briefcase size={16} style={{ color: 'var(--th-accent)', flexShrink: 0 }} />
 
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="flex items-center" style={{ gap: 6 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#6ec8c8' }}>{job.number}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--th-accent)' }}>{job.number}</span>
                     {PRIORITY_ICONS[job.jobPriority]}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--th-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -167,7 +167,7 @@ export function JobFiles() {
                     {job.jobStageName || job.jobStage}
                   </span>
                   {linkingTo === job.id ? (
-                    <Loader2 size={14} className="animate-spin" style={{ color: '#6ec8c8' }} />
+                    <Loader2 size={14} className="animate-spin" style={{ color: 'var(--th-accent)' }} />
                   ) : (
                     <Link2 size={14} className="opacity-0 group-hover:opacity-100" style={{ color: 'var(--th-text-muted)' }} />
                   )}
@@ -188,7 +188,7 @@ export function JobFiles() {
               onClick={() => setVisibleCount(v => v + PAGE_SIZE)}
               style={{
                 padding: '8px 0', border: 'none', background: 'none', cursor: 'pointer',
-                fontSize: 12, color: '#6ec8c8', textAlign: 'center',
+                fontSize: 12, color: 'var(--th-accent)', textAlign: 'center',
               }}
             >
               Show more ({filteredJobs.length - visibleCount} remaining)

@@ -597,7 +597,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
       } else {
         filesToDownload = []
         for (const file of files) {
-          const saveName = file.fileName || basename(file.filePath)
+          const saveName = (file.fileName || basename(file.filePath)).replace(/[/\\:*?"<>|]/g, '_')
           const saveDir = file.subfolder ? pathJoin(targetDir, file.subfolder) : targetDir
           try {
             await fsAccess(pathJoin(saveDir, saveName))
@@ -624,7 +624,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       for (const file of filesToDownload) {
         try {
-          const saveName = file.fileName || basename(file.filePath)
+          const saveName = (file.fileName || basename(file.filePath)).replace(/[/\\:*?"<>|]/g, '_')
           sendProgress(saveName, downloaded, filesToDownload.length)
 
           // Build download URL
@@ -974,27 +974,44 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       if (url && apiKey) {
         if (addProfile) {
-          // Suggest a name from email/orgName/host for the new profile.
           const cleanUrl = url.replace(/\/$/, '')
-          const suggestedName = email || orgName || (() => {
-            try { return new URL(cleanUrl).hostname.replace(/^www\./, '') } catch { return 'New profile' }
-          })()
-          const profile = createProfile({ name: suggestedName, email, presscalUrl: cleanUrl })
-          // Stash the credentials in the new profile's store before we switch
+          // Upsert by URL — if a profile with this URL already exists, update it
+          const existingProfiles = listProfiles()
+          const existing = existingProfiles.find(p => p.presscalUrl === cleanUrl)
+
+          let profileId: string
+          if (existing) {
+            // Update existing profile's credentials & metadata
+            const patch: Record<string, string> = {}
+            if (email) patch.email = email
+            if (orgName) patch.orgName = orgName
+            updateProfile(existing.id, patch)
+            profileId = existing.id
+            deepLog('[DeepLink] Updated existing profile:', profileId)
+          } else {
+            // Create new profile
+            const suggestedName = email || orgName || (() => {
+              try { return new URL(cleanUrl).hostname.replace(/^www\./, '') } catch { return 'New profile' }
+            })()
+            const profile = createProfile({ name: suggestedName, email, presscalUrl: cleanUrl })
+            profileId = profile.id
+            deepLog('[DeepLink] Created new profile:', profileId)
+          }
+
+          // Stash the credentials in the profile's store before we switch
           // (we have to write them via a temp store since `store` proxies to
           // the active profile, which is still the OLD one).
           const StoreModule = await import('electron-store')
           const path = await import('path')
           const profileStore = new StoreModule.default({
             name: 'config',
-            cwd: path.join(app.getPath('userData'), 'profiles', profile.id),
+            cwd: path.join(app.getPath('userData'), 'profiles', profileId),
           })
           profileStore.set('presscal.url', cleanUrl)
           profileStore.set('presscal.apiKey', apiKey)
-          deepLog('[DeepLink] Created profile:', profile.id, '→ switching')
-          // app.relaunch + exit; the alert won't render but the new profile
-          // will be active on next launch.
-          switchProfile(profile.id)
+
+          // Switch to the profile (restarts the app)
+          switchProfile(profileId)
           return
         }
 

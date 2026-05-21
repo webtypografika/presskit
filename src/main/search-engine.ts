@@ -160,10 +160,25 @@ function rebuildFts(): void {
     `)
   } catch (err: any) {
     console.error('[SEARCH] rebuildFts failed:', err.message)
+    // Try dropping and recreating just the FTS table
     try {
+      const d = getDb()
+      d.exec('DROP TABLE IF EXISTS files_fts')
+      d.exec(`
+        CREATE VIRTUAL TABLE files_fts USING fts5(
+          name,
+          content='files',
+          content_rowid='rowid',
+          tokenize='unicode61 remove_diacritics 2'
+        );
+        INSERT INTO files_fts(rowid, name) SELECT rowid, name FROM files;
+      `)
+      console.log('[SEARCH] FTS table recreated successfully')
+    } catch (err2: any) {
+      // FTS still broken — destroy entire DB, will be rebuilt on next buildIndex
+      console.error('[SEARCH] FTS recreate also failed, destroying DB:', err2.message)
       destroyDb()
-      getDb()
-    } catch {}
+    }
   }
 }
 
@@ -220,7 +235,8 @@ async function buildIndex(): Promise<{ count: number; ms: number }> {
     // Rebuild FTS index
     rebuildFts()
 
-    const count = (d.prepare('SELECT COUNT(*) as c FROM files').get() as any).c
+    const currentDb = db || d
+    const count = (currentDb.prepare('SELECT COUNT(*) as c FROM files').get() as any).c
     const ms = Date.now() - start
 
     indexed = true

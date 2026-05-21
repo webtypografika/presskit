@@ -193,7 +193,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
               <input
                 type="range" min={50} max={100} value={options.quality}
                 onChange={e => setOptions(o => ({ ...o, quality: Number(e.target.value) }))}
-                style={{ width: '100%', marginTop: 10, accentColor: '#6ec8c8' }}
+                style={{ width: '100%', marginTop: 10, accentColor: 'var(--th-accent)' }}
               />
             </div>
           )}
@@ -255,7 +255,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
                   <input
                     type="checkbox" checked={options.flatten}
                     onChange={e => setOptions(o => ({ ...o, flatten: e.target.checked }))}
-                    style={{ width: 16, height: 16, accentColor: '#6ec8c8', flexShrink: 0 }}
+                    style={{ width: 16, height: 16, accentColor: 'var(--th-accent)', flexShrink: 0 }}
                   />
                   <Layers size={14} style={{ color: 'var(--th-text-muted)', flexShrink: 0 }} />
                   <span style={{ fontSize: 12, color: 'var(--th-text-secondary)' }}>Flatten</span>
@@ -268,7 +268,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
                   <input
                     type="checkbox" checked={options.useTrimBox}
                     onChange={e => setOptions(o => ({ ...o, useTrimBox: e.target.checked }))}
-                    style={{ width: 16, height: 16, accentColor: '#6ec8c8', flexShrink: 0 }}
+                    style={{ width: 16, height: 16, accentColor: 'var(--th-accent)', flexShrink: 0 }}
                   />
                   <Scissors size={14} style={{ color: 'var(--th-text-muted)', flexShrink: 0 }} />
                   <span style={{ fontSize: 12, color: 'var(--th-text-secondary)' }}>Crop TrimBox</span>
@@ -317,7 +317,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
                 <button
                   onClick={() => window.api.shell.showInFolder(result.outputPath)}
                   className="flex items-center"
-                  style={{ gap: 4, color: '#6ec8c8', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0 }}
+                  style={{ gap: 4, color: 'var(--th-accent)', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0 }}
                 >
                   <FolderOpen size={13} /> Φάκελος
                 </button>
@@ -343,7 +343,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
                 style={{
                   flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   gap: 6, padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 500,
-                  border: 'none', background: '#6ec8c8', color: '#fff', cursor: 'pointer',
+                  border: 'none', background: 'var(--th-accent)', color: '#fff', cursor: 'pointer',
                 }}
               >
                 OK
@@ -357,7 +357,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
             style={{
               width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
               gap: 8, padding: '10px 20px', borderRadius: 8, border: 'none',
-              background: '#6ec8c8', color: '#fff', fontSize: 14, fontWeight: 600,
+              background: 'var(--th-accent)', color: '#fff', fontSize: 14, fontWeight: 600,
               cursor: converting ? 'default' : 'pointer',
               opacity: converting ? 0.6 : 1,
             }}
@@ -379,7 +379,7 @@ function PanelHeader({ onClose, selectedFile }: { onClose: () => void; selectedF
     <div className="flex items-center" style={{
       padding: '10px 20px', borderBottom: '1px solid var(--th-border)', gap: 8,
     }}>
-      <RefreshCw size={16} style={{ color: '#6ec8c8', flexShrink: 0 }} />
+      <RefreshCw size={16} style={{ color: 'var(--th-accent)', flexShrink: 0 }} />
       <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--th-text-primary)' }}>Convert</span>
       <span style={{ fontSize: 12, color: 'var(--th-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
         — {selectedFile.name} ({formatFileSize(selectedFile.size)})
@@ -422,7 +422,7 @@ function OptionButton({ active, disabled, onClick, children }: {
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.35 : 1,
         background: active ? 'rgba(110,200,200,0.12)' : 'var(--th-bg-primary)',
-        color: active ? '#6ec8c8' : 'var(--th-text-secondary)',
+        color: active ? 'var(--th-accent)' : 'var(--th-text-secondary)',
       }}
     >
       {children}

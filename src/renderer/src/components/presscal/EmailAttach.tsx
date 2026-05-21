@@ -126,7 +126,7 @@ export function EmailAttach() {
                 opacity: excludedPaths.has(f.path) ? 0.4 : 1,
               }}
             >
-              <Paperclip size={12} style={{ color: '#6ec8c8', flexShrink: 0 }} />
+              <Paperclip size={12} style={{ color: 'var(--th-accent)', flexShrink: 0 }} />
               <span style={{ fontSize: 12, color: 'var(--th-text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {f.name}
               </span>
@@ -148,7 +148,7 @@ export function EmailAttach() {
       {/* Preflight report */}
       {preflight && (
         <label className="flex items-center cursor-pointer" style={{ gap: 8, padding: '6px 10px', borderRadius: 6 }}>
-          <input type="checkbox" checked={includePreflight} onChange={e => setIncludePreflight(e.target.checked)} style={{ width: 14, height: 14, accentColor: '#6ec8c8' }} />
+          <input type="checkbox" checked={includePreflight} onChange={e => setIncludePreflight(e.target.checked)} style={{ width: 14, height: 14, accentColor: 'var(--th-accent)' }} />
           <FileText size={12} style={{ color: 'var(--th-text-muted)' }} />
           <span style={{ fontSize: 12, color: 'var(--th-text-secondary)' }}>Preflight report ({preflight.overallStatus})</span>
         </label>
@@ -166,7 +166,7 @@ export function EmailAttach() {
                 style={{
                   padding: '4px 10px', borderRadius: 12, border: 'none', cursor: 'pointer',
                   fontSize: 11, fontWeight: 500,
-                  background: to === opt.email ? '#6ec8c8' : 'var(--th-bg-primary)',
+                  background: to === opt.email ? 'var(--th-accent)' : 'var(--th-bg-primary)',
                   color: to === opt.email ? '#fff' : 'var(--th-text-secondary)',
                 }}
               >
@@ -223,7 +223,7 @@ export function EmailAttach() {
         style={{
           width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
           gap: 8, padding: '10px 16px', borderRadius: 8, border: 'none',
-          background: sent ? '#22c55e' : '#6ec8c8', color: '#fff',
+          background: sent ? '#22c55e' : 'var(--th-accent)', color: '#fff',
           fontSize: 13, fontWeight: 600, cursor: sending ? 'default' : 'pointer',
           opacity: (sending || !to || !subject) ? 0.5 : 1,
         }}

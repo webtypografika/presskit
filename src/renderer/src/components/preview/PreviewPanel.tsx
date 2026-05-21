@@ -59,39 +59,37 @@ export function PreviewPanel() {
     document.body.style.userSelect = 'none'
   }, [layout])
 
-  // No file selected — full file browser
-  if (!hasPreview) {
-    return <FileBrowser />
-  }
-
-  // File selected — split: files + preview
   // Overlay prevents iframes from stealing mouse events during resize
   const resizeOverlay = isResizing ? (
     <div style={{ position: 'absolute', inset: 0, zIndex: 50, cursor: layout === 'side' ? 'col-resize' : 'row-resize' }} />
   ) : null
 
-  if (layout === 'side') {
+  if (!hasPreview || layout === 'side') {
     return (
       <div className="h-full flex" ref={containerRef} style={{ position: 'relative' }}>
         {resizeOverlay}
-        <div className="overflow-hidden" style={{ flex: `0 0 ${100 - previewSize}%`, minWidth: 200 }}>
+        <div className="overflow-hidden" style={{ flex: hasPreview ? `0 0 ${100 - previewSize}%` : '1 1 auto', minWidth: 200 }}>
           <FileBrowser />
         </div>
-        <div
-          onMouseDown={startResize}
-          style={{
-            width: 6, flexShrink: 0, cursor: 'col-resize',
-            background: 'transparent', transition: 'background 0.15s',
-          }}
-          onMouseEnter={e => (e.currentTarget.style.background = '#6ec8c8')}
-          onMouseLeave={e => { if (!resizingRef.current) e.currentTarget.style.background = 'transparent' }}
-        />
-        <div className="flex flex-col overflow-hidden" style={{ flex: `0 0 ${previewSize}%`, minWidth: 360 }}>
-          <PreviewToolbar layout={layout} onToggleLayout={() => setLayout('bottom')} showBleed={showBleed} onToggleBleed={() => setShowBleed(!showBleed)} showAnnotations={showAnnotations} onToggleAnnotations={() => setShowAnnotations(!showAnnotations)} />
-          <div className="flex-1 overflow-hidden">
-            <PreviewContent showBleed={showBleed} showAnnotations={showAnnotations} />
-          </div>
-        </div>
+        {hasPreview && (
+          <>
+            <div
+              onMouseDown={startResize}
+              style={{
+                width: 6, flexShrink: 0, cursor: 'col-resize',
+                background: 'transparent', transition: 'background 0.15s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--th-accent)')}
+              onMouseLeave={e => { if (!resizingRef.current) e.currentTarget.style.background = 'transparent' }}
+            />
+            <div className="flex flex-col overflow-hidden" style={{ flex: `0 0 ${previewSize}%`, minWidth: 360 }}>
+              <PreviewToolbar layout={layout} onToggleLayout={() => setLayout('bottom')} showBleed={showBleed} onToggleBleed={() => setShowBleed(!showBleed)} showAnnotations={showAnnotations} onToggleAnnotations={() => setShowAnnotations(!showAnnotations)} />
+              <div className="flex-1 overflow-hidden">
+                <PreviewContent showBleed={showBleed} showAnnotations={showAnnotations} />
+              </div>
+            </div>
+          </>
+        )}
       </div>
     )
   }
@@ -106,7 +104,7 @@ export function PreviewPanel() {
       <div
         style={{ height: 6, cursor: 'row-resize', background: 'transparent', flexShrink: 0, transition: 'background 0.15s' }}
         onMouseDown={startResize}
-        onMouseEnter={e => (e.currentTarget.style.background = '#6ec8c8')}
+        onMouseEnter={e => (e.currentTarget.style.background = 'var(--th-accent)')}
         onMouseLeave={e => { if (!resizingRef.current) e.currentTarget.style.background = 'transparent' }}
       />
       <div className="flex flex-col overflow-hidden" style={{ flex: `0 0 ${previewSize}%`, minHeight: 100 }}>
@@ -167,7 +165,7 @@ function PreviewToolbar({ layout, onToggleLayout, showBleed, onToggleBleed, show
           style={{
             gap: 4, padding: '3px 8px', fontSize: 11, border: 'none', cursor: 'pointer', borderRadius: 4, flexShrink: 0,
             background: showAnnotations ? 'rgba(110,200,200,0.15)' : 'transparent',
-            color: showAnnotations ? '#6ec8c8' : '#64748b',
+            color: showAnnotations ? 'var(--th-accent)' : '#64748b',
           }}
         >
           <Pencil size={13} />
@@ -192,9 +190,9 @@ function PreviewToolbar({ layout, onToggleLayout, showBleed, onToggleBleed, show
         {presscalConnected && selectedFile && (
           <button
             className="flex items-center rounded"
-            style={{ gap: 5, padding: '3px 10px', fontSize: 11, color: '#6ec8c8', border: '1px solid rgba(110,200,200,0.3)', background: 'rgba(110,200,200,0.06)', flexShrink: 0 }}
+            style={{ gap: 5, padding: '3px 10px', fontSize: 11, color: 'var(--th-accent)', border: '1px solid rgba(110,200,200,0.3)', background: 'rgba(110,200,200,0.06)', flexShrink: 0 }}
             onClick={() => setShowCosting(true)}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(110,200,200,0.15)'; e.currentTarget.style.borderColor = '#6ec8c8' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(110,200,200,0.15)'; e.currentTarget.style.borderColor = 'var(--th-accent)' }}
             onMouseLeave={e => { e.currentTarget.style.background = 'rgba(110,200,200,0.06)'; e.currentTarget.style.borderColor = 'rgba(110,200,200,0.3)' }}
           >
             <Calculator size={13} />
@@ -207,7 +205,7 @@ function PreviewToolbar({ layout, onToggleLayout, showBleed, onToggleBleed, show
           className="flex items-center rounded hover:bg-bg-hover"
           style={{ gap: 4, padding: '3px 8px', fontSize: 11, color: '#94a3b8', border: '1px solid var(--th-border, #1e293b)', flexShrink: 0, whiteSpace: 'nowrap' }}
           onClick={() => selectedFile && window.api.shell.openPath(selectedFile.path)}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = '#6ec8c8'; e.currentTarget.style.color = '#6ec8c8' }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--th-accent)'; e.currentTarget.style.color = 'var(--th-accent)' }}
           onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--th-border, #1e293b)'; e.currentTarget.style.color = '#94a3b8' }}
         >
           <ExternalLink size={12} />
@@ -219,7 +217,7 @@ function PreviewToolbar({ layout, onToggleLayout, showBleed, onToggleBleed, show
           className="flex items-center rounded hover:bg-bg-hover"
           style={{ gap: 4, padding: '3px 8px', fontSize: 11, color: '#94a3b8', border: '1px solid var(--th-border, #1e293b)', flexShrink: 0, whiteSpace: 'nowrap' }}
           onClick={() => selectedFile && window.api.shell.showInFolder(selectedFile.path)}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = '#6ec8c8'; e.currentTarget.style.color = '#6ec8c8' }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--th-accent)'; e.currentTarget.style.color = 'var(--th-accent)' }}
           onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--th-border, #1e293b)'; e.currentTarget.style.color = '#94a3b8' }}
         >
           <FolderOpen size={12} />
@@ -259,7 +257,7 @@ function PreviewContent({ showBleed, showAnnotations }: { showBleed?: boolean; s
     return (
       <div className="h-full flex items-center justify-center bg-bg-primary">
         <div className="flex flex-col items-center gap-2 text-text-muted">
-          <div style={{ width: 24, height: 24, borderTopColor: '#6ec8c8', borderRadius: '50%' }} className="animate-spin border-2 border-border" />
+          <div style={{ width: 24, height: 24, borderTopColor: 'var(--th-accent)', borderRadius: '50%' }} className="animate-spin border-2 border-border" />
           <span style={{ fontSize: 12 }}>Loading...</span>
         </div>
       </div>

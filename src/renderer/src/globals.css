@@ -15,6 +15,7 @@
   --th-accent: #6ec8c8;
   --th-accent-hover: #00707c;
   --th-accent-subtle: rgba(110,200,200,0.12);
+  --th-accent-drop: rgba(110,200,200,0.18);
   --th-on-accent: #ffffff;
   --th-success: #10b981;
   --th-warning: #f59e0b;
@@ -36,9 +37,10 @@
   --th-text-primary: #173a49;
   --th-text-secondary: #4a6e6e;
   --th-text-muted: #8a9e9e;
-  --th-accent: #00707c;
-  --th-accent-hover: #6ec8c8;
-  --th-accent-subtle: rgba(0,112,124,0.10);
+  --th-accent: #01576a;
+  --th-accent-hover: #0a7a8f;
+  --th-accent-subtle: rgba(1,87,106,0.13);
+  --th-accent-drop: rgba(1,87,106,0.18);
   --th-on-accent: #ffffff;
   --th-success: #10b981;
   --th-warning: #d97706;

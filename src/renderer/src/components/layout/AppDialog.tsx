@@ -30,7 +30,7 @@ export function AppDialog() {
             }}
           >
             {isChoice
-              ? <HelpCircle size={20} style={{ color: '#6ec8c8' }} />
+              ? <HelpCircle size={20} style={{ color: 'var(--th-accent)' }} />
               : <AlertTriangle size={20} style={{ color: '#ef4444' }} />
             }
           </div>
@@ -91,7 +91,7 @@ function DialogButton({ label, primary, danger, onClick, autoFocus }: {
   const bg = danger
     ? '#ef4444'
     : primary
-      ? '#6ec8c8'
+      ? 'var(--th-accent)'
       : 'var(--th-bg-primary)'
   const color = (primary || danger) ? '#fff' : 'var(--th-text-secondary)'
   const border = (primary || danger) ? 'none' : '1px solid var(--th-border)'

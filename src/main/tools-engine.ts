@@ -1,5 +1,5 @@
 import { IpcMain, dialog } from 'electron'
-import { readFile, writeFile, readdir, stat, mkdir, copyFile, access } from 'fs/promises'
+import { readFile, writeFile, readdir, stat, mkdir, copyFile, access, rename, unlink } from 'fs/promises'
 import { extname, basename, dirname, join, relative } from 'path'
 import { existsSync } from 'fs'
 
@@ -627,6 +627,58 @@ async function collectJobFiles(sourcePaths: string[], targetDir: string): Promis
   return { copied, errors }
 }
 
+async function collectByType(
+  sourceDir: string,
+  extensions: string[],
+  targetDir: string,
+  moveFiles: boolean
+): Promise<{ processed: number; errors: string[] }> {
+  await mkdir(targetDir, { recursive: true })
+  const extSet = new Set(extensions.map(e => e.toLowerCase()))
+  let processed = 0
+  const errors: string[] = []
+
+  async function scan(dir: string) {
+    try {
+      const entries = await readdir(dir, { withFileTypes: true })
+      for (const entry of entries) {
+        if (entry.name.startsWith('.')) continue
+        const fullPath = join(dir, entry.name)
+        if (entry.isDirectory()) {
+          await scan(fullPath)
+        } else if (extSet.has(extname(entry.name).toLowerCase())) {
+          const fileName = entry.name
+          let targetPath = join(targetDir, fileName)
+          if (existsSync(targetPath)) {
+            const ext = extname(fileName)
+            const base = basename(fileName, ext)
+            targetPath = join(targetDir, `${base}_${Date.now()}${ext}`)
+          }
+          try {
+            if (moveFiles) {
+              // Try rename first (same drive), fallback to copy+delete
+              try {
+                await rename(fullPath, targetPath)
+              } catch {
+                await copyFile(fullPath, targetPath)
+                await unlink(fullPath)
+              }
+            } else {
+              await copyFile(fullPath, targetPath)
+            }
+            processed++
+          } catch (err) {
+            errors.push(`${fileName}: ${String(err)}`)
+          }
+        }
+      }
+    } catch { }
+  }
+
+  await scan(sourceDir)
+  return { processed, errors }
+}
+
 // ─── Annotation System ──────────────────────────────────────────────────────
 
 interface Annotation {
@@ -1109,6 +1161,10 @@ export function registerToolHandlers(ipcMain: IpcMain): void {
   // ─ File Packaging ─
   ipcMain.handle('tools:collectFiles', async (_e, sourcePaths: string[], targetDir: string) => {
     return collectJobFiles(sourcePaths, targetDir)
+  })
+
+  ipcMain.handle('tools:collectByType', async (_e, sourceDir: string, extensions: string[], targetDir: string, moveFiles: boolean) => {
+    return collectByType(sourceDir, extensions, targetDir, moveFiles)
   })
 
   ipcMain.handle('tools:collectJobFiles', async (_e, jobDir: string) => {

@@ -138,7 +138,7 @@ export function Toolbar() {
               className="flex items-center rounded-lg transition-colors"
               style={{
                 gap: 6, padding: '6px 16px', fontSize: 13, fontWeight: 600,
-                background: 'rgba(110,200,200,0.1)', color: '#6ec8c8', border: '1px solid rgba(110,200,200,0.3)',
+                background: 'rgba(110,200,200,0.1)', color: 'var(--th-accent)', border: '1px solid rgba(110,200,200,0.3)',
                 cursor: 'pointer',
               }}
               onMouseEnter={e => (e.currentTarget.style.background = 'rgba(110,200,200,0.2)')}
@@ -165,7 +165,7 @@ export function Toolbar() {
               value={thumbnailSize}
               onChange={e => setThumbnailSize(Number(e.target.value))}
               title={`${thumbnailSize}px`}
-              style={{ width: 80, marginLeft: 6, accentColor: '#6ec8c8', cursor: 'pointer' }}
+              style={{ width: 80, marginLeft: 6, accentColor: 'var(--th-accent)', cursor: 'pointer' }}
             />
           )}
         </div>
@@ -481,7 +481,7 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
 
         {/* Header */}
         <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--th-border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Send size={18} style={{ color: '#6ec8c8' }} />
+          <Send size={18} style={{ color: 'var(--th-accent)' }} />
           <span style={{ fontSize: 16, fontWeight: 600, flex: 1, color: 'var(--th-text-primary)' }}>Αποστολή Email</span>
           <button onClick={onClose} style={{ border: 'none', background: 'transparent', color: 'var(--th-text-muted)', cursor: 'pointer', fontSize: 18 }}>&times;</button>
         </div>
@@ -493,7 +493,7 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
               display: 'inline-flex', alignItems: 'center', gap: 4,
               padding: '4px 10px', borderRadius: 6,
               background: 'rgba(110,200,200,0.08)', border: '1px solid rgba(110,200,200,0.2)',
-              fontSize: 12, color: '#6ec8c8',
+              fontSize: 12, color: 'var(--th-accent)',
             }}>
               📎 {f.name}
             </span>
@@ -571,7 +571,7 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
                         <span style={{
                           marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 4,
                           background: opt.kind === 'company' ? 'rgba(110,200,200,0.15)' : 'rgba(100,116,139,0.15)',
-                          color: opt.kind === 'company' ? '#6ec8c8' : 'var(--th-text-muted)',
+                          color: opt.kind === 'company' ? 'var(--th-accent)' : 'var(--th-text-muted)',
                           fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.04em',
                         }}>
                           {opt.kind === 'company' ? 'εταιρεία' : 'επαφή'}
@@ -662,7 +662,7 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
             disabled={sending || sent || !to.trim() || !subject.trim() || totalSize > 25 * 1024 * 1024}
             style={{
               padding: '10px 24px', borderRadius: 8, border: 'none',
-              background: sent ? '#22c55e' : '#6ec8c8', color: '#fff',
+              background: sent ? '#22c55e' : 'var(--th-accent)', color: '#fff',
               fontSize: 14, fontWeight: 600, cursor: 'pointer',
               opacity: (sending || !to.trim() || !subject.trim()) ? 0.5 : 1,
               display: 'flex', alignItems: 'center', gap: 6,

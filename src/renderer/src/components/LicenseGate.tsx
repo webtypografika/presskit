@@ -123,7 +123,7 @@ const primaryBtn: CSSProperties = {
   alignItems: 'center',
   gap: 8,
   padding: '12px 24px',
-  background: '#00707c',
+  background: 'var(--th-accent)',
   color: '#fff',
   border: 'none',
   borderRadius: 10,
@@ -296,7 +296,7 @@ function TrialBanner({ daysLeft, expiresAt }: { daysLeft: number; expiresAt: str
     gap: 10,
     padding: '3px 14px',
     minHeight: 22,
-    background: urgent ? '#dc2626' : '#00707c',
+    background: urgent ? '#dc2626' : 'var(--th-accent)',
     color: '#fff',
     fontSize: 12,
     fontWeight: 500,
@@ -344,7 +344,7 @@ function pickLockProps(
   switch (status.state) {
     case 'not_configured':
       return {
-        icon: <KeyRound size={32} color="#6ec8c8" />,
+        icon: <KeyRound size={32} color="var(--th-accent)" />,
         title: 'Σύνδεση με PressCal',
         message: (
           <>

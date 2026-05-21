@@ -42,6 +42,7 @@ const api = {
     trash: (paths: string[]) => ipcRenderer.invoke('fs:trash', paths),
     rename: (oldPath: string, newName: string) => ipcRenderer.invoke('fs:rename', oldPath, newName) as Promise<{ ok: boolean; newPath?: string; error?: string }>,
     createDirectory: (dirPath: string) => ipcRenderer.invoke('fs:createDirectory', dirPath),
+    extractZip: (zipPath: string) => ipcRenderer.invoke('fs:extractZip', zipPath) as Promise<{ ok: boolean; error?: string }>,
     getNotes: (filePath: string) => ipcRenderer.invoke('notes:get', filePath) as Promise<string>,
     setNotes: (filePath: string, note: string) => ipcRenderer.invoke('notes:set', filePath, note),
     watch: (dirPath: string) => ipcRenderer.invoke('fs:watch', dirPath),
@@ -265,6 +266,8 @@ const api = {
     // File packaging
     collectFiles: (sourcePaths: string[], targetDir: string) => ipcRenderer.invoke('tools:collectFiles', sourcePaths, targetDir),
     collectJobFiles: (jobDir: string) => ipcRenderer.invoke('tools:collectJobFiles', jobDir),
+    collectByType: (sourceDir: string, extensions: string[], targetDir: string, moveFiles: boolean) =>
+      ipcRenderer.invoke('tools:collectByType', sourceDir, extensions, targetDir, moveFiles) as Promise<{ processed: number; errors: string[] }>,
 
     // Annotations
     loadAnnotations: (filePath: string) => ipcRenderer.invoke('tools:loadAnnotations', filePath),

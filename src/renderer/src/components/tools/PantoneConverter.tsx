@@ -98,7 +98,7 @@ export function PantoneConverter() {
             flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600,
             border: 'none', cursor: 'pointer',
             background: mode === m ? 'rgba(110,200,200,0.15)' : 'transparent',
-            color: mode === m ? '#6ec8c8' : '#94a3b8',
+            color: mode === m ? 'var(--th-accent)' : '#94a3b8',
           }}>
             {m === 'search' ? 'Pantone' : m.toUpperCase()}
           </button>
@@ -133,7 +133,7 @@ export function PantoneConverter() {
           </div>
           <button onClick={findFromRgb} style={{
             padding: '8px 16px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 600,
-            background: '#6ec8c8', color: '#fff', cursor: 'pointer',
+            background: 'var(--th-accent)', color: '#fff', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
           }}>
             <ArrowRightLeft size={14} /> Μετατροπή & Αναζήτηση Pantone
@@ -168,7 +168,7 @@ export function PantoneConverter() {
           </div>
           <button onClick={convertCmykToRgb} style={{
             padding: '8px 16px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 600,
-            background: '#6ec8c8', color: '#fff', cursor: 'pointer',
+            background: 'var(--th-accent)', color: '#fff', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
           }}>
             <ArrowRightLeft size={14} /> Μετατροπή & Αναζήτηση Pantone

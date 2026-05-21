@@ -14,7 +14,7 @@ interface Profile {
 }
 
 const PROFILE_COLORS = [
-  '#6ec8c8', '#00707c', '#10b981', '#f59e0b',
+  'var(--th-accent)', '#00707c', '#10b981', '#f59e0b',
   '#3b82f6', '#a78bfa', '#f06548', '#ec4899',
 ]
 
