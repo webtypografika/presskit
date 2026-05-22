@@ -137,12 +137,14 @@ export default function App() {
   useEffect(() => {
     console.log('[PressKit] App mounted — build includes email-autofill v2')
     loadSettings()
-    // Build search index in background after 3s delay (let UI load first)
+    // Build search index in background after 10s delay.
+    // Gives Everything time to start (if available), and lets UI fully load.
+    // If Everything is running, buildIndex skips entirely (no SQLite work).
     const timer = setTimeout(() => {
       window.api.search.buildIndex().then(r => {
         if (r.count > 0) console.log(`Search index: ${r.count} files in ${r.ms}ms`)
       }).catch(() => {})
-    }, 3000)
+    }, 10000)
     return () => clearTimeout(timer)
   }, [loadSettings])
 

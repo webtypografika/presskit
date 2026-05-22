@@ -14,22 +14,46 @@ import { useDialogStore } from '@/stores/dialog-store'
 const getDropPaths = (e: React.DragEvent): string[] =>
   Array.from(e.dataTransfer.files).map(f => window.api.fs.getFilePath(f)).filter(Boolean)
 
-// ─── Thumbnail queue (max 3 concurrent) ─────────────────────────────
-const THUMB_CONCURRENCY = 3
-let thumbRunning = 0
-const thumbQueue: Array<() => void> = []
+// ─── Thumbnail queues ────────────────────────────────────────────────
+// Image thumbnails run in the main process (sharp) — fast, can run 3 at once.
+// PDF thumbnails render on the renderer thread (pdf.js canvas) — heavy, run 1
+// at a time with a small yield between renders to keep the UI responsive.
+const IMG_CONCURRENCY = 3
+let imgRunning = 0
+const imgQueue: Array<() => void> = []
 
 function enqueueThumb(fn: () => Promise<any>): void {
   const run = () => {
-    thumbRunning++
+    imgRunning++
     fn().finally(() => {
-      thumbRunning--
-      if (thumbQueue.length > 0) thumbQueue.shift()!()
+      imgRunning--
+      if (imgQueue.length > 0) imgQueue.shift()!()
     })
   }
-  if (thumbRunning < THUMB_CONCURRENCY) run()
-  else thumbQueue.push(run)
+  if (imgRunning < IMG_CONCURRENCY) run()
+  else imgQueue.push(run)
 }
+
+let pdfRunning = 0
+const pdfQueue: Array<() => void> = []
+
+function enqueuePdfThumb(fn: () => Promise<any>): void {
+  const run = () => {
+    pdfRunning++
+    fn().finally(() => {
+      pdfRunning--
+      // Yield before starting next PDF render so the UI thread can breathe
+      if (pdfQueue.length > 0) setTimeout(() => pdfQueue.shift()!(), 50)
+    })
+  }
+  if (pdfRunning < 1) run()
+  else pdfQueue.push(run)
+}
+
+// Max file size for PDF thumbnail rendering (bytes). Larger files just show
+// the PDF icon — reading a 100 MB print file into the renderer for a tiny
+// thumbnail isn't worth the freeze.
+const PDF_THUMB_MAX_SIZE = 20 * 1024 * 1024 // 20 MB
 import { useAppStore } from '@/stores/app-store'
 import { useShallow } from 'zustand/react/shallow'
 import { ContextMenu } from './ContextMenu'
@@ -82,19 +106,26 @@ function FileThumbnail({ file, size }: { file: FileEntry; size: number }) {
 
     const isPdf = file.type === 'pdf' || file.type === 'ai'
 
-    enqueueThumb(async () => {
-      if (cancelled) return
-      console.log(`[THUMB] Start: ${file.name} (${file.type})`)
-      try {
-        const data = isPdf
-          ? await renderPdfThumbnail(file.path, size, file.modified)
-          : await window.api.preview.thumbnail(file.path, size)
-        if (!cancelled && data) setThumb(data)
-        else if (!cancelled && !data) console.warn(`[THUMB] No data: ${file.name}`)
-      } catch (err) {
-        console.warn(`[THUMB] Error: ${file.name}`, (err as Error).message)
-      }
-    })
+    if (isPdf) {
+      // Skip PDF thumbnail for large files — rendering a 100 MB print-ready
+      // PDF on the renderer thread just for a grid icon isn't worth the freeze.
+      if (file.size > PDF_THUMB_MAX_SIZE) return
+      enqueuePdfThumb(async () => {
+        if (cancelled) return
+        try {
+          const data = await renderPdfThumbnail(file.path, size, file.modified)
+          if (!cancelled && data) setThumb(data)
+        } catch {}
+      })
+    } else {
+      enqueueThumb(async () => {
+        if (cancelled) return
+        try {
+          const data = await window.api.preview.thumbnail(file.path, size)
+          if (!cancelled && data) setThumb(data)
+        } catch {}
+      })
+    }
 
     return () => { cancelled = true }
   }, [file.path, file.isDirectory, file.type, size, file.modified])

@@ -7,8 +7,8 @@ const CHECKOUT_URL = 'https://presscal.com/el/checkout'
 // PressCal instances offered in the lock-screen picker. The first entry is the
 // default for brand-new installs. "Custom" (typed URL) is handled separately.
 const PRESSCAL_INSTANCES = [
-  { label: 'Production — gr.presscal.com', value: 'https://gr.presscal.com' },
-  { label: 'Demo / sandbox — demo.gr.presscal.com', value: 'https://demo.gr.presscal.com' },
+  { label: 'PressCal (gr.presscal.com)', value: 'https://gr.presscal.com' },
+  { label: 'Δοκιμαστικός (demo.gr.presscal.com)', value: 'https://demo.gr.presscal.com' },
 ] as const
 const DEFAULT_PRESSCAL_BASE = PRESSCAL_INSTANCES[0].value
 const CUSTOM_INSTANCE = '__custom__'
@@ -203,7 +203,7 @@ function InstancePicker({ base, onChange }: { base: string; onChange: (v: string
         {PRESSCAL_INSTANCES.map(i => (
           <option key={i.value} value={i.value}>{i.label}</option>
         ))}
-        <option value={CUSTOM_INSTANCE}>Άλλο instance…</option>
+        <option value={CUSTOM_INSTANCE}>Άλλος διακομιστής…</option>
       </select>
       {!known && (
         <input
@@ -243,13 +243,30 @@ function LockScreen({
   onRefresh: () => void
   refreshing: boolean
 }) {
+  const [showPicker, setShowPicker] = useState(false)
   return createPortal(
     <div style={overlay}>
       <div style={card}>
         <div style={iconWrap}>{icon}</div>
         <div style={title}>{t}</div>
         <div style={body}>{message}</div>
-        {signInPicker && <InstancePicker base={signInPicker.base} onChange={signInPicker.setBase} />}
+        {signInPicker && (
+          showPicker ? (
+            <InstancePicker base={signInPicker.base} onChange={signInPicker.setBase} />
+          ) : (
+            <div style={{ marginBottom: 20, fontSize: 12, color: 'var(--th-text-muted, #94a3b8)' }}>
+              Διακομιστής: <strong>{signInPicker.base.replace(/^https?:\/\//, '').replace(/\/$/, '') || 'gr.presscal.com'}</strong>
+              {' · '}
+              <a
+                href="#"
+                onClick={(e) => { e.preventDefault(); setShowPicker(true) }}
+                style={{ color: 'var(--th-text-muted, #94a3b8)', textDecoration: 'underline' }}
+              >
+                Αλλαγή
+              </a>
+            </div>
+          )
+        )}
         <div>
           <button style={primaryBtn} onClick={primary.onClick}>
             {primary.icon}
@@ -367,7 +384,7 @@ function pickLockProps(
       return {
         icon: <Lock size={32} color="#dc2626" />,
         title: 'Η σύνδεση δεν είναι έγκυρη',
-        message: 'Το API key δεν αναγνωρίζεται πλέον από το PressCal. Συνδέσου ξανά για να γίνει αυτόματη ανανέωση.',
+        message: 'Η σύνδεσή σου με το PressCal έληξε ή ανακλήθηκε. Πάτησε «Σύνδεση με Google» για να συνδεθείς ξανά αυτόματα.',
         primary: { label: 'Σύνδεση με Google', onClick: () => void openGoogleSignIn(signIn.base), icon: <GoogleIcon size={16} /> },
         manualSetup: true,
         signInPicker: signIn,

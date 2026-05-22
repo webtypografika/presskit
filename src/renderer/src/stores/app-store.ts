@@ -154,6 +154,10 @@ interface AppState {
   setPicksFilter: (filter: 'all' | 'picked' | 'unpicked') => void
 }
 
+// Debounce timers for settings that change rapidly (e.g. during drag-resize)
+let _sidebarTimer: ReturnType<typeof setTimeout> | undefined
+let _inspectorTimer: ReturnType<typeof setTimeout> | undefined
+
 export const useAppStore = create<AppState>((set, get) => {
   // Helper: update active tab and mirror to top-level
   const updateActiveTab = (patch: Partial<Tab>) => {
@@ -542,12 +546,14 @@ export const useAppStore = create<AppState>((set, get) => {
 
     setSidebarWidth: (width) => {
       set({ sidebarWidth: width })
-      window.api.settings.set('ui.sidebarWidth', width)
+      clearTimeout(_sidebarTimer)
+      _sidebarTimer = setTimeout(() => window.api.settings.set('ui.sidebarWidth', width), 300)
     },
 
     setInspectorWidth: (width) => {
       set({ inspectorWidth: width })
-      window.api.settings.set('ui.inspectorWidth', width)
+      clearTimeout(_inspectorTimer)
+      _inspectorTimer = setTimeout(() => window.api.settings.set('ui.inspectorWidth', width), 300)
     },
 
     refreshDirectory: async () => {

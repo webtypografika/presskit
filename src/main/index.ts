@@ -1721,32 +1721,41 @@ function startFileServer(): void {
     // Directory listing: GET /?list=C:\path\to\folder → returns JSON array of PDF filenames
     const listDir = parsed.query.list ? resolvePortablePath(parsed.query.list as string) : null
     if (listDir) {
-      if (!fs.existsSync(listDir)) { res.writeHead(404); res.end('[]'); return }
-      try {
-        const entries = fs.readdirSync(listDir).filter((f: string) => /\.(pdf|jpg|jpeg|png|tif|tiff|ai|psd|eps)$/i.test(f))
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify(entries))
-      } catch { res.writeHead(500); res.end('[]') }
+      ;(async () => {
+        try {
+          const fsp = require('fs/promises')
+          await fsp.access(listDir)
+          const all = await fsp.readdir(listDir)
+          const entries = all.filter((f: string) => /\.(pdf|jpg|jpeg|png|tif|tiff|ai|psd|eps)$/i.test(f))
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(entries))
+        } catch { res.writeHead(404); res.end('[]') }
+      })()
       return
     }
 
     const filePath = parsed.query.path ? resolvePortablePath(parsed.query.path as string) : null
 
-    if (!filePath || !fs.existsSync(filePath)) {
-      res.writeHead(404); res.end('Not found'); return
-    }
+    if (!filePath) { res.writeHead(404); res.end('Not found'); return }
 
-    const ext = pathMod.extname(filePath).toLowerCase()
-    const mime = mimeTypes[ext] || 'application/octet-stream'
-    const stat = fs.statSync(filePath)
+    ;(async () => {
+      try {
+        const fsp = require('fs/promises')
+        const fileStat = await fsp.stat(filePath)
+        const ext = pathMod.extname(filePath).toLowerCase()
+        const mime = mimeTypes[ext] || 'application/octet-stream'
 
-    res.writeHead(200, {
-      'Content-Type': mime,
-      'Content-Length': stat.size,
-      'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(pathMod.basename(filePath))}`,
-    })
+        res.writeHead(200, {
+          'Content-Type': mime,
+          'Content-Length': fileStat.size,
+          'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(pathMod.basename(filePath))}`,
+        })
 
-    fs.createReadStream(filePath).pipe(res)
+        fs.createReadStream(filePath).pipe(res)
+      } catch {
+        res.writeHead(404); res.end('Not found')
+      }
+    })()
   })
 
   server.on('error', () => {}) // ignore port conflicts
@@ -1899,23 +1908,27 @@ function registerHandlers(): void {
         },
       ]
 
-      // Find actual executables
+      // Find actual executables (async to avoid blocking main process)
+      const { readdir: readdirAsync } = await import('fs/promises')
       cachedApps = []
       for (const app of knownApps) {
         let exePath: string | null = null
         for (const basePath of app.paths) {
           if (!existsSync(basePath)) continue
           try {
-            const findExe = (dir: string, target: string, depth = 0): string | null => {
-              if (depth > 6) return null
-              const entries = readdirSync(dir, { withFileTypes: true })
+            const findExe = async (dir: string, target: string, depth = 0): Promise<string | null> => {
+              if (depth > 4) return null
+              const entries = await readdirAsync(dir, { withFileTypes: true })
               for (const entry of entries) {
                 const full = `${dir}\\${entry.name}`
                 if (entry.isFile() && entry.name.toLowerCase().includes(target) && entry.name.endsWith('.exe')) {
                   return full
                 }
+              }
+              // Only recurse into subdirs after checking all files at this level
+              for (const entry of entries) {
                 if (entry.isDirectory() && !entry.name.startsWith('.')) {
-                  const found = findExe(full, target, depth + 1)
+                  const found = await findExe(`${dir}\\${entry.name}`, target, depth + 1)
                   if (found) return found
                 }
               }
@@ -1930,7 +1943,7 @@ function registerHandlers(): void {
               coreldraw: 'coreldraw',
             }
 
-            exePath = findExe(basePath, targets[app.id] || app.id)
+            exePath = await findExe(basePath, targets[app.id] || app.id)
             if (exePath) break
           } catch {}
         }

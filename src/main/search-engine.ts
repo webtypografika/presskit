@@ -131,16 +131,21 @@ async function scanDirectory(dirPath: string, depth = 0, maxDepth = 12): Promise
       }
     }
 
-    // Batch insert in transaction
-    if (batch.length > 0) {
+    // Batch insert in smaller chunks to avoid blocking the event loop.
+    // Each transaction is synchronous, so keep them short.
+    const CHUNK = 50
+    for (let i = 0; i < batch.length; i += CHUNK) {
+      const chunk = batch.slice(i, i + CHUNK)
       const transaction = d.transaction(() => {
-        for (const fn of batch) fn()
+        for (const fn of chunk) fn()
       })
       transaction()
+      // Yield between chunks so IPC can process
+      if (i + CHUNK < batch.length) await sleep(2)
     }
 
     // Yield to event loop every directory to prevent freezing
-    await sleep(1)
+    await sleep(5)
 
     // Recurse into subdirectories
     for (const sub of subdirs) {
@@ -151,16 +156,19 @@ async function scanDirectory(dirPath: string, depth = 0, maxDepth = 12): Promise
   }
 }
 
-function rebuildFts(): void {
+async function rebuildFts(): Promise<void> {
   try {
     const d = getDb()
-    d.exec(`
-      DELETE FROM files_fts;
-      INSERT INTO files_fts(rowid, name) SELECT rowid, name FROM files;
-    `)
+    d.exec('DELETE FROM files_fts')
+    // Insert in chunks to avoid blocking the event loop for seconds
+    const total = (d.prepare('SELECT COUNT(*) as c FROM files').get() as any).c
+    const CHUNK = 2000
+    for (let offset = 0; offset < total; offset += CHUNK) {
+      d.exec(`INSERT INTO files_fts(rowid, name) SELECT rowid, name FROM files LIMIT ${CHUNK} OFFSET ${offset}`)
+      await sleep(5)
+    }
   } catch (err: any) {
     console.error('[SEARCH] rebuildFts failed:', err.message)
-    // Try dropping and recreating just the FTS table
     try {
       const d = getDb()
       d.exec('DROP TABLE IF EXISTS files_fts')
@@ -171,11 +179,15 @@ function rebuildFts(): void {
           content_rowid='rowid',
           tokenize='unicode61 remove_diacritics 2'
         );
-        INSERT INTO files_fts(rowid, name) SELECT rowid, name FROM files;
       `)
+      const total = (d.prepare('SELECT COUNT(*) as c FROM files').get() as any).c
+      const CHUNK = 2000
+      for (let offset = 0; offset < total; offset += CHUNK) {
+        d.exec(`INSERT INTO files_fts(rowid, name) SELECT rowid, name FROM files LIMIT ${CHUNK} OFFSET ${offset}`)
+        await sleep(5)
+      }
       console.log('[SEARCH] FTS table recreated successfully')
     } catch (err2: any) {
-      // FTS still broken — destroy entire DB, will be rebuilt on next buildIndex
       console.error('[SEARCH] FTS recreate also failed, destroying DB:', err2.message)
       destroyDb()
     }
@@ -232,8 +244,8 @@ async function buildIndex(): Promise<{ count: number; ms: number }> {
       await scanDirectory(p, 0, 12)
     }
 
-    // Rebuild FTS index
-    rebuildFts()
+    // Rebuild FTS index (chunked to avoid blocking event loop)
+    await rebuildFts()
 
     const currentDb = db || d
     const count = (currentDb.prepare('SELECT COUNT(*) as c FROM files').get() as any).c
@@ -343,6 +355,11 @@ function search(query: string, limit = 50): any[] {
 
 export function registerSearchHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('search:buildIndex', async () => {
+    // Everything handles search natively — no need for SQLite index
+    if (everything.isAvailable()) {
+      console.log('[SEARCH] Everything available, skipping SQLite buildIndex')
+      return { count: 0, ms: 0 }
+    }
     return buildIndex()
   })
 
@@ -379,10 +396,11 @@ export function registerSearchHandlers(ipcMain: IpcMain): void {
   })
 
   ipcMain.handle('search:addPath', async (_e, dirPath: string) => {
+    // Everything handles indexing natively — skip SQLite work entirely
+    if (everything.isAvailable()) return { ok: true }
     if (!existsSync(dirPath)) return { ok: false }
     // Only scan 2 levels deep for visited directories (quick incremental)
     await scanDirectory(dirPath, 0, 2)
-    rebuildFts()
     return { ok: true }
   })
 }
