@@ -14,6 +14,12 @@ import { useDialogStore } from '@/stores/dialog-store'
 const getDropPaths = (e: React.DragEvent): string[] =>
   Array.from(e.dataTransfer.files).map(f => window.api.fs.getFilePath(f)).filter(Boolean)
 
+// Shared Intl formatter — avoid creating a new one per row on every render
+const dateFormatter = new Intl.DateTimeFormat('el-GR', {
+  day: '2-digit', month: '2-digit', year: 'numeric',
+  hour: '2-digit', minute: '2-digit',
+})
+
 // ─── Thumbnail queues ────────────────────────────────────────────────
 // Image thumbnails run in the main process (sharp) — fast, can run 3 at once.
 // PDF thumbnails render on the renderer thread (pdf.js canvas) — heavy, run 1
@@ -27,7 +33,8 @@ function enqueueThumb(fn: () => Promise<any>): void {
     imgRunning++
     fn().finally(() => {
       imgRunning--
-      if (imgQueue.length > 0) imgQueue.shift()!()
+      // Small yield so the UI thread can breathe between thumbnail batches
+      if (imgQueue.length > 0) setTimeout(() => imgQueue.shift()!(), 16)
     })
   }
   if (imgRunning < IMG_CONCURRENCY) run()
@@ -203,14 +210,11 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
 
   const handleRename = useCallback(async (file: FileEntry, newName: string) => {
     const trimmed = newName.trim()
-    console.log('[RENAME] called:', { oldName: file.name, newName: trimmed, path: file.path })
     if (!trimmed || trimmed === file.name) {
-      console.log('[RENAME] skipped — same name or empty')
       setRenamingPath(null)
       return
     }
     const result = await window.api.fs.rename(file.path, trimmed)
-    console.log('[RENAME] result:', result)
     setRenamingPath(null)
     if (!result.ok) {
       showAlert(result.error || 'Αποτυχία μετονομασίας')
@@ -407,7 +411,6 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         const results = e.ctrlKey
           ? await window.api.fs.copy(validPaths, targetPath)
           : await window.api.fs.move(validPaths, targetPath)
-        console.log('[DROP] results:', results)
         refreshDirectory()
 
         const failures = (results || []).filter((r: any) => !r.ok)
@@ -421,7 +424,6 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
           )
         }
       } catch (err) {
-        console.error('Drop failed:', err)
         showAlert(`Drop failed: ${(err as any)?.message || err}`)
       }
     }
@@ -452,8 +454,6 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   }, [])
 
   const handleExternalDrop = useCallback(async (e: React.DragEvent, targetFolder: FileEntry) => {
-    console.log('[DROP-EXT] fired on:', targetFolder.name, 'isDir:', targetFolder.isDirectory, 'dragActive:', dragState.isActive(),
-      'files:', e.dataTransfer.files.length, 'paths:', getDropPaths(e))
     if (dragState.isActive()) return
     e.preventDefault()
     e.stopPropagation()
@@ -464,26 +464,22 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     if (!destDir) return
 
     const sourcePaths = getDropPaths(e)
-    if (!sourcePaths.length) { console.warn('[DROP-EXT] no valid paths'); return }
+    if (!sourcePaths.length) return
 
-    console.log('[DROP-EXT] copying', sourcePaths.length, 'files to', destDir)
     try {
       const results = await window.api.fs.copy(sourcePaths, destDir)
-      const ok = results.filter((r: any) => r.ok).length
       const failed = results.filter((r: any) => !r.ok)
-      console.log('[DROP-EXT] results:', ok, 'ok,', failed.length, 'failed')
       if (failed.length > 0) {
-        console.error('[DROP-EXT] failures:', failed)
+        const list = failed.map((f: any) =>
+          `• ${f.source.split(/[\\/]/).pop()}: ${f.error || 'άγνωστο σφάλμα'}`
+        ).join('\n')
+        showAlert(`Αντιγραφή απέτυχε για ${failed.length} αρχεί${failed.length === 1 ? 'ο' : 'α'}:\n\n${list}`)
       }
       refreshDirectory()
-    } catch (err) {
-      console.error('External drop failed:', err)
-    }
+    } catch {}
   }, [refreshDirectory])
 
   const handleBgDrop = useCallback(async (e: React.DragEvent) => {
-    console.log('[DROP-BG] fired, dragActive:', dragState.isActive(),
-      'files:', e.dataTransfer.files.length, 'paths:', getDropPaths(e))
     if (dragState.isActive()) return
     e.preventDefault()
     e.stopPropagation()
@@ -492,25 +488,22 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     if (!currentPath) return
 
     const sourcePaths = getDropPaths(e)
-    if (!sourcePaths.length) { console.warn('[DROP-BG] no valid paths'); return }
+    if (!sourcePaths.length) return
 
-    console.log('[DROP-BG] copying', sourcePaths.length, 'files to', currentPath)
     try {
       const results = await window.api.fs.copy(sourcePaths, currentPath)
-      const ok = results.filter((r: any) => r.ok).length
       const failed = results.filter((r: any) => !r.ok)
-      console.log('[DROP-BG] results:', ok, 'ok,', failed.length, 'failed')
       if (failed.length > 0) {
-        console.error('[DROP-BG] failures:', failed)
+        const list = failed.map((f: any) =>
+          `• ${f.source.split(/[\\/]/).pop()}: ${f.error || 'άγνωστο σφάλμα'}`
+        ).join('\n')
+        showAlert(`Αντιγραφή απέτυχε για ${failed.length} αρχεί${failed.length === 1 ? 'ο' : 'α'}:\n\n${list}`)
       }
       refreshDirectory()
-    } catch (err) {
-      console.error('Background drop failed:', err)
-    }
+    } catch {}
   }, [refreshDirectory])
 
   const handleBgDragOver = useCallback((e: React.DragEvent) => {
-    console.log('[DRAGOVER-BG] types:', Array.from(e.dataTransfer.types), 'dragActive:', dragState.isActive())
     if (dragState.isActive()) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
@@ -659,7 +652,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
               key={file.path}
               data-file-item
               className={clsx(
-                'cursor-pointer transition-colors',
+                'cursor-pointer',
                 isSelected ? 'text-text-primary' : 'hover:bg-bg-hover text-text-secondary'
               )}
               onMouseDown={(e) => handleItemMouseDown(e, file)}
@@ -727,7 +720,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
 
               {/* Modified */}
               <span className="text-xs text-text-muted text-center truncate">
-                {file.modified ? new Date(file.modified).toLocaleString('el-GR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                {file.modified ? dateFormatter.format(new Date(file.modified)) : ''}
               </span>
 
               {/* Size */}
@@ -791,9 +784,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
           <div
             key={file.path}
             data-file-item
-            className={clsx(
-              'flex flex-col items-center rounded-lg cursor-pointer transition-colors'
-            )}
+            className="flex flex-col items-center rounded-lg cursor-pointer"
             onMouseDown={(e) => handleItemMouseDown(e, file)}
             onDragOver={(e) => handleExternalDragOver(e, file)}
             onDragLeave={handleExternalDragLeave}

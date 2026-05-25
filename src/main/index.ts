@@ -302,23 +302,47 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       if (mainWindow) { mainWindow.setAlwaysOnTop(true); mainWindow.focus(); mainWindow.setAlwaysOnTop(false); }
 
-      // Navigate to customer folder if provided
+      // Resolve folder to navigate to
+      const { existsSync } = await import('fs')
+      let resolvedFolder: string | null = null
+
       if (folder) {
-        const { existsSync } = await import('fs')
         // Try the folder path as-is first (may contain "/" in folder names)
         if (existsSync(folder)) {
-          deepLog('[DeepLink] pick-file-for-item folder (as-is):', folder)
-          mainWindow?.webContents.send('navigate-to-folder', { path: folder })
+          resolvedFolder = folder
         } else {
-          // Fallback: try replacing / with \ (normal path separators)
           const normalized = folder.replace(/\//g, '\\')
-          deepLog('[DeepLink] pick-file-for-item folder (normalized):', normalized, 'exists:', existsSync(normalized))
-          if (existsSync(normalized)) {
-            mainWindow?.webContents.send('navigate-to-folder', { path: normalized })
-          } else {
-            deepLog('[DeepLink] pick-file-for-item: folder not found, skipping nav')
-          }
+          if (existsSync(normalized)) resolvedFolder = normalized
         }
+      }
+
+      // Fallback: resolve folder from quote API if not provided or not found
+      if (!resolvedFolder) {
+        const presscalUrl = (store.get('presscal.url') as string)?.replace(/\/$/, '')
+        const apiKey = store.get('presscal.apiKey') as string
+        if (presscalUrl && apiKey) {
+          try {
+            const res = await fetch(`${presscalUrl}/api/filehelper/quotes/${encodeURIComponent(quoteId)}`, {
+              headers: { 'Authorization': `Bearer ${apiKey}` },
+            })
+            if (res.ok) {
+              const quote = await res.json() as any
+              // Try quote folderPath first, then customer folderPath
+              for (const fp of [quote.folderPath, quote.customerFolderPath]) {
+                if (!fp) continue
+                const resolved = resolvePortablePath(fp).replace(/\//g, '\\')
+                if (existsSync(resolved)) {
+                  resolvedFolder = resolved
+                  break
+                }
+              }
+            }
+          } catch {}
+        }
+      }
+
+      if (resolvedFolder && mainWindow) {
+        mainWindow.webContents.send('navigate-to-folder', { path: resolvedFolder, quoteId })
       }
 
       // Tell renderer to enter "pick file" mode

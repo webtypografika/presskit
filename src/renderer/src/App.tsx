@@ -296,15 +296,17 @@ export default function App() {
     return cleanup
   }, [])
 
-  // File system watcher — auto refresh when files change
+  // File system watcher — auto refresh when files change (debounced to avoid
+  // re-render storms during Dropbox sync or bulk file operations)
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
     const cleanup = window.api.fs.onChanged((dirPath: string) => {
-      const { currentPath, refreshDirectory } = useAppStore.getState()
-      if (currentPath === dirPath) {
-        refreshDirectory()
-      }
+      const { currentPath } = useAppStore.getState()
+      if (currentPath !== dirPath) return
+      clearTimeout(timer)
+      timer = setTimeout(() => useAppStore.getState().refreshDirectory(), 800)
     })
-    return cleanup
+    return () => { clearTimeout(timer); cleanup() }
   }, [])
 
   // Auto-detect customer email. Tries three strategies in order:
@@ -320,10 +322,7 @@ export default function App() {
   const emailDetectSeq = useAppStore(s => s.emailDetectSeq)
 
   useEffect(() => {
-    if (!presscalConnected) {
-      console.log('[email-autofill] skipped — presscal not connected')
-      return
-    }
+    if (!presscalConnected) return
     if (!currentPath && !knownQuoteId) return
     let cancelled = false
 
@@ -332,7 +331,6 @@ export default function App() {
       // first, fall back to the list endpoint + find-by-id, then finally
       // the jobs list (PressCal surfaces "active quotes" as jobs).
       if (knownQuoteId) {
-        console.log(`[email-autofill] resolving via quoteId: ${knownQuoteId}`)
         let resolvedCustomerId: string | null = null
         let resolvedCustomerName: string | null = null
         let directEmail: string | null = null // contactEmail or senderEmail fallback
@@ -341,34 +339,24 @@ export default function App() {
         try {
           const quote = await window.api.presscal.getQuote(knownQuoteId)
           if (cancelled) return
-          console.log('[email-autofill] getQuote response:', JSON.stringify(quote, null, 0)?.slice(0, 800))
           // API may use customerId OR companyId depending on version
           resolvedCustomerId = quote?.customerId || quote?.companyId || null
           resolvedCustomerName = quote?.customerName || quote?.companyName || null
           directEmail = quote?.contactEmail || quote?.senderEmail || quote?.email || null
-          console.log(`[email-autofill] 1a result: customerId=${resolvedCustomerId}, customerName=${resolvedCustomerName}, directEmail=${directEmail}`)
-        } catch (err: any) {
-          console.log('[email-autofill] getQuote failed, trying list:', err.message || err)
-        }
+        } catch {}
 
         // 1b) Fall back to getQuotes list
         if (!resolvedCustomerId && !resolvedCustomerName) {
           try {
             const quotes = await window.api.presscal.getQuotes({})
             if (cancelled) return
-            console.log(`[email-autofill] getQuotes returned ${quotes.length} quotes`)
             const q = quotes.find((x: any) => x.id === knownQuoteId)
             if (q) {
-              console.log('[email-autofill] found quote in list:', JSON.stringify(q, null, 0)?.slice(0, 500))
               resolvedCustomerId = q.customerId || q.companyId || null
               if (!resolvedCustomerId) resolvedCustomerName = q.customerName || q.companyName || null
               if (!directEmail) directEmail = q.contactEmail || q.senderEmail || q.email || null
-            } else {
-              console.log('[email-autofill] quoteId not in getQuotes list')
             }
-          } catch (err: any) {
-            console.log('[email-autofill] getQuotes failed:', err.message || err)
-          }
+          } catch {}
         }
 
         // 1c) Fall back to getJobs list (active quotes exposed as jobs)
@@ -376,22 +364,14 @@ export default function App() {
           try {
             const jobs = await window.api.presscal.getJobs()
             if (cancelled) return
-            console.log(`[email-autofill] getJobs returned ${(jobs || []).length} jobs`)
             const j = jobs.find((x: any) => x.id === knownQuoteId)
             if (j) {
-              console.log('[email-autofill] found in jobs:', JSON.stringify(j, null, 0)?.slice(0, 500))
               resolvedCustomerId = j.customerId || j.companyId || null
               if (!resolvedCustomerId) resolvedCustomerName = j.customerName || j.companyName || null
               if (!directEmail) directEmail = j.contactEmail || j.senderEmail || j.email || null
-            } else {
-              console.log('[email-autofill] quoteId not in getJobs list')
             }
-          } catch (err: any) {
-            console.log('[email-autofill] getJobs failed:', err.message || err)
-          }
+          } catch {}
         }
-
-        console.log(`[email-autofill] after all strategies: customerId=${resolvedCustomerId}, customerName=${resolvedCustomerName}, directEmail=${directEmail}`)
 
         // 1d) Turn customer id/name into email via direct API fetch + cached list
         if (resolvedCustomerId || resolvedCustomerName) {
@@ -404,11 +384,8 @@ export default function App() {
               if (cancelled) return
               if (fetched && typeof fetched === 'object') {
                 customer = fetched
-                console.log(`[email-autofill] fetched customer by ID: ${customer!.name || customer!.company}`)
               }
-            } catch (err: any) {
-              console.log('[email-autofill] getCustomer by ID failed, trying search:', err.message?.slice(0, 100) || err)
-            }
+            } catch {}
           }
 
           // Fall back to cached list
@@ -437,10 +414,7 @@ export default function App() {
                 c.name?.toLowerCase().trim() === needle ||
                 c.company?.toLowerCase().trim() === needle
               ) || (searchResults.length === 1 ? searchResults[0] : undefined)
-              if (customer) console.log(`[email-autofill] found customer via search: ${customer.name || customer.company}`)
-            } catch (err: any) {
-              console.log('[email-autofill] customer search failed:', err.message || err)
-            }
+            } catch {}
           }
           const options = extractEmailOptions(customer)
           // Also include directEmail (contactEmail/senderEmail from quote) if not already present
@@ -451,19 +425,16 @@ export default function App() {
             }
           }
           if (options.length > 0) {
-            console.log(`[email-autofill] MATCH via quoteId: ${customer?.name}, ${options.length} email(s)`)
             useAppStore.setState({
               lastCustomerEmail: options[0].email,
               lastCustomerEmailOptions: options
             })
             return
           }
-          console.warn('[email-autofill] resolved customer has no email:', customer || { resolvedCustomerId, resolvedCustomerName })
         }
 
         // 1e) Fallback: use contactEmail or senderEmail directly from quote
         if (directEmail) {
-          console.log(`[email-autofill] FALLBACK via contactEmail/senderEmail: ${directEmail}`)
           useAppStore.setState({
             lastCustomerEmail: directEmail,
             lastCustomerEmailOptions: [{ label: 'Email Προσφοράς', email: directEmail, kind: 'contact' as const }]
@@ -479,7 +450,6 @@ export default function App() {
       const quoteNumberMatch = folderBasename.match(/\[QT[- ](\d{4}[- ]\d{4})\]/)
       if (quoteNumberMatch) {
         const quoteNumber = 'QT-' + quoteNumberMatch[1].replace(/\s/g, '-')
-        console.log(`[email-autofill] found quote number in folder name: ${quoteNumber}`)
         try {
           const quotes = await window.api.presscal.getQuotes({})
           if (cancelled) return
@@ -488,7 +458,6 @@ export default function App() {
             return num === quoteNumber.toUpperCase()
           })
           if (q) {
-            console.log(`[email-autofill] resolved quote by number: ${quoteNumber} → customerId=${q.customerId}`)
             const customers = await getCachedCustomers()
             if (cancelled) return
             let customer: PresscalCustomer | undefined
@@ -507,7 +476,6 @@ export default function App() {
               if (!already) options.push({ label: 'Email Προσφοράς', email: directEmail, kind: 'contact' as const })
             }
             if (options.length > 0) {
-              console.log(`[email-autofill] MATCH via quoteNumber: ${customer?.name || q.customerName}, ${options.length} email(s)`)
               useAppStore.setState({ lastCustomerEmail: options[0].email, lastCustomerEmailOptions: options })
               return
             }
@@ -519,23 +487,16 @@ export default function App() {
               return
             }
           }
-        } catch (err: any) {
-          console.log(`[email-autofill] quote number lookup failed:`, err.message || err)
-        }
+        } catch {}
       }
 
       // Strategy 2 + 3: path-based matching against cached customer list
       const customers = await getCachedCustomers()
       if (cancelled) return
-      const withFolder = customers.filter(c => c.folderPath)
-      console.log(`[email-autofill] currentPath: "${currentPath}"`)
-      console.log(`[email-autofill] customers: ${customers.length} total, ${withFolder.length} with folderPath`)
 
       let match = findCustomerByPath(customers, currentPath)
-      let via = 'folderPath'
       if (!match) {
         match = findCustomerByName(customers, currentPath)
-        via = 'name'
       }
 
       // Strategy 4: use PressCal's own search API with keywords from the
@@ -547,12 +508,10 @@ export default function App() {
           .split(/[\s\-_,.()[\]]+/)
           .map(w => w.trim())
           .filter(w => w.length >= 4 && !/^\d+$/.test(w) && !/^QT$/i.test(w) && !skipWords.has(w.toLowerCase()))
-        console.log(`[email-autofill] trying PressCal search with keywords:`, keywords)
         for (const kw of keywords) {
           try {
             const results = await window.api.presscal.getCustomers(kw)
             if (cancelled) return
-            console.log(`[email-autofill] search "${kw}" → ${results.length} results`)
             if (results.length > 0) {
               // ONLY use exact/substring match — never fallback to results[0]
               const lcBase = folderBasename.toLowerCase()
@@ -563,33 +522,24 @@ export default function App() {
               })
               if (exact) {
                 match = exact
-                via = `search("${kw}")`
                 break
               }
             }
-          } catch (err: any) {
-            console.log(`[email-autofill] search failed for "${kw}":`, err.message || err)
-          }
+          } catch {}
         }
       }
 
       if (match) {
-        console.log(`[email-autofill] MATCH via ${via}: ${match.name}`)
-        console.log('[email-autofill] match object keys:', Object.keys(match as any))
         const options = extractEmailOptions(match)
-        console.log('[email-autofill] email options extracted:', options)
         if (options.length > 0) {
           useAppStore.setState({
             lastCustomerEmail: options[0].email,
             lastCustomerEmailOptions: options
           })
         } else {
-          console.warn('[email-autofill] no emails found on customer:', match.name)
           // Clear stale options from a previous customer
           useAppStore.setState({ lastCustomerEmailOptions: [] })
         }
-      } else {
-        console.log('[email-autofill] no match')
       }
     }
 

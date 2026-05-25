@@ -157,6 +157,10 @@ interface AppState {
 // Debounce timers for settings that change rapidly (e.g. during drag-resize)
 let _sidebarTimer: ReturnType<typeof setTimeout> | undefined
 let _inspectorTimer: ReturnType<typeof setTimeout> | undefined
+// Debounce search indexing — scanning dirs blocks the main thread
+let _searchAddTimer: ReturnType<typeof setTimeout> | undefined
+// Monotonic counter to cancel stale metadata/preview loads on rapid file clicks
+let _selectSeq = 0
 
 export const useAppStore = create<AppState>((set, get) => {
   // Helper: update active tab and mirror to top-level
@@ -362,8 +366,12 @@ export const useAppStore = create<AppState>((set, get) => {
         if (source === 'local') {
           files = await window.api.fs.listDirectory(path)
           window.api.settings.addRecentPath(path)
-          // Index visited directory for search (fire & forget)
-          window.api.search.addPath(path).catch(() => {})
+          // Index visited directory for search (debounced — scanning dirs
+          // does stat() on every file + subdirs, blocking the main thread)
+          clearTimeout(_searchAddTimer)
+          _searchAddTimer = setTimeout(() => {
+            window.api.search.addPath(path).catch(() => {})
+          }, 2000)
         } else {
           const entries = await window.api.dropbox.listFolder(path)
           files = entries.map((e: any) => ({
@@ -457,24 +465,27 @@ export const useAppStore = create<AppState>((set, get) => {
         previewLoading: previewOpen, metadataLoading: true
       })
 
+      // Bump sequence so stale responses from rapid clicks are discarded
+      const seq = ++_selectSeq
       const { activeTabId } = get()
+      const isStale = () => _selectSeq !== seq || get().activeTabId !== activeTabId
 
       if (previewOpen) {
         window.api.preview.full(file.path)
           .then(preview => {
-            if (get().activeTabId === activeTabId) updateActiveTab({ preview, previewLoading: false })
+            if (!isStale()) updateActiveTab({ preview, previewLoading: false })
           })
           .catch(() => {
-            if (get().activeTabId === activeTabId) updateActiveTab({ previewLoading: false })
+            if (!isStale()) updateActiveTab({ previewLoading: false })
           })
       }
 
       window.api.fs.getMetadata(file.path)
         .then(metadata => {
-          if (get().activeTabId === activeTabId) updateActiveTab({ metadata, metadataLoading: false })
+          if (!isStale()) updateActiveTab({ metadata, metadataLoading: false })
         })
         .catch(() => {
-          if (get().activeTabId === activeTabId) updateActiveTab({ metadataLoading: false })
+          if (!isStale()) updateActiveTab({ metadataLoading: false })
         })
     },
 
@@ -583,6 +594,16 @@ export const useAppStore = create<AppState>((set, get) => {
 
         if (get().activeTabId !== activeTabId) return
 
+        // Skip update if file list is identical (avoid unnecessary re-renders
+        // during Dropbox sync or watcher noise)
+        const prevFiles = tab.files
+        if (files.length === prevFiles.length &&
+            files.every((f, i) => f.path === prevFiles[i].path &&
+                                   f.size === prevFiles[i].size &&
+                                   f.modified === prevFiles[i].modified)) {
+          return
+        }
+
         // Preserve selection if the file still exists
         const selectedFile = prevSelected
           ? files.find(f => f.path === prevSelected.path) || null
@@ -618,20 +639,17 @@ export const useAppStore = create<AppState>((set, get) => {
     copyFiles: () => {
       const { selectedFiles, selectedFile } = get()
       const files = selectedFiles.length > 0 ? selectedFiles : (selectedFile ? [selectedFile] : [])
-      console.log('[COPY]', files.length, 'files', files.map(f => f.name))
       if (files.length > 0) set({ clipboard: { files, mode: 'copy' } })
     },
 
     cutFiles: () => {
       const { selectedFiles, selectedFile } = get()
       const files = selectedFiles.length > 0 ? selectedFiles : (selectedFile ? [selectedFile] : [])
-      console.log('[CUT]', files.length, 'files', files.map(f => f.name))
       if (files.length > 0) set({ clipboard: { files, mode: 'cut' } })
     },
 
     pasteFiles: async () => {
       const { clipboard, currentPath } = get()
-      console.log('[PASTE]', { hasClipboard: !!clipboard, currentPath, mode: clipboard?.mode, fileCount: clipboard?.files.length })
       if (!clipboard || !currentPath) return
       const paths = clipboard.files.map(f => f.path)
       try {
@@ -642,7 +660,6 @@ export const useAppStore = create<AppState>((set, get) => {
           results = await window.api.fs.move(paths, currentPath)
           set({ clipboard: null })
         }
-        console.log('[PASTE] results:', results)
         await get().refreshDirectory()
 
         // Surface any per-file failures — fs.move/copy never throws, it

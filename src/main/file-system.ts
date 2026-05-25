@@ -129,21 +129,18 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
     if (!existsSync(dirPath)) return []
 
     const entries = await readdir(dirPath, { withFileTypes: true })
-    const results: FileEntry[] = []
+    const filtered = entries.filter(entry =>
+      !entry.name.startsWith('.') && entry.name !== 'Thumbs.db' && entry.name !== 'desktop.ini'
+    )
 
-    for (const entry of entries) {
-      // Skip hidden files and system files
-      if (entry.name.startsWith('.') || entry.name === 'Thumbs.db' || entry.name === 'desktop.ini') {
-        continue
-      }
-
-      const fullPath = join(dirPath, entry.name)
-      try {
+    // Parallel stat — much faster than sequential for large directories
+    const settled = await Promise.allSettled(
+      filtered.map(async (entry) => {
+        const fullPath = join(dirPath, entry.name)
         const stats = await stat(fullPath)
         const ext = entry.isDirectory() ? '' : extname(entry.name)
         const cloudStatus = getCloudStatus(fullPath, stats)
-
-        results.push({
+        return {
           name: entry.name,
           path: fullPath,
           isDirectory: entry.isDirectory(),
@@ -153,11 +150,13 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
           extension: ext.toLowerCase(),
           type: entry.isDirectory() ? 'folder' : getFileType(ext),
           cloudStatus
-        })
-      } catch {
-        // Skip files we can't access
-      }
-    }
+        } as FileEntry
+      })
+    )
+
+    const results = settled
+      .filter((r): r is PromiseFulfilledResult<FileEntry> => r.status === 'fulfilled')
+      .map(r => r.value)
 
     // Sort: folders first, then by name
     results.sort((a, b) => {
