@@ -249,9 +249,6 @@ const api = {
 
   // Tools
   tools: {
-    // Pantone
-    pantoneSearch: (query: string) => ipcRenderer.invoke('tools:pantoneSearch', query),
-    pantoneFromRgb: (r: number, g: number, b: number, count?: number) => ipcRenderer.invoke('tools:pantoneFromRgb', r, g, b, count),
     rgbToCmyk: (r: number, g: number, b: number) => ipcRenderer.invoke('tools:rgbToCmyk', r, g, b),
     cmykToRgb: (c: number, m: number, y: number, k: number) => ipcRenderer.invoke('tools:cmykToRgb', c, m, y, k),
 

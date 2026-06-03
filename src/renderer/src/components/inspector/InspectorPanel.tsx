@@ -5,7 +5,6 @@ import { PreflightReport } from './PreflightReport'
 import { PresscalPanel } from '../presscal/PresscalPanel'
 import { PrintChecklist } from '../tools/PrintChecklist'
 import { SpotColorPanel } from '../tools/SpotColorPanel'
-import { PantoneConverter } from '../tools/PantoneConverter'
 import { BarcodeGenerator } from '../tools/BarcodeGenerator'
 import { JobFolderTemplates } from '../tools/JobFolderTemplates'
 import { VersionHistory } from '../tools/VersionHistory'
@@ -25,7 +24,7 @@ const TABS: { id: InspectorTab; label: string; icon: React.ReactNode }[] = [
   { id: 'presscal', label: 'PressCal', icon: <Link2 size={14} /> }
 ]
 
-type ToolSubTab = 'checklist' | 'spots' | 'pantone' | 'barcode' | 'folders' | 'versions' | 'icc' | 'colors'
+type ToolSubTab = 'checklist' | 'spots' | 'barcode' | 'folders' | 'versions' | 'icc' | 'colors'
 
 const TOOL_SUB_TABS: { id: ToolSubTab; label: string; icon: React.ReactNode; needsFile: boolean }[] = [
   { id: 'checklist', label: 'Print Ready', icon: <ClipboardCheck size={12} />, needsFile: true },
@@ -33,7 +32,6 @@ const TOOL_SUB_TABS: { id: ToolSubTab; label: string; icon: React.ReactNode; nee
   { id: 'colors', label: 'Color Palette', icon: <Palette size={12} />, needsFile: true },
   { id: 'icc', label: 'ICC Profile', icon: <Monitor size={12} />, needsFile: true },
   { id: 'versions', label: 'Versions', icon: <History size={12} />, needsFile: true },
-  { id: 'pantone', label: 'Pantone', icon: <Palette size={12} />, needsFile: false },
   { id: 'barcode', label: 'Barcode', icon: <Barcode size={12} />, needsFile: false },
   { id: 'folders', label: 'Job Folders', icon: <FolderPlus size={12} />, needsFile: false },
 ]
@@ -112,7 +110,6 @@ export function InspectorPanel() {
               {toolSubTab === 'colors' && <ColorPalette />}
               {toolSubTab === 'icc' && <IccProfileViewer />}
               {toolSubTab === 'versions' && <VersionHistory />}
-              {toolSubTab === 'pantone' && <PantoneConverter />}
               {toolSubTab === 'barcode' && <BarcodeGenerator />}
               {toolSubTab === 'folders' && <JobFolderTemplates />}
             </div>

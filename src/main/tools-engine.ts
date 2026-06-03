@@ -3,273 +3,8 @@ import { readFile, writeFile, readdir, stat, mkdir, copyFile, access, rename, un
 import { extname, basename, dirname, join, relative } from 'path'
 import { existsSync } from 'fs'
 
-// ─── Pantone Color Database (Top 200+ print colors) ────────────────────────
+// ─── Color Conversion ───────────────────────────────────────────────────────
 
-interface PantoneColor {
-  name: string
-  c: number; m: number; y: number; k: number
-  r: number; g: number; b: number
-  hex: string
-}
-
-const PANTONE_COLORS: PantoneColor[] = [
-  { name: 'PANTONE Process Yellow C', c: 0, m: 0, y: 100, k: 0, r: 255, g: 237, b: 0, hex: '#FFED00' },
-  { name: 'PANTONE Yellow C', c: 0, m: 0, y: 100, k: 0, r: 254, g: 221, b: 0, hex: '#FEDD00' },
-  { name: 'PANTONE 100 C', c: 0, m: 0, y: 51, k: 0, r: 246, g: 235, b: 97, hex: '#F6EB61' },
-  { name: 'PANTONE 101 C', c: 0, m: 0, y: 69, k: 0, r: 247, g: 232, b: 49, hex: '#F7E831' },
-  { name: 'PANTONE 102 C', c: 0, m: 1, y: 95, k: 0, r: 252, g: 227, b: 0, hex: '#FCE300' },
-  { name: 'PANTONE 103 C', c: 0, m: 3, y: 100, k: 18, r: 198, g: 170, b: 0, hex: '#C6AA00' },
-  { name: 'PANTONE 104 C', c: 0, m: 3, y: 100, k: 30, r: 173, g: 155, b: 12, hex: '#AD9B0C' },
-  { name: 'PANTONE 105 C', c: 0, m: 0, y: 80, k: 48, r: 130, g: 120, b: 33, hex: '#827821' },
-  { name: 'PANTONE 106 C', c: 0, m: 1, y: 79, k: 0, r: 247, g: 225, b: 34, hex: '#F7E122' },
-  { name: 'PANTONE 107 C', c: 0, m: 1, y: 89, k: 0, r: 249, g: 221, b: 0, hex: '#F9DD00' },
-  { name: 'PANTONE 108 C', c: 0, m: 3, y: 100, k: 0, r: 254, g: 209, b: 0, hex: '#FED100' },
-  { name: 'PANTONE 109 C', c: 0, m: 6, y: 95, k: 0, r: 255, g: 209, b: 0, hex: '#FFD100' },
-  { name: 'PANTONE 110 C', c: 0, m: 8, y: 100, k: 2, r: 218, g: 170, b: 0, hex: '#DAAA00' },
-  { name: 'PANTONE 111 C', c: 0, m: 4, y: 100, k: 38, r: 170, g: 142, b: 0, hex: '#AA8E00' },
-  { name: 'PANTONE 112 C', c: 0, m: 2, y: 100, k: 47, r: 153, g: 132, b: 10, hex: '#99840A' },
-  { name: 'PANTONE 113 C', c: 0, m: 3, y: 70, k: 0, r: 252, g: 223, b: 63, hex: '#FCDF3F' },
-  { name: 'PANTONE 114 C', c: 0, m: 3, y: 78, k: 0, r: 249, g: 221, b: 34, hex: '#F9DD22' },
-  { name: 'PANTONE 115 C', c: 0, m: 6, y: 87, k: 0, r: 249, g: 213, b: 16, hex: '#F9D510' },
-  { name: 'PANTONE 116 C', c: 0, m: 16, y: 100, k: 0, r: 255, g: 205, b: 0, hex: '#FFCD00' },
-  { name: 'PANTONE 117 C', c: 0, m: 14, y: 100, k: 22, r: 198, g: 146, b: 0, hex: '#C69200' },
-  { name: 'PANTONE 130 C', c: 0, m: 30, y: 100, k: 0, r: 242, g: 169, b: 0, hex: '#F2A900' },
-  { name: 'PANTONE 137 C', c: 0, m: 36, y: 90, k: 0, r: 252, g: 163, b: 17, hex: '#FCA311' },
-  { name: 'PANTONE 138 C', c: 0, m: 42, y: 100, k: 0, r: 228, g: 141, b: 0, hex: '#E48D00' },
-  { name: 'PANTONE 144 C', c: 0, m: 48, y: 100, k: 0, r: 237, g: 139, b: 0, hex: '#ED8B00' },
-  { name: 'PANTONE 151 C', c: 0, m: 52, y: 95, k: 0, r: 255, g: 130, b: 0, hex: '#FF8200' },
-  { name: 'PANTONE 152 C', c: 0, m: 55, y: 100, k: 0, r: 228, g: 114, b: 0, hex: '#E47200' },
-  { name: 'PANTONE 158 C', c: 0, m: 61, y: 97, k: 0, r: 232, g: 119, b: 34, hex: '#E87722' },
-  { name: 'PANTONE 165 C', c: 0, m: 65, y: 100, k: 0, r: 255, g: 103, b: 31, hex: '#FF671F' },
-  { name: 'PANTONE 166 C', c: 0, m: 70, y: 100, k: 0, r: 227, g: 82, b: 5, hex: '#E35205' },
-  { name: 'PANTONE 172 C', c: 0, m: 70, y: 87, k: 0, r: 250, g: 70, b: 22, hex: '#FA4616' },
-  { name: 'PANTONE 179 C', c: 0, m: 79, y: 85, k: 0, r: 224, g: 60, b: 49, hex: '#E03C31' },
-  { name: 'PANTONE 180 C', c: 0, m: 79, y: 80, k: 7, r: 190, g: 58, b: 52, hex: '#BE3A34' },
-  { name: 'PANTONE 185 C', c: 0, m: 91, y: 76, k: 0, r: 228, g: 0, b: 43, hex: '#E4002B' },
-  { name: 'PANTONE 186 C', c: 0, m: 100, y: 81, k: 4, r: 200, g: 16, b: 46, hex: '#C8102E' },
-  { name: 'PANTONE Red 032 C', c: 0, m: 90, y: 86, k: 0, r: 239, g: 51, b: 64, hex: '#EF3340' },
-  { name: 'PANTONE 192 C', c: 0, m: 84, y: 40, k: 0, r: 224, g: 60, b: 100, hex: '#E03C64' },
-  { name: 'PANTONE 199 C', c: 0, m: 100, y: 60, k: 7, r: 213, g: 0, b: 50, hex: '#D50032' },
-  { name: 'PANTONE 200 C', c: 0, m: 100, y: 65, k: 15, r: 186, g: 12, b: 47, hex: '#BA0C2F' },
-  { name: 'PANTONE 201 C', c: 0, m: 100, y: 63, k: 29, r: 155, g: 0, b: 41, hex: '#9B0029' },
-  { name: 'PANTONE 206 C', c: 0, m: 96, y: 30, k: 0, r: 210, g: 0, b: 81, hex: '#D20051' },
-  { name: 'PANTONE 210 C', c: 0, m: 73, y: 10, k: 0, r: 246, g: 108, b: 149, hex: '#F66C95' },
-  { name: 'PANTONE 213 C', c: 0, m: 82, y: 3, k: 0, r: 225, g: 68, b: 138, hex: '#E1448A' },
-  { name: 'PANTONE 219 C', c: 0, m: 100, y: 10, k: 3, r: 218, g: 24, b: 132, hex: '#DA1884' },
-  { name: 'PANTONE Rhodamine Red C', c: 0, m: 82, y: 0, k: 0, r: 225, g: 0, b: 152, hex: '#E10098' },
-  { name: 'PANTONE 226 C', c: 0, m: 100, y: 0, k: 4, r: 214, g: 0, b: 147, hex: '#D60093' },
-  { name: 'PANTONE 233 C', c: 4, m: 100, y: 0, k: 0, r: 206, g: 0, b: 146, hex: '#CE0092' },
-  { name: 'PANTONE Purple C', c: 29, m: 92, y: 0, k: 0, r: 187, g: 41, b: 187, hex: '#BB29BB' },
-  { name: 'PANTONE 253 C', c: 42, m: 75, y: 0, k: 0, r: 161, g: 77, b: 188, hex: '#A14DBC' },
-  { name: 'PANTONE 259 C', c: 43, m: 96, y: 0, k: 20, r: 109, g: 32, b: 119, hex: '#6D2077' },
-  { name: 'PANTONE 266 C', c: 55, m: 75, y: 0, k: 0, r: 134, g: 76, b: 191, hex: '#864CBF' },
-  { name: 'PANTONE Violet C', c: 73, m: 90, y: 0, k: 0, r: 68, g: 0, b: 153, hex: '#440099' },
-  { name: 'PANTONE 2685 C', c: 82, m: 100, y: 0, k: 0, r: 86, g: 0, b: 160, hex: '#5600A0' },
-  { name: 'PANTONE 2728 C', c: 86, m: 61, y: 0, k: 0, r: 0, g: 71, b: 187, hex: '#0047BB' },
-  { name: 'PANTONE 272 C', c: 44, m: 38, y: 0, k: 0, r: 150, g: 146, b: 207, hex: '#9692CF' },
-  { name: 'PANTONE 280 C', c: 100, m: 72, y: 0, k: 18, r: 0, g: 44, b: 119, hex: '#002C77' },
-  { name: 'PANTONE 281 C', c: 100, m: 72, y: 0, k: 32, r: 0, g: 32, b: 91, hex: '#00205B' },
-  { name: 'PANTONE 286 C', c: 100, m: 66, y: 0, k: 2, r: 0, g: 51, b: 160, hex: '#0033A0' },
-  { name: 'PANTONE 287 C', c: 100, m: 68, y: 0, k: 12, r: 0, g: 56, b: 147, hex: '#003893' },
-  { name: 'PANTONE 288 C', c: 100, m: 67, y: 0, k: 23, r: 0, g: 48, b: 135, hex: '#003087' },
-  { name: 'PANTONE 289 C', c: 100, m: 60, y: 0, k: 56, r: 0, g: 32, b: 78, hex: '#00204E' },
-  { name: 'PANTONE 293 C', c: 100, m: 56, y: 0, k: 0, r: 0, g: 62, b: 169, hex: '#003EA9' },
-  { name: 'PANTONE 294 C', c: 100, m: 58, y: 0, k: 21, r: 0, g: 47, b: 108, hex: '#002F6C' },
-  { name: 'PANTONE 295 C', c: 100, m: 57, y: 0, k: 40, r: 0, g: 40, b: 85, hex: '#002855' },
-  { name: 'PANTONE 296 C', c: 100, m: 42, y: 0, k: 60, r: 0, g: 36, b: 58, hex: '#00243A' },
-  { name: 'PANTONE 298 C', c: 74, m: 12, y: 0, k: 0, r: 65, g: 182, b: 230, hex: '#41B6E6' },
-  { name: 'PANTONE 299 C', c: 86, m: 8, y: 0, k: 0, r: 0, g: 163, b: 224, hex: '#00A3E0' },
-  { name: 'PANTONE 300 C', c: 100, m: 44, y: 0, k: 0, r: 0, g: 94, b: 184, hex: '#005EB8' },
-  { name: 'PANTONE 301 C', c: 100, m: 45, y: 0, k: 18, r: 0, g: 75, b: 135, hex: '#004B87' },
-  { name: 'PANTONE 302 C', c: 100, m: 24, y: 0, k: 48, r: 0, g: 59, b: 92, hex: '#003B5C' },
-  { name: 'PANTONE Process Blue C', c: 100, m: 10, y: 0, k: 10, r: 0, g: 133, b: 202, hex: '#0085CA' },
-  { name: 'PANTONE 306 C', c: 73, m: 0, y: 4, k: 0, r: 0, g: 188, b: 227, hex: '#00BCE3' },
-  { name: 'PANTONE 307 C', c: 100, m: 15, y: 0, k: 27, r: 0, g: 107, b: 142, hex: '#006B8E' },
-  { name: 'PANTONE 312 C', c: 97, m: 0, y: 12, k: 0, r: 0, g: 175, b: 198, hex: '#00AFC6' },
-  { name: 'PANTONE 313 C', c: 100, m: 0, y: 10, k: 3, r: 0, g: 156, b: 180, hex: '#009CB4' },
-  { name: 'PANTONE 319 C', c: 61, m: 0, y: 19, k: 0, r: 46, g: 191, b: 187, hex: '#2EBFBB' },
-  { name: 'PANTONE 320 C', c: 100, m: 0, y: 31, k: 0, r: 0, g: 159, b: 147, hex: '#009F93' },
-  { name: 'PANTONE 321 C', c: 100, m: 0, y: 30, k: 20, r: 0, g: 132, b: 120, hex: '#008478' },
-  { name: 'PANTONE 326 C', c: 83, m: 0, y: 38, k: 0, r: 0, g: 178, b: 152, hex: '#00B298' },
-  { name: 'PANTONE 327 C', c: 100, m: 0, y: 45, k: 18, r: 0, g: 132, b: 102, hex: '#008466' },
-  { name: 'PANTONE 333 C', c: 58, m: 0, y: 28, k: 0, r: 80, g: 198, b: 176, hex: '#50C6B0' },
-  { name: 'PANTONE 334 C', c: 100, m: 0, y: 49, k: 11, r: 0, g: 140, b: 104, hex: '#008C68' },
-  { name: 'PANTONE 335 C', c: 100, m: 0, y: 52, k: 34, r: 0, g: 107, b: 84, hex: '#006B54' },
-  { name: 'PANTONE 340 C', c: 90, m: 0, y: 62, k: 0, r: 0, g: 171, b: 120, hex: '#00AB78' },
-  { name: 'PANTONE 341 C', c: 100, m: 0, y: 64, k: 20, r: 0, g: 122, b: 82, hex: '#007A52' },
-  { name: 'PANTONE 347 C', c: 90, m: 0, y: 79, k: 0, r: 0, g: 154, b: 68, hex: '#009A44' },
-  { name: 'PANTONE 348 C', c: 100, m: 0, y: 84, k: 17, r: 0, g: 132, b: 61, hex: '#00843D' },
-  { name: 'PANTONE 349 C', c: 100, m: 0, y: 79, k: 40, r: 0, g: 98, b: 51, hex: '#006233' },
-  { name: 'PANTONE 354 C', c: 80, m: 0, y: 100, k: 0, r: 0, g: 172, b: 0, hex: '#00AC00' },
-  { name: 'PANTONE 355 C', c: 88, m: 0, y: 100, k: 0, r: 0, g: 158, b: 73, hex: '#009E49' },
-  { name: 'PANTONE 356 C', c: 95, m: 0, y: 100, k: 27, r: 0, g: 122, b: 51, hex: '#007A33' },
-  { name: 'PANTONE 361 C', c: 69, m: 0, y: 100, k: 0, r: 67, g: 176, b: 42, hex: '#43B02A' },
-  { name: 'PANTONE 368 C', c: 56, m: 0, y: 100, k: 0, r: 120, g: 190, b: 32, hex: '#78BE20' },
-  { name: 'PANTONE 375 C', c: 35, m: 0, y: 100, k: 0, r: 151, g: 215, b: 0, hex: '#97D700' },
-  { name: 'PANTONE 376 C', c: 44, m: 0, y: 100, k: 0, r: 132, g: 189, b: 0, hex: '#84BD00' },
-  { name: 'PANTONE 377 C', c: 38, m: 0, y: 100, k: 27, r: 118, g: 152, b: 0, hex: '#769800' },
-  { name: 'PANTONE 382 C', c: 17, m: 0, y: 100, k: 0, r: 196, g: 214, b: 0, hex: '#C4D600' },
-  { name: 'PANTONE 383 C', c: 11, m: 0, y: 100, k: 25, r: 170, g: 170, b: 0, hex: '#AAAA00' },
-  { name: 'PANTONE 384 C', c: 8, m: 0, y: 100, k: 37, r: 149, g: 151, b: 0, hex: '#959700' },
-  { name: 'PANTONE 385 C', c: 4, m: 0, y: 69, k: 48, r: 130, g: 124, b: 48, hex: '#827C30' },
-  { name: 'PANTONE 386 C', c: 5, m: 0, y: 70, k: 0, r: 225, g: 228, b: 69, hex: '#E1E445' },
-  { name: 'PANTONE 389 C', c: 13, m: 0, y: 90, k: 0, r: 206, g: 220, b: 0, hex: '#CEDC00' },
-  { name: 'PANTONE 390 C', c: 19, m: 0, y: 100, k: 7, r: 182, g: 196, b: 0, hex: '#B6C400' },
-  { name: 'PANTONE 395 C', c: 2, m: 0, y: 60, k: 0, r: 234, g: 234, b: 91, hex: '#EAEA5B' },
-  { name: 'PANTONE 396 C', c: 5, m: 0, y: 82, k: 0, r: 224, g: 228, b: 0, hex: '#E0E400' },
-  { name: 'PANTONE 397 C', c: 7, m: 0, y: 100, k: 10, r: 191, g: 194, b: 0, hex: '#BFC200' },
-  { name: 'PANTONE 398 C', c: 5, m: 0, y: 80, k: 22, r: 176, g: 174, b: 27, hex: '#B0AE1B' },
-  { name: 'PANTONE Black C', c: 0, m: 0, y: 0, k: 100, r: 45, g: 41, b: 38, hex: '#2D2926' },
-  { name: 'PANTONE Black 2 C', c: 0, m: 19, y: 60, k: 93, r: 49, g: 38, b: 29, hex: '#31261D' },
-  { name: 'PANTONE Black 3 C', c: 46, m: 0, y: 40, k: 90, r: 34, g: 39, b: 33, hex: '#222721' },
-  { name: 'PANTONE Black 4 C', c: 0, m: 0, y: 60, k: 93, r: 49, g: 48, b: 28, hex: '#31301C' },
-  { name: 'PANTONE Black 5 C', c: 0, m: 30, y: 12, k: 86, r: 59, g: 46, b: 52, hex: '#3B2E34' },
-  { name: 'PANTONE Black 6 C', c: 64, m: 0, y: 0, k: 90, r: 16, g: 24, b: 32, hex: '#101820' },
-  { name: 'PANTONE Black 7 C', c: 0, m: 5, y: 20, k: 87, r: 61, g: 57, b: 53, hex: '#3D3935' },
-  { name: 'PANTONE Cool Gray 1 C', c: 0, m: 0, y: 0, k: 12, r: 215, g: 210, b: 203, hex: '#D7D2CB' },
-  { name: 'PANTONE Cool Gray 3 C', c: 0, m: 0, y: 0, k: 22, r: 196, g: 191, b: 186, hex: '#C4BFBA' },
-  { name: 'PANTONE Cool Gray 5 C', c: 0, m: 0, y: 0, k: 33, r: 177, g: 170, b: 164, hex: '#B1AAA4' },
-  { name: 'PANTONE Cool Gray 7 C', c: 0, m: 2, y: 0, k: 44, r: 151, g: 148, b: 146, hex: '#979492' },
-  { name: 'PANTONE Cool Gray 9 C', c: 0, m: 2, y: 0, k: 56, r: 117, g: 115, b: 113, hex: '#757371' },
-  { name: 'PANTONE Cool Gray 11 C', c: 0, m: 2, y: 0, k: 68, r: 83, g: 86, b: 90, hex: '#53565A' },
-  { name: 'PANTONE Warm Gray 1 C', c: 0, m: 2, y: 6, k: 10, r: 215, g: 208, b: 198, hex: '#D7D0C6' },
-  { name: 'PANTONE Warm Gray 3 C', c: 0, m: 3, y: 8, k: 20, r: 190, g: 183, b: 174, hex: '#BEB7AE' },
-  { name: 'PANTONE Warm Gray 5 C', c: 0, m: 5, y: 10, k: 32, r: 172, g: 162, b: 150, hex: '#ACA296' },
-  { name: 'PANTONE Warm Gray 7 C', c: 0, m: 6, y: 12, k: 42, r: 146, g: 137, b: 126, hex: '#92897E' },
-  { name: 'PANTONE Warm Gray 9 C', c: 0, m: 8, y: 14, k: 52, r: 124, g: 113, b: 100, hex: '#7C7164' },
-  { name: 'PANTONE Warm Gray 11 C', c: 0, m: 10, y: 16, k: 62, r: 98, g: 89, b: 79, hex: '#62594F' },
-  { name: 'PANTONE 485 C', c: 0, m: 95, y: 100, k: 0, r: 218, g: 41, b: 28, hex: '#DA291C' },
-  { name: 'PANTONE 484 C', c: 0, m: 85, y: 95, k: 25, r: 155, g: 35, b: 29, hex: '#9B231D' },
-  { name: 'PANTONE 485 U', c: 0, m: 80, y: 85, k: 0, r: 233, g: 75, b: 53, hex: '#E94B35' },
-  { name: 'PANTONE 021 C', c: 0, m: 53, y: 100, k: 0, r: 254, g: 80, b: 0, hex: '#FE5000' },
-  { name: 'PANTONE Warm Red C', c: 0, m: 80, y: 77, k: 0, r: 249, g: 66, b: 58, hex: '#F9423A' },
-  { name: 'PANTONE Rubine Red C', c: 0, m: 100, y: 15, k: 4, r: 206, g: 0, b: 88, hex: '#CE0058' },
-  { name: 'PANTONE 423 C', c: 0, m: 0, y: 0, k: 39, r: 158, g: 158, b: 158, hex: '#9E9E9E' },
-  { name: 'PANTONE 424 C', c: 0, m: 0, y: 0, k: 49, r: 130, g: 130, b: 130, hex: '#828282' },
-  { name: 'PANTONE 425 C', c: 0, m: 0, y: 0, k: 58, r: 101, g: 101, b: 101, hex: '#656565' },
-  { name: 'PANTONE 426 C', c: 0, m: 0, y: 0, k: 88, r: 37, g: 37, b: 37, hex: '#252525' },
-  { name: 'PANTONE 427 C', c: 0, m: 0, y: 0, k: 15, r: 208, g: 208, b: 206, hex: '#D0D0CE' },
-  { name: 'PANTONE 428 C', c: 0, m: 0, y: 0, k: 20, r: 193, g: 196, b: 198, hex: '#C1C4C6' },
-  { name: 'PANTONE 429 C', c: 0, m: 0, y: 0, k: 28, r: 165, g: 172, b: 175, hex: '#A5ACAF' },
-  { name: 'PANTONE 430 C', c: 0, m: 0, y: 0, k: 42, r: 127, g: 137, b: 141, hex: '#7F898D' },
-  { name: 'PANTONE 431 C', c: 0, m: 0, y: 0, k: 55, r: 91, g: 103, b: 112, hex: '#5B6770' },
-  { name: 'PANTONE 432 C', c: 0, m: 0, y: 0, k: 70, r: 51, g: 63, b: 72, hex: '#333F48' },
-  { name: 'PANTONE 433 C', c: 0, m: 0, y: 0, k: 85, r: 29, g: 37, b: 45, hex: '#1D252D' },
-  { name: 'PANTONE 468 C', c: 0, m: 6, y: 25, k: 7, r: 221, g: 207, b: 178, hex: '#DDCFB2' },
-  { name: 'PANTONE 471 C', c: 0, m: 50, y: 80, k: 30, r: 165, g: 98, b: 42, hex: '#A5622A' },
-  { name: 'PANTONE 476 C', c: 0, m: 40, y: 65, k: 60, r: 89, g: 60, b: 31, hex: '#593C1F' },
-  { name: 'PANTONE 478 C', c: 0, m: 60, y: 82, k: 48, r: 78, g: 44, b: 22, hex: '#4E2C16' },
-  { name: 'PANTONE 500 C', c: 0, m: 24, y: 6, k: 11, r: 214, g: 178, b: 189, hex: '#D6B2BD' },
-  { name: 'PANTONE 519 C', c: 42, m: 95, y: 0, k: 40, r: 89, g: 22, b: 91, hex: '#59165B' },
-  { name: 'PANTONE 534 C', c: 80, m: 48, y: 0, k: 32, r: 27, g: 60, b: 109, hex: '#1B3C6D' },
-  { name: 'PANTONE 541 C', c: 100, m: 58, y: 0, k: 21, r: 0, g: 48, b: 135, hex: '#003087' },
-  { name: 'PANTONE 542 C', c: 63, m: 22, y: 0, k: 0, r: 79, g: 156, b: 215, hex: '#4F9CD7' },
-  { name: 'PANTONE 549 C', c: 54, m: 11, y: 0, k: 7, r: 99, g: 172, b: 210, hex: '#63ACD2' },
-  { name: 'PANTONE 562 C', c: 85, m: 0, y: 34, k: 12, r: 0, g: 141, b: 130, hex: '#008D82' },
-  { name: 'PANTONE 569 C', c: 72, m: 0, y: 41, k: 0, r: 0, g: 178, b: 150, hex: '#00B296' },
-  { name: 'PANTONE 576 C', c: 44, m: 0, y: 68, k: 7, r: 114, g: 173, b: 93, hex: '#72AD5D' },
-  { name: 'PANTONE 583 C', c: 24, m: 0, y: 100, k: 8, r: 171, g: 196, b: 0, hex: '#ABC400' },
-  { name: 'PANTONE 584 C', c: 15, m: 0, y: 76, k: 0, r: 206, g: 219, b: 67, hex: '#CEDB43' },
-  { name: 'PANTONE 585 C', c: 10, m: 0, y: 65, k: 0, r: 219, g: 226, b: 87, hex: '#DBE257' },
-  { name: 'PANTONE 600 C', c: 0, m: 0, y: 30, k: 0, r: 244, g: 237, b: 175, hex: '#F4EDAF' },
-  { name: 'PANTONE 7401 C', c: 0, m: 5, y: 35, k: 0, r: 247, g: 227, b: 150, hex: '#F7E396' },
-  { name: 'PANTONE 7402 C', c: 0, m: 5, y: 50, k: 0, r: 245, g: 223, b: 109, hex: '#F5DF6D' },
-  { name: 'PANTONE 7403 C', c: 0, m: 11, y: 68, k: 0, r: 243, g: 210, b: 73, hex: '#F3D249' },
-  { name: 'PANTONE 7404 C', c: 0, m: 8, y: 95, k: 0, r: 245, g: 210, b: 0, hex: '#F5D200' },
-  { name: 'PANTONE 7405 C', c: 0, m: 14, y: 100, k: 0, r: 242, g: 195, b: 0, hex: '#F2C300' },
-  { name: 'PANTONE 7406 C', c: 0, m: 18, y: 100, k: 0, r: 241, g: 179, b: 0, hex: '#F1B300' },
-  { name: 'PANTONE 7407 C', c: 0, m: 25, y: 65, k: 10, r: 209, g: 163, b: 77, hex: '#D1A34D' },
-  { name: 'PANTONE 7408 C', c: 0, m: 28, y: 100, k: 0, r: 244, g: 170, b: 0, hex: '#F4AA00' },
-  { name: 'PANTONE 7409 C', c: 0, m: 32, y: 100, k: 0, r: 241, g: 163, b: 0, hex: '#F1A300' },
-  { name: 'PANTONE 7410 C', c: 0, m: 30, y: 40, k: 0, r: 250, g: 184, b: 137, hex: '#FAB889' },
-  { name: 'PANTONE 7411 C', c: 0, m: 35, y: 66, k: 0, r: 234, g: 169, b: 81, hex: '#EAA951' },
-  { name: 'PANTONE 7412 C', c: 0, m: 45, y: 85, k: 0, r: 214, g: 139, b: 37, hex: '#D68B25' },
-  { name: 'PANTONE 7413 C', c: 0, m: 48, y: 95, k: 0, r: 226, g: 126, b: 0, hex: '#E27E00' },
-  { name: 'PANTONE 7414 C', c: 0, m: 48, y: 80, k: 7, r: 204, g: 120, b: 35, hex: '#CC7823' },
-  { name: 'PANTONE 7421 C', c: 11, m: 100, y: 43, k: 52, r: 96, g: 1, b: 50, hex: '#600132' },
-  { name: 'PANTONE 7427 C', c: 0, m: 90, y: 67, k: 12, r: 189, g: 32, b: 49, hex: '#BD2031' },
-  { name: 'PANTONE 7434 C', c: 0, m: 47, y: 7, k: 0, r: 240, g: 155, b: 176, hex: '#F09BB0' },
-  { name: 'PANTONE 7435 C', c: 0, m: 65, y: 10, k: 0, r: 226, g: 102, b: 134, hex: '#E26686' },
-  { name: 'PANTONE 7441 C', c: 32, m: 43, y: 0, k: 0, r: 173, g: 145, b: 216, hex: '#AD91D8' },
-  { name: 'PANTONE 7442 C', c: 56, m: 64, y: 0, k: 0, r: 110, g: 84, b: 176, hex: '#6E54B0' },
-  { name: 'PANTONE 7448 C', c: 20, m: 18, y: 55, k: 36, r: 129, g: 120, b: 76, hex: '#81784C' },
-  { name: 'PANTONE 7455 C', c: 68, m: 55, y: 0, k: 0, r: 92, g: 100, b: 184, hex: '#5C64B8' },
-  { name: 'PANTONE 7461 C', c: 82, m: 14, y: 0, k: 0, r: 0, g: 152, b: 219, hex: '#0098DB' },
-  { name: 'PANTONE 7462 C', c: 100, m: 42, y: 0, k: 17, r: 0, g: 78, b: 137, hex: '#004E89' },
-  { name: 'PANTONE 7468 C', c: 100, m: 20, y: 0, k: 17, r: 0, g: 114, b: 160, hex: '#0072A0' },
-  { name: 'PANTONE 7469 C', c: 100, m: 17, y: 0, k: 33, r: 0, g: 96, b: 134, hex: '#006086' },
-  { name: 'PANTONE 7473 C', c: 68, m: 0, y: 32, k: 10, r: 39, g: 163, b: 148, hex: '#27A394' },
-  { name: 'PANTONE 7474 C', c: 89, m: 0, y: 25, k: 18, r: 0, g: 135, b: 128, hex: '#008780' },
-  { name: 'PANTONE 7475 C', c: 48, m: 5, y: 14, k: 14, r: 93, g: 161, b: 163, hex: '#5DA1A3' },
-  { name: 'PANTONE 7476 C', c: 100, m: 0, y: 33, k: 44, r: 0, g: 100, b: 82, hex: '#006452' },
-  { name: 'PANTONE 7480 C', c: 57, m: 0, y: 60, k: 0, r: 69, g: 187, b: 117, hex: '#45BB75' },
-  { name: 'PANTONE 7481 C', c: 60, m: 0, y: 76, k: 0, r: 66, g: 181, b: 73, hex: '#42B549' },
-  { name: 'PANTONE 7482 C', c: 83, m: 0, y: 83, k: 0, r: 0, g: 169, b: 79, hex: '#00A94F' },
-  { name: 'PANTONE 7483 C', c: 60, m: 0, y: 80, k: 56, r: 36, g: 78, b: 34, hex: '#244E22' },
-  { name: 'PANTONE 7484 C', c: 82, m: 0, y: 55, k: 25, r: 0, g: 130, b: 85, hex: '#008255' },
-  { name: 'PANTONE 7487 C', c: 30, m: 0, y: 60, k: 0, r: 163, g: 211, b: 111, hex: '#A3D36F' },
-  { name: 'PANTONE 7488 C', c: 42, m: 0, y: 76, k: 0, r: 121, g: 198, b: 73, hex: '#79C649' },
-  { name: 'PANTONE 7489 C', c: 50, m: 0, y: 75, k: 8, r: 93, g: 173, b: 64, hex: '#5DAD40' },
-  { name: 'PANTONE 7490 C', c: 33, m: 0, y: 70, k: 21, r: 118, g: 164, b: 69, hex: '#76A445' },
-  { name: 'PANTONE 7494 C', c: 25, m: 0, y: 26, k: 11, r: 155, g: 187, b: 161, hex: '#9BBBA1' },
-  { name: 'PANTONE 7495 C', c: 14, m: 0, y: 58, k: 22, r: 161, g: 167, b: 84, hex: '#A1A754' },
-  { name: 'PANTONE 7496 C', c: 36, m: 0, y: 92, k: 14, r: 115, g: 162, b: 26, hex: '#73A21A' },
-  { name: 'PANTONE 7499 C', c: 0, m: 2, y: 22, k: 3, r: 239, g: 229, b: 191, hex: '#EFE5BF' },
-  { name: 'PANTONE 7500 C', c: 0, m: 3, y: 15, k: 7, r: 221, g: 214, b: 196, hex: '#DDD6C4' },
-  { name: 'PANTONE 7501 C', c: 0, m: 4, y: 21, k: 6, r: 224, g: 212, b: 187, hex: '#E0D4BB' },
-  { name: 'PANTONE 7502 C', c: 0, m: 8, y: 33, k: 10, r: 210, g: 193, b: 155, hex: '#D2C19B' },
-  { name: 'PANTONE 7503 C', c: 0, m: 7, y: 35, k: 25, r: 175, g: 160, b: 118, hex: '#AFA076' },
-  { name: 'PANTONE 7504 C', c: 0, m: 20, y: 35, k: 25, r: 168, g: 142, b: 115, hex: '#A88E73' },
-  { name: 'PANTONE 7505 C', c: 0, m: 27, y: 50, k: 27, r: 164, g: 124, b: 82, hex: '#A47C52' },
-  { name: 'PANTONE 7506 C', c: 0, m: 6, y: 29, k: 3, r: 237, g: 221, b: 178, hex: '#EDDDB2' },
-  { name: 'PANTONE 7507 C', c: 0, m: 14, y: 45, k: 0, r: 248, g: 211, b: 142, hex: '#F8D38E' },
-  { name: 'PANTONE 7508 C', c: 0, m: 18, y: 45, k: 8, r: 216, g: 180, b: 120, hex: '#D8B478' },
-  { name: 'PANTONE 7509 C', c: 0, m: 24, y: 58, k: 8, r: 206, g: 164, b: 88, hex: '#CEA458' },
-  { name: 'PANTONE 7510 C', c: 0, m: 30, y: 65, k: 12, r: 195, g: 149, b: 65, hex: '#C39541' },
-  { name: 'PANTONE 7511 C', c: 0, m: 37, y: 82, k: 14, r: 190, g: 133, b: 34, hex: '#BE8522' },
-  { name: 'PANTONE 7512 C', c: 0, m: 43, y: 92, k: 20, r: 176, g: 112, b: 19, hex: '#B07013' },
-  { name: 'PANTONE 7527 C', c: 0, m: 1, y: 8, k: 9, r: 214, g: 210, b: 196, hex: '#D6D2C4' },
-  { name: 'PANTONE 7528 C', c: 0, m: 4, y: 12, k: 17, r: 196, g: 188, b: 174, hex: '#C4BCAE' },
-  { name: 'PANTONE 7529 C', c: 0, m: 6, y: 14, k: 26, r: 172, g: 163, b: 150, hex: '#ACA396' },
-  { name: 'PANTONE 7530 C', c: 0, m: 8, y: 16, k: 37, r: 147, g: 137, b: 123, hex: '#93897B' },
-  { name: 'PANTONE 7531 C', c: 0, m: 10, y: 18, k: 48, r: 118, g: 108, b: 94, hex: '#766C5E' },
-  { name: 'PANTONE 7532 C', c: 0, m: 11, y: 24, k: 58, r: 91, g: 81, b: 66, hex: '#5B5142' },
-  { name: 'PANTONE 7533 C', c: 0, m: 8, y: 18, k: 79, r: 59, g: 51, b: 42, hex: '#3B332A' },
-  { name: 'PANTONE 7534 C', c: 0, m: 2, y: 9, k: 14, r: 201, g: 196, b: 184, hex: '#C9C4B8' },
-  { name: 'PANTONE 7535 C', c: 0, m: 3, y: 14, k: 24, r: 175, g: 170, b: 154, hex: '#AFAA9A' },
-  { name: 'PANTONE 7536 C', c: 0, m: 3, y: 18, k: 30, r: 157, g: 153, b: 131, hex: '#9D9983' },
-  { name: 'PANTONE 7537 C', c: 12, m: 0, y: 9, k: 18, r: 171, g: 186, b: 175, hex: '#ABBAAF' },
-  { name: 'PANTONE 7538 C', c: 14, m: 0, y: 11, k: 25, r: 149, g: 168, b: 156, hex: '#95A89C' },
-  { name: 'PANTONE 7539 C', c: 10, m: 4, y: 6, k: 22, r: 163, g: 168, b: 167, hex: '#A3A8A7' },
-  { name: 'PANTONE 7540 C', c: 18, m: 0, y: 0, k: 68, r: 72, g: 79, b: 81, hex: '#484F51' },
-  { name: 'PANTONE 7541 C', c: 8, m: 0, y: 2, k: 6, r: 210, g: 223, b: 225, hex: '#D2DFE1' },
-  { name: 'PANTONE 7542 C', c: 25, m: 3, y: 5, k: 12, r: 155, g: 188, b: 198, hex: '#9BBCC6' },
-  { name: 'PANTONE 7543 C', c: 20, m: 5, y: 3, k: 26, r: 144, g: 161, b: 170, hex: '#90A1AA' },
-  { name: 'PANTONE 7544 C', c: 25, m: 8, y: 0, k: 40, r: 112, g: 130, b: 147, hex: '#708293' },
-  { name: 'PANTONE 7545 C', c: 35, m: 10, y: 0, k: 52, r: 75, g: 100, b: 113, hex: '#4B6471' },
-  { name: 'PANTONE 7546 C', c: 42, m: 12, y: 0, k: 60, r: 56, g: 78, b: 96, hex: '#384E60' },
-  { name: 'PANTONE 7547 C', c: 40, m: 12, y: 0, k: 78, r: 36, g: 48, b: 57, hex: '#243039' },
-]
-
-// ─── Pantone search ─────────────────────────────────────────────────────────
-
-function searchPantone(query: string): PantoneColor[] {
-  const q = query.toLowerCase().trim()
-  if (!q) return PANTONE_COLORS.slice(0, 20)
-
-  return PANTONE_COLORS.filter(c =>
-    c.name.toLowerCase().includes(q) || c.hex.toLowerCase() === q
-  ).slice(0, 30)
-}
-
-function findClosestPantone(r: number, g: number, b: number, count: number = 5): PantoneColor[] {
-  const scored = PANTONE_COLORS.map(c => ({
-    ...c,
-    distance: Math.sqrt((c.r - r) ** 2 + (c.g - g) ** 2 + (c.b - b) ** 2)
-  }))
-  scored.sort((a, b) => a.distance - b.distance)
-  return scored.slice(0, count)
-}
 
 function rgbToCmyk(r: number, g: number, b: number): { c: number; m: number; y: number; k: number } {
   const rr = r / 255, gg = g / 255, bb = b / 255
@@ -1044,7 +779,6 @@ interface SpotColorInfo {
   name: string
   alternateSpace: string
   tintTransform?: string
-  pantoneMatch?: PantoneColor | null
 }
 
 function extractSpotColors(filePath: string, pdfContent: string): SpotColorInfo[] {
@@ -1065,14 +799,7 @@ function extractSpotColors(filePath: string, pdfContent: string): SpotColorInfo[
 
     const alternateSpace = match[2] || 'DeviceCMYK'
 
-    // Try to match against Pantone database
-    let pantoneMatch: PantoneColor | null = null
-    if (name.toLowerCase().includes('pantone') || name.match(/^\d{3,4}\s*[CU]?$/i)) {
-      const results = searchPantone(name)
-      if (results.length > 0) pantoneMatch = results[0]
-    }
-
-    spots.push({ name, alternateSpace, pantoneMatch })
+    spots.push({ name, alternateSpace })
   }
 
   return spots
@@ -1110,9 +837,7 @@ async function savePicks(dirPath: string, picked: string[]): Promise<void> {
 
 export function registerToolHandlers(ipcMain: IpcMain): void {
 
-  // ─ Pantone ─
-  ipcMain.handle('tools:pantoneSearch', async (_e, query: string) => searchPantone(query))
-  ipcMain.handle('tools:pantoneFromRgb', async (_e, r: number, g: number, b: number, count?: number) => findClosestPantone(r, g, b, count))
+  // ─ Color conversion ─
   ipcMain.handle('tools:rgbToCmyk', async (_e, r: number, g: number, b: number) => rgbToCmyk(r, g, b))
   ipcMain.handle('tools:cmykToRgb', async (_e, c: number, m: number, y: number, k: number) => cmykToRgb(c, m, y, k))
 

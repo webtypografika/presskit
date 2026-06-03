@@ -6,12 +6,6 @@ interface SpotColorInfo {
   name: string
   alternateSpace: string
   tintTransform?: string
-  pantoneMatch?: {
-    name: string
-    c: number; m: number; y: number; k: number
-    r: number; g: number; b: number
-    hex: string
-  } | null
 }
 
 export function SpotColorPanel() {
@@ -85,22 +79,13 @@ export function SpotColorPanel() {
           background: 'var(--th-bg-primary)', border: '1px solid var(--th-border)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {/* Color swatch if we have Pantone match */}
-            {spot.pantoneMatch ? (
-              <div style={{
-                width: 32, height: 32, borderRadius: 6, flexShrink: 0,
-                background: spot.pantoneMatch.hex,
-                border: '1px solid rgba(255,255,255,0.1)',
-              }} />
-            ) : (
-              <div style={{
-                width: 32, height: 32, borderRadius: 6, flexShrink: 0,
-                background: 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Droplet size={14} style={{ color: '#fff' }} />
-              </div>
-            )}
+            <div style={{
+              width: 32, height: 32, borderRadius: 6, flexShrink: 0,
+              background: 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Droplet size={14} style={{ color: '#fff' }} />
+            </div>
 
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
@@ -120,16 +105,6 @@ export function SpotColorPanel() {
             </button>
           </div>
 
-          {/* Pantone match details */}
-          {spot.pantoneMatch && (
-            <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--th-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 600 }}>Pantone Match:</span>
-              <span style={{ fontSize: 11, color: '#cbd5e1' }}>{spot.pantoneMatch.name}</span>
-              <span style={{ fontSize: 10, color: '#64748b', fontFamily: 'monospace' }}>
-                C{spot.pantoneMatch.c} M{spot.pantoneMatch.m} Y{spot.pantoneMatch.y} K{spot.pantoneMatch.k}
-              </span>
-            </div>
-          )}
         </div>
       ))}
 
