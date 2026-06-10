@@ -40,6 +40,20 @@ export function registerSettingsHandlers(ipcMain: IpcMain): void {
     return filtered.slice(0, 20)
   })
 
+  ipcMain.handle('settings:addSearchHistory', async (_e, query: string) => {
+    const history = (store.get('search.history') as { query: string; time: string }[]) || []
+    const filtered = history.filter(h => h.query !== query)
+    filtered.unshift({ query, time: new Date().toISOString() })
+    const capped = filtered.slice(0, 30)
+    store.set('search.history', capped)
+    return capped
+  })
+
+  ipcMain.handle('settings:clearSearchHistory', async () => {
+    store.set('search.history', [])
+    return []
+  })
+
   ipcMain.handle('settings:addBookmark', async (_e, path: string) => {
     const bookmarks = (store.get('paths.bookmarks') as string[]) || []
     if (!bookmarks.includes(path)) {

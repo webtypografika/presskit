@@ -94,6 +94,8 @@ interface AppState {
   pickFileMode: { quoteId: string; itemId: string } | null
   attachmentQuoteId: string
   emailDetectSeq: number  // bump to force email-autofill re-run
+  detectedCustomer: { id: string; name: string; company: string | null; email: string | null } | null
+  detectedQuote: { id: string; number: string; status: string; title: string | null; customerName: string | null } | null
 
   // Dropbox connection
   dropboxConnected: boolean
@@ -257,6 +259,8 @@ export const useAppStore = create<AppState>((set, get) => {
     pickFileMode: null,
     attachmentQuoteId: '',
     emailDetectSeq: 0,
+    detectedCustomer: null,
+    detectedQuote: null,
     dropboxConnected: false,
     dropboxName: '',
 

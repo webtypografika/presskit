@@ -273,10 +273,17 @@ export default function App() {
     return cleanup
   }, [selectFile])
 
-  // Listen for folder navigation from PressCal — always open in a new tab
+  // Listen for folder navigation from PressCal — reuse existing tab if same path
   useEffect(() => {
     const cleanup = window.api.deepLink.onNavigateToFolder(({ path, email, quoteId }: any) => {
-      useAppStore.getState().addTab(path)
+      const normalized = path.replace(/[\\/]+$/, '').toLowerCase()
+      const { tabs } = useAppStore.getState()
+      const existing = tabs.find(t => t.currentPath.replace(/[\\/]+$/, '').toLowerCase() === normalized)
+      if (existing) {
+        useAppStore.getState().setActiveTab(existing.id)
+      } else {
+        useAppStore.getState().addTab(path)
+      }
       // Always reset email state on new navigation — stale data from
       // a previous customer/quote must not carry over.
       // Bump emailDetectSeq to force the auto-detect effect to re-run
@@ -322,6 +329,9 @@ export default function App() {
   const emailDetectSeq = useAppStore(s => s.emailDetectSeq)
 
   useEffect(() => {
+    // Clear immediately on path/tab change — before any async work
+    useAppStore.setState({ detectedCustomer: null, detectedQuote: null })
+
     if (!presscalConnected) return
     if (!currentPath && !knownQuoteId) return
     let cancelled = false
@@ -424,6 +434,12 @@ export default function App() {
               options.push({ label: 'Email Προσφοράς', email: directEmail, kind: 'contact' as const })
             }
           }
+          // Store detected customer for contextual panel
+          if (customer) {
+            useAppStore.setState({
+              detectedCustomer: { id: customer.id, name: customer.name, company: customer.company, email: customer.email }
+            })
+          }
           if (options.length > 0) {
             useAppStore.setState({
               lastCustomerEmail: options[0].email,
@@ -458,6 +474,10 @@ export default function App() {
             return num === quoteNumber.toUpperCase()
           })
           if (q) {
+            // Store detected quote
+            useAppStore.setState({
+              detectedQuote: { id: q.id, number: q.number, status: q.status, title: q.title, customerName: q.customerName }
+            })
             const customers = await getCachedCustomers()
             if (cancelled) return
             let customer: PresscalCustomer | undefined
@@ -468,6 +488,11 @@ export default function App() {
                 c.name?.toLowerCase().trim() === needle ||
                 c.company?.toLowerCase().trim() === needle
               )
+            }
+            if (customer) {
+              useAppStore.setState({
+                detectedCustomer: { id: customer.id, name: customer.name, company: customer.company, email: customer.email }
+              })
             }
             const directEmail = q.contactEmail || q.senderEmail || null
             const options = extractEmailOptions(customer)
@@ -530,6 +555,9 @@ export default function App() {
       }
 
       if (match) {
+        useAppStore.setState({
+          detectedCustomer: { id: match.id, name: match.name, company: match.company, email: match.email }
+        })
         const options = extractEmailOptions(match)
         if (options.length > 0) {
           useAppStore.setState({

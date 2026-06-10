@@ -4,7 +4,7 @@ import {
   HardDrive, Cloud, Layers, RefreshCcw, Search, Send,
   PanelLeft, PanelRight, Eye, EyeOff,
   Pencil, Package, RectangleHorizontal,
-  FolderPlus, Archive
+  FolderPlus, Archive, Clock, X
 } from 'lucide-react'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
@@ -702,8 +702,15 @@ function SearchBox() {
   const [results, setResults] = useState<any[]>([])
   const [open, setOpen] = useState(false)
   const [searching, setSearching] = useState(false)
+  const [searchHistory, setSearchHistory] = useState<{ query: string; time: string }[]>([])
+  const [showHistory, setShowHistory] = useState(false)
   const inputRef = useRef<HTMLDivElement>(null)
   const timerRef = useRef<any>(null)
+
+  // Load search history on mount
+  useEffect(() => {
+    window.api.settings.get('search.history').then((h: any) => setSearchHistory(h || [])).catch(() => {})
+  }, [])
 
   const doSearch = useCallback(async (q: string) => {
     if (!q.trim()) {
@@ -744,6 +751,9 @@ function SearchBox() {
 
       setResults(mapped)
       setOpen(true)
+      setShowHistory(false)
+      // Save to search history
+      window.api.settings.addSearchHistory(trimmed).then((h: any) => setSearchHistory(h || [])).catch(() => {})
     } catch (e) {
       console.error('[SEARCH] error:', e)
       setResults([])
@@ -755,9 +765,17 @@ function SearchBox() {
   const handleChange = useCallback((val: string) => {
     setQuery(val)
     queryRef.current = val
+    if (!val.trim()) {
+      setShowHistory(searchHistory.length > 0)
+      setOpen(false)
+      setResults([])
+      if (timerRef.current) clearTimeout(timerRef.current)
+      return
+    }
+    setShowHistory(false)
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => doSearch(val), 150)
-  }, [doSearch])
+  }, [doSearch, searchHistory.length])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -767,6 +785,7 @@ function SearchBox() {
     } else if (e.key === 'Escape') {
       e.preventDefault()
       setOpen(false)
+      setShowHistory(false)
       setResults([])
       ;(e.target as HTMLElement).blur()
     }
@@ -792,15 +811,16 @@ function SearchBox() {
   // Close on click outside
   const dropdownRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!open) return
+    if (!open && !showHistory) return
     const handler = (e: MouseEvent) => {
       if (inputRef.current?.contains(e.target as Node)) return
       if (dropdownRef.current?.contains(e.target as Node)) return
       setOpen(false)
+      setShowHistory(false)
     }
     document.addEventListener('mousedown', handler, true)
     return () => document.removeEventListener('mousedown', handler, true)
-  }, [open])
+  }, [open, showHistory])
 
   // Get position for portal dropdown
   const rect = inputRef.current?.getBoundingClientRect()
@@ -818,7 +838,10 @@ function SearchBox() {
           <input
             value={query}
             onChange={e => handleChange(e.target.value)}
-            onFocus={() => { if (results.length > 0) setOpen(true) }}
+            onFocus={() => {
+              if (results.length > 0) setOpen(true)
+              else if (!query.trim() && searchHistory.length > 0) setShowHistory(true)
+            }}
             onKeyDown={handleKeyDown}
             placeholder="Αναζήτηση..."
             style={{
@@ -880,6 +903,64 @@ function SearchBox() {
           <div style={{ padding: '6px 14px', fontSize: 11, color: 'var(--th-text-muted)', borderTop: '1px solid var(--th-border)', textAlign: 'right' }}>
             {results.length} αποτελέσματα
           </div>
+        </div>,
+        document.body
+      )}
+      {showHistory && !open && searchHistory.length > 0 && rect && createPortal(
+        <div ref={dropdownRef} style={{
+          position: 'fixed',
+          top: rect.bottom + 4,
+          right: Math.max(window.innerWidth - rect.right, 10),
+          width: Math.min(Math.max(rect.width + 100, 320), window.innerWidth - 20),
+          background: 'var(--th-bg-secondary)', border: '1px solid var(--th-border)', borderRadius: 10,
+          boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+          maxHeight: 400, overflowY: 'auto', zIndex: 9999,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderBottom: '1px solid var(--th-border)' }}>
+            <span style={{ fontSize: 12, color: 'var(--th-text-muted)', fontWeight: 500 }}>Πρόσφατες αναζητήσεις</span>
+            <button
+              onMouseDown={(e) => {
+                e.preventDefault()
+                window.api.settings.clearSearchHistory().then(() => {
+                  setSearchHistory([])
+                  setShowHistory(false)
+                }).catch(() => {})
+              }}
+              style={{ background: 'none', border: 'none', color: 'var(--th-text-muted)', cursor: 'pointer', fontSize: 11, padding: '2px 6px', borderRadius: 4 }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--th-text-primary)')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'var(--th-text-muted)')}
+            >Εκκαθάριση</button>
+          </div>
+          {searchHistory.slice(0, 15).map(h => {
+            const d = new Date(h.time)
+            const dateStr = d.toLocaleDateString('el-GR', { day: '2-digit', month: '2-digit' })
+            const timeStr = d.toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' })
+            return (
+              <div
+                key={h.query + h.time}
+                onMouseDown={() => {
+                  setQuery(h.query)
+                  queryRef.current = h.query
+                  setShowHistory(false)
+                  doSearch(h.query)
+                }}
+                style={{
+                  padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10,
+                  borderBottom: '1px solid rgba(255,255,255,0.03)',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <Clock size={13} style={{ color: 'var(--th-text-muted)', flexShrink: 0 }} />
+                <span style={{ fontSize: 13, color: 'var(--th-text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {h.query}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--th-text-muted)', flexShrink: 0 }}>
+                  {dateStr} {timeStr}
+                </span>
+              </div>
+            )
+          })}
         </div>,
         document.body
       )}
