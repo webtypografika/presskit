@@ -631,10 +631,7 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
     try {
       const { execFile } = await import('child_process')
       const { promisify } = await import('util')
-      await promisify(execFile)('powershell', [
-        '-NoProfile', '-Command',
-        `Expand-Archive -Path '${zipPath.replace(/'/g, "''")}' -DestinationPath '${targetDir.replace(/'/g, "''")}' -Force`
-      ], { timeout: 120000 })
+      await promisify(execFile)('tar', ['-xf', zipPath, '-C', targetDir], { timeout: 120000 })
       return { ok: true }
     } catch (err: any) {
       return { ok: false, error: err.message || String(err) }

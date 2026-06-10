@@ -418,12 +418,17 @@ async function handleProtocolUrl(url: string): Promise<void> {
         return
       }
 
-      // Auto-detect quoteId from .presskit file if not provided in deep link
+      // Auto-detect quoteId from .presskit file or folder name if not in deep link
       if (!quoteId) {
         try {
           const meta = JSON.parse(readFileSync(pathJoin(folderPath, '.presskit'), 'utf-8'))
           quoteId = meta.quoteId || ''
         } catch {}
+      }
+      if (!quoteId) {
+        const folderName = folderPath.split(/[\\/]/).filter(Boolean).pop() || ''
+        const m = folderName.match(/^\[(QT-\d+)\]/)
+        if (m) quoteId = m[1]
       }
 
       // If we have a quoteId, check for new files and download them automatically
@@ -682,10 +687,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
             try {
               const { execFile: ef } = await import('child_process')
               const { promisify: prom } = await import('util')
-              await prom(ef)('powershell', [
-                '-NoProfile', '-Command',
-                `Expand-Archive -Path '${savePath}' -DestinationPath '${targetDir}' -Force`
-              ], { timeout: 60000 })
+              await prom(ef)('tar', ['-xf', savePath, '-C', targetDir], { timeout: 60000 })
               const { unlink } = await import('fs/promises')
               await unlink(savePath)
             } catch (zipErr) {
