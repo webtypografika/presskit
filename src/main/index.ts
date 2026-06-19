@@ -469,6 +469,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
       const quoteId = parsed.searchParams.get('quoteId')
       const target = parsed.searchParams.get('target') || 'global'
       const onlyNew = parsed.searchParams.get('onlyNew') === '1'
+      const customPath = parsed.searchParams.get('customPath')
       if (!quoteId) return
 
       const { writeFile, mkdir, access: fsAccess, readdir: rdDir } = await import('fs/promises')
@@ -555,8 +556,12 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       let targetDir = quoteFolderPath
 
+      // customPath overrides all folder resolution
+      if (customPath) {
+        targetDir = resolveDL(customPath)
+      }
       // Ask user to choose between quote folder and customer folder
-      if (customerFolderPath && mainWindow) {
+      else if (customerFolderPath && mainWindow) {
         const quoteLabel = `Φάκελος Προσφοράς`
         const customerLabel = `Φάκελος Πελάτη`
         const choice = await new Promise<string>((resolve) => {
@@ -1067,7 +1072,9 @@ async function handleProtocolUrl(url: string): Promise<void> {
         // pushes the new state to the renderer.
         const status = await checkLicense()
         for (const win of BrowserWindow.getAllWindows()) {
-          win.webContents.send('license:changed', status)
+          if (!win.isDestroyed()) {
+            win.webContents.send('license:changed', status)
+          }
         }
 
         const successMsg = status.active
@@ -1379,7 +1386,7 @@ async function handleExportImposition(body: any): Promise<{
   error?: string
 }> {
   try {
-    const { PDFDocument } = await import('pdf-lib')
+    const { PDFDocument, rgb } = await import('pdf-lib')
     const fs = await import('fs')
     const fsp = await import('fs/promises')
     const path = await import('path')
@@ -1399,6 +1406,7 @@ async function handleExportImposition(body: any): Promise<{
       isDuplex,
       duplexOrient,
       contentScale,
+      showCropMarks,
       outputPath,
     } = body
 
@@ -1424,17 +1432,24 @@ async function handleExportImposition(body: any): Promise<{
     const cScale = (contentScale || 100) / 100
     const isH2F = duplexOrient === 'h2f'
 
+    // Debug log to file
+    const _logLines: string[] = []
+    const _dlog = (msg: string) => { _logLines.push(msg); try { console.log(msg) } catch {} }
+    _dlog(`[IMPO] bleed=${bleed}mm (${bleedPt.toFixed(1)}pt), showCropMarks=${showCropMarks}, cScale=${cScale}, trim=${impo.trimW}x${impo.trimH}mm, paper=${impo.paperW}x${impo.paperH}mm`)
+
     // Load source PDFs ONCE — keep parsed docs in memory for reuse across sheets
     interface TrimRect { x: number; y: number; width: number; height: number }
     interface GangSource {
       srcDoc: any          // PDFDocument — kept alive for embedding
       pageCount: number
       trims: TrimRect[]
+      mediaBoxes: TrimRect[]
     }
+    interface EmbedInfo { ep: any; bleedL: number; bleedB: number }
     const gangSources: GangSource[] = []
     for (const filePath of gangJobFilePaths || []) {
       if (!filePath) {
-        gangSources.push({ srcDoc: null, pageCount: 0, trims: [] })
+        gangSources.push({ srcDoc: null, pageCount: 0, trims: [], mediaBoxes: [] })
         continue
       }
       const resolved = resolvePortablePath(filePath)
@@ -1445,15 +1460,17 @@ async function handleExportImposition(body: any): Promise<{
       bytes = null
       await yieldEL()
       const pages = srcDoc.getPages()
+      const mediaBoxes: TrimRect[] = []
       const trims: TrimRect[] = pages.map((p: any) => {
         const tb = p.getTrimBox()
         const mb = p.getMediaBox()
+        mediaBoxes.push({ x: mb.x, y: mb.y, width: mb.width, height: mb.height })
         if (tb && (tb.x !== mb.x || tb.y !== mb.y || tb.width !== mb.width || tb.height !== mb.height)) {
           return { x: tb.x, y: tb.y, width: tb.width, height: tb.height }
         }
         return { x: mb.x, y: mb.y, width: mb.width, height: mb.height }
       })
-      gangSources.push({ srcDoc, pageCount: pages.length, trims })
+      gangSources.push({ srcDoc, pageCount: pages.length, trims, mediaBoxes })
     }
 
     // Calculate sheets — in gang mode each sheet side shows 1 source page per title
@@ -1487,62 +1504,93 @@ async function handleExportImposition(body: any): Promise<{
       }
 
       // Embed needed pages from cached source docs (no file re-reads!)
-      const embeddedMap: Map<string, any> = new Map()
+      const embeddedMap: Map<string, EmbedInfo> = new Map()
       for (const [jobIdx, pageIndices] of neededPages) {
         const src = gangSources[jobIdx]
         if (!src.srcDoc) continue
         const srcPages = src.srcDoc.getPages()
         for (const pi of pageIndices) {
           const trim = src.trims[pi]
+          const mb = src.mediaBoxes[pi]
+          // Clip to trim + bleed, clamped to media box
+          const clipL = Math.max(trim.x - bleedPt, mb.x)
+          const clipB = Math.max(trim.y - bleedPt, mb.y)
+          const clipR = Math.min(trim.x + trim.width + bleedPt, mb.x + mb.width)
+          const clipT = Math.min(trim.y + trim.height + bleedPt, mb.y + mb.height)
+          if (pi === 0) _dlog(`[IMPO] job${jobIdx} p${pi}: trim=(${trim.x.toFixed(1)},${trim.y.toFixed(1)},${trim.width.toFixed(1)},${trim.height.toFixed(1)}) mb=(${mb.x.toFixed(1)},${mb.y.toFixed(1)},${mb.width.toFixed(1)},${mb.height.toFixed(1)}) clip=(${clipL.toFixed(1)},${clipB.toFixed(1)},${clipR.toFixed(1)},${clipT.toFixed(1)}) bleedL=${(trim.x-clipL).toFixed(1)} bleedB=${(trim.y-clipB).toFixed(1)}`)
           const [ep] = await sheetDoc.embedPages([srcPages[pi]], [{
-            left: trim.x,
-            bottom: trim.y,
-            right: trim.x + trim.width,
-            top: trim.y + trim.height,
+            left: clipL,
+            bottom: clipB,
+            right: clipR,
+            top: clipT,
           }])
-          embeddedMap.set(`${jobIdx}:${pi}`, ep)
+          embeddedMap.set(`${jobIdx}:${pi}`, {
+            ep,
+            bleedL: trim.x - clipL,
+            bleedB: trim.y - clipB,
+          })
         }
         await yieldEL()
       }
 
+      // Compute trim position for a cell (shared by content placement + crop marks)
+      const cellTrimPos = (row: number, col: number, isBack: boolean): { trimX: number; trimY: number } => {
+        const frontTrimX = cenX + col * trimStepW
+        const trimYpos = cenY + (rows - 1 - row) * trimStepH
+        if (isBack && isH2F) return { trimX: frontTrimX, trimY: paperHpt - trimYpos - trimHpt }
+        if (isBack) return { trimX: paperWpt - frontTrimX - trimWpt, trimY: trimYpos }
+        return { trimX: frontTrimX, trimY: trimYpos }
+      }
+
       // Draw sides
       const drawSide = (page: any, isBack: boolean): void => {
+        // Place content — trim-box aligned, natural scale
         for (let row = 0; row < rows; row++) {
           for (let col = 0; col < cols; col++) {
             const posIdx = row * cols + col
             const jobIdx = gangCellAssign?.[posIdx] ?? 0
             const pageInBook = sheetIdx * pagesPerSheet + (isBack ? 1 : 0)
-            const ep = embeddedMap.get(`${jobIdx}:${pageInBook}`)
-            if (!ep) continue
+            const info = embeddedMap.get(`${jobIdx}:${pageInBook}`)
+            if (!info) continue
 
-            const trim = gangSources[jobIdx].trims[pageInBook]
-            const frontTrimX = cenX + col * trimStepW
-            const trimYpos = cenY + (rows - 1 - row) * trimStepH
+            const { trimX, trimY } = cellTrimPos(row, col, isBack)
 
-            let trimX: number, trimY: number
-            if (isBack && isH2F) {
-              trimX = frontTrimX
-              trimY = paperHpt - trimYpos - trimHpt
-            } else if (isBack) {
-              trimX = paperWpt - frontTrimX - trimWpt
-              trimY = trimYpos
-            } else {
-              trimX = frontTrimX
-              trimY = trimYpos
-            }
-
-            const cellW = trimWpt + 2 * bleedPt
-            const cellH = trimHpt + 2 * bleedPt
-            const scaleX = (cellW / trim.width) * cScale
-            const scaleY = (cellH / trim.height) * cScale
-            const scale = Math.min(scaleX, scaleY)
-
-            page.drawPage(ep, {
-              x: trimX - bleedPt,
-              y: trimY - bleedPt,
-              xScale: scale,
-              yScale: scale,
+            // Place at natural size (cScale), aligning source trim to cell trim
+            page.drawPage(info.ep, {
+              x: trimX - info.bleedL * cScale,
+              y: trimY - info.bleedB * cScale,
+              xScale: cScale,
+              yScale: cScale,
             })
+          }
+        }
+
+        // Crop marks — drawn after content so they're always visible
+        if (showCropMarks) {
+          const markLen = 5 * MM_PT   // 5 mm line length
+          const markOff = bleedPt + 0.5 * MM_PT // start just outside bleed
+          const markColor = rgb(0, 0, 0)
+          const markThk = 0.5
+
+          for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < cols; col++) {
+              const { trimX, trimY } = cellTrimPos(row, col, isBack)
+              const x0 = trimX, x1 = trimX + trimWpt
+              const y0 = trimY, y1 = trimY + trimHpt
+
+              // Top-left corner
+              page.drawLine({ start: { x: x0 - markOff - markLen, y: y1 }, end: { x: x0 - markOff, y: y1 }, thickness: markThk, color: markColor })
+              page.drawLine({ start: { x: x0, y: y1 + markOff }, end: { x: x0, y: y1 + markOff + markLen }, thickness: markThk, color: markColor })
+              // Top-right corner
+              page.drawLine({ start: { x: x1 + markOff, y: y1 }, end: { x: x1 + markOff + markLen, y: y1 }, thickness: markThk, color: markColor })
+              page.drawLine({ start: { x: x1, y: y1 + markOff }, end: { x: x1, y: y1 + markOff + markLen }, thickness: markThk, color: markColor })
+              // Bottom-left corner
+              page.drawLine({ start: { x: x0 - markOff - markLen, y: y0 }, end: { x: x0 - markOff, y: y0 }, thickness: markThk, color: markColor })
+              page.drawLine({ start: { x: x0, y: y0 - markOff - markLen }, end: { x: x0, y: y0 - markOff }, thickness: markThk, color: markColor })
+              // Bottom-right corner
+              page.drawLine({ start: { x: x1 + markOff, y: y0 }, end: { x: x1 + markOff + markLen, y: y0 }, thickness: markThk, color: markColor })
+              page.drawLine({ start: { x: x1, y: y0 - markOff - markLen }, end: { x: x1, y: y0 - markOff }, thickness: markThk, color: markColor })
+            }
           }
         }
       }
@@ -1599,7 +1647,9 @@ async function handleExportImposition(body: any): Promise<{
     for (const sf of sheetFiles) { try { await fsp.unlink(sf) } catch {} }
     try { await fsp.rmdir(tmpDir) } catch {}
 
-    try { console.log(`[IMPOSITION] Done: ${resolvedOutput}`) } catch {}
+    _dlog(`[IMPO] Done: ${resolvedOutput}`)
+    // Write debug log to temp
+    try { await fsp.writeFile(path.join(os.tmpdir(), 'impo-debug.log'), _logLines.join('\n')) } catch {}
     return { success: true, outputPath: resolvedOutput }
   } catch (err) {
     try { console.error('[IMPOSITION] Error:', err) } catch {}
@@ -1635,6 +1685,9 @@ function startFileServer(): void {
     if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return }
 
     const parsed = urlMod.parse(req.url, true)
+
+    // Debug: log every request to temp file
+    try { fs.appendFileSync('C:\\Users\\info\\presskit-server.log', `${new Date().toISOString()} ${req.method} ${req.url}\n`) } catch (e: any) { try { fs.writeFileSync('C:\\Users\\info\\presskit-log-error.txt', String(e)) } catch {} }
 
     // Health check: GET /health → { ok: true }
     if (parsed.pathname === '/health') {
@@ -1721,7 +1774,18 @@ function startFileServer(): void {
           if (result.canceled || result.filePaths.length === 0) {
             res.end(JSON.stringify({ canceled: true }))
           } else {
-            res.end(JSON.stringify({ path: toPortablePath(result.filePaths[0]) }))
+            let chosen = result.filePaths[0]
+            const createSub = parsed.query.createSub as string | undefined
+            if (createSub) {
+              const safeName = createSub.replace(/[<>:"/\\|?*]/g, '_').trim()
+              if (safeName) {
+                const { join: pJoin } = await import('path')
+                const { mkdir: mkDir } = await import('fs/promises')
+                chosen = pJoin(chosen, safeName)
+                await mkDir(chosen, { recursive: true })
+              }
+            }
+            res.end(JSON.stringify({ path: toPortablePath(chosen) }))
           }
         } catch (e: any) {
           res.writeHead(500, { 'Content-Type': 'application/json' })
