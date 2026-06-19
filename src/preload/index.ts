@@ -148,7 +148,8 @@ const api = {
     clearSearchHistory: () => ipcRenderer.invoke('settings:clearSearchHistory'),
     addBookmark: (path: string) => ipcRenderer.invoke('settings:addBookmark', path),
     removeBookmark: (path: string) => ipcRenderer.invoke('settings:removeBookmark', path),
-    reorderBookmarks: (fromIndex: number, toIndex: number) => ipcRenderer.invoke('settings:reorderBookmarks', fromIndex, toIndex)
+    reorderBookmarks: (fromIndex: number, toIndex: number) => ipcRenderer.invoke('settings:reorderBookmarks', fromIndex, toIndex),
+    setBookmarkColor: (path: string, color: string | null) => ipcRenderer.invoke('settings:setBookmarkColor', path, color),
   },
 
   // System

@@ -73,7 +73,9 @@ function emptyStatus(state: LicenseState, error?: string): LicenseStatus {
 
 function broadcastStatus(status: LicenseStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send('license:changed', status)
+    if (!win.isDestroyed()) {
+      win.webContents.send('license:changed', status)
+    }
   }
 }
 

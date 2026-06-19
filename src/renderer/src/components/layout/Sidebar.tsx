@@ -30,6 +30,8 @@ export function Sidebar() {
   const [bookmarks, setBookmarks] = useState<string[]>([])
   const [recentPaths, setRecentPaths] = useState<string[]>([])
   const [userPaths, setUserPaths] = useState<UserPaths | null>(null)
+  const [bookmarkColors, setBookmarkColors] = useState<Record<string, string>>({})
+  const [colorPickerPath, setColorPickerPath] = useState<string | null>(null)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     locations: true,
     bookmarks: true,
@@ -39,6 +41,7 @@ export function Sidebar() {
   useEffect(() => {
     window.api.fs.getDrives().then(setDrives).catch(() => {})
     window.api.settings.get('paths.bookmarks').then((b: any) => setBookmarks(b || [])).catch(() => {})
+    window.api.settings.get('paths.bookmarkColors').then((c: any) => setBookmarkColors(c || {})).catch(() => {})
     window.api.settings.get('paths.recent').then((r: any) => setRecentPaths(r || [])).catch(() => {})
     window.api.system.userPaths().then(setUserPaths).catch(() => {})
   }, [])
@@ -51,6 +54,17 @@ export function Sidebar() {
     const updated = await window.api.settings.removeBookmark(path)
     setBookmarks(updated)
   }
+
+  const setBookmarkColor = async (path: string, color: string | null) => {
+    const updated = await window.api.settings.setBookmarkColor(path, color)
+    setBookmarkColors(updated)
+    setColorPickerPath(null)
+  }
+
+  const BOOKMARK_COLORS = [
+    '#ef4444', '#f97316', '#eab308', '#22c55e',
+    '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280',
+  ]
 
   const dragBookmark = useRef<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
@@ -169,20 +183,70 @@ export function Sidebar() {
         {bookmarks.map((path, index) => (
           <SidebarItem
             key={path}
-            icon={<Star size={14} className="text-accent" />}
+            icon={
+              <span
+                style={{
+                  width: 14, height: 14, borderRadius: '50%', display: 'inline-flex',
+                  alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  background: bookmarkColors[path] || 'transparent',
+                  border: bookmarkColors[path] ? 'none' : '2px solid var(--th-accent)',
+                  cursor: 'pointer', position: 'relative',
+                }}
+                onClick={(e) => { e.stopPropagation(); setColorPickerPath(colorPickerPath === path ? null : path) }}
+                title="Set color"
+              >
+                {!bookmarkColors[path] && <Star size={8} style={{ color: 'var(--th-accent)' }} />}
+              </span>
+            }
             label={path.split(/[/\\]/).pop() || path}
             sublabel={path}
             onClick={() => { if (source !== 'local') setSource('local'); navigateTo(path) }}
             onRemove={() => removeBookmark(path)}
             dropPath={path}
             active={normPath(currentPath).startsWith(normPath(path))}
+            accentColor={bookmarkColors[path]}
             draggable
             onDragStart={(e) => handleBookmarkDragStart(e, index)}
             onDragOverBookmark={(e) => handleBookmarkDragOver(e, index)}
             onDropBookmark={(e) => handleBookmarkDrop(e, index)}
             onDragEnd={handleBookmarkDragEnd}
             isDropTarget={dragOverIndex === index}
-          />
+          >
+            {colorPickerPath === path && (
+              <div
+                style={{
+                  display: 'flex', gap: 4, padding: '4px 0 2px',
+                  flexWrap: 'wrap', alignItems: 'center',
+                }}
+                onClick={e => e.stopPropagation()}
+              >
+                {BOOKMARK_COLORS.map(c => (
+                  <span
+                    key={c}
+                    onClick={() => setBookmarkColor(path, c)}
+                    style={{
+                      width: 16, height: 16, borderRadius: '50%', background: c,
+                      cursor: 'pointer', border: bookmarkColors[path] === c ? '2px solid white' : '1px solid rgba(255,255,255,0.2)',
+                      boxShadow: bookmarkColors[path] === c ? '0 0 0 1px ' + c : undefined,
+                    }}
+                  />
+                ))}
+                {bookmarkColors[path] && (
+                  <span
+                    onClick={() => setBookmarkColor(path, null)}
+                    style={{
+                      width: 16, height: 16, borderRadius: '50%', cursor: 'pointer',
+                      border: '1px solid var(--th-text-muted)', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center',
+                      fontSize: 10, color: 'var(--th-text-muted)',
+                    }}
+                  >
+                    <X size={8} />
+                  </span>
+                )}
+              </div>
+            )}
+          </SidebarItem>
         ))}
         {bookmarks.length === 0 && (
           <div className="px-4 py-2 text-text-muted text-sm">No bookmarks</div>
@@ -240,6 +304,7 @@ function SidebarSection({ title, expanded, onToggle, action, children }: {
 }
 
 function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath, active,
+  accentColor, children,
   draggable: isDraggable, onDragStart, onDragOverBookmark, onDropBookmark, onDragEnd, isDropTarget
 }: {
   icon: React.ReactNode
@@ -250,6 +315,8 @@ function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath
   muted?: boolean
   dropPath?: string
   active?: boolean
+  accentColor?: string
+  children?: React.ReactNode
   draggable?: boolean
   onDragStart?: (e: React.DragEvent) => void
   onDragOverBookmark?: (e: React.DragEvent) => void
@@ -299,15 +366,17 @@ function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath
 
   const highlight = dragOver || isDropTarget
 
+  const borderColor = accentColor || (active ? 'var(--th-accent)' : 'transparent')
+
   return (
     <div
-      className={`group flex items-center gap-3 cursor-pointer hover:bg-bg-hover ${
+      className={`group cursor-pointer hover:bg-bg-hover ${
         muted ? 'text-text-muted' : active ? 'text-text-primary' : 'text-text-secondary'
       }`}
       style={{
         padding: '12px 32px',
         background: highlight ? 'var(--th-accent-subtle)' : active ? 'var(--th-bg-hover)' : undefined,
-        borderLeft: active ? '3px solid var(--th-accent)' : '3px solid transparent',
+        borderLeft: `3px solid ${borderColor}`,
         paddingLeft: 29,
         borderTop: isDropTarget ? '2px solid var(--th-accent)' : '2px solid transparent',
         outline: dragOver ? '2px dashed var(--th-accent)' : undefined,
@@ -323,16 +392,19 @@ function SidebarItem({ icon, label, sublabel, onClick, onRemove, muted, dropPath
       onDrop={handleDrop}
       onDragEnd={onDragEnd}
     >
-      <span className="flex-shrink-0">{icon}</span>
-      <span className="truncate flex-1">{label}</span>
-      {onRemove && (
-        <button
-          className="ml-auto opacity-0 group-hover:opacity-100 p-0.5 hover:text-error"
-          onClick={e => { e.stopPropagation(); onRemove() }}
-        >
-          <X size={12} />
-        </button>
-      )}
+      <div className="flex items-center gap-3">
+        <span className="flex-shrink-0">{icon}</span>
+        <span className="truncate flex-1">{label}</span>
+        {onRemove && (
+          <button
+            className="ml-auto opacity-0 group-hover:opacity-100 p-0.5 hover:text-error"
+            onClick={e => { e.stopPropagation(); onRemove() }}
+          >
+            <X size={12} />
+          </button>
+        )}
+      </div>
+      {children}
     </div>
   )
 }

@@ -78,4 +78,15 @@ export function registerSettingsHandlers(ipcMain: IpcMain): void {
     store.set('paths.bookmarks', bookmarks)
     return bookmarks
   })
+
+  ipcMain.handle('settings:setBookmarkColor', async (_e, path: string, color: string | null) => {
+    const colors = (store.get('paths.bookmarkColors') as Record<string, string>) || {}
+    if (color) {
+      colors[path] = color
+    } else {
+      delete colors[path]
+    }
+    store.set('paths.bookmarkColors', colors)
+    return colors
+  })
 }

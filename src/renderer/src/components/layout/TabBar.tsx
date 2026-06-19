@@ -1,5 +1,6 @@
 import { useAppStore, Tab } from '@/stores/app-store'
 import { Plus, X, FolderOpen } from 'lucide-react'
+import iconUrl from '../../../../../resources/icon.png'
 
 export function TabBar() {
   const tabs = useAppStore(s => s.tabs)
@@ -13,8 +14,13 @@ export function TabBar() {
   return (
     <div
       className="titlebar-drag tab-bar flex items-end flex-shrink-0"
-      style={{ height: 38, paddingLeft: 12, paddingRight: 140, gap: 2 }}
+      style={{ height: 38, paddingLeft: 4, paddingRight: 140, gap: 2 }}
     >
+      {/* Logo — always visible drag region */}
+      <div style={{ width: 32, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <img src={iconUrl} alt="" style={{ width: 22, height: 22, pointerEvents: 'none', opacity: 0.75 }} />
+      </div>
+
       {tabs.map(tab => (
         <TabItem
           key={tab.id}

@@ -676,7 +676,9 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
       debounceTimer = setTimeout(() => {
         const wins = BrowserWindow.getAllWindows()
         for (const win of wins) {
-          win.webContents.send('fs:changed', dirPath)
+          if (!win.isDestroyed()) {
+            win.webContents.send('fs:changed', dirPath)
+          }
         }
       }, 500)
     }

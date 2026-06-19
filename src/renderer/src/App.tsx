@@ -212,6 +212,12 @@ export default function App() {
         e.preventDefault()
         useAppStore.getState().togglePickSelected()
       }
+      // Backspace — navigate up to parent folder
+      if (e.key === 'Backspace') {
+        e.preventDefault()
+        useAppStore.getState().navigateUp()
+        return
+      }
       // Delete key — trash selected files
       if (e.key === 'Delete') {
         const { selectedFiles, selectedFile, clearSelection, refreshDirectory } = useAppStore.getState()
