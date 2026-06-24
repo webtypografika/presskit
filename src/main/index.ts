@@ -399,60 +399,12 @@ async function handleProtocolUrl(url: string): Promise<void> {
     }
 
     if (parsed.hostname === 'open-folder') {
-      const folderPath = parsed.searchParams.get('path')
+      const rawPath = parsed.searchParams.get('path')
+      if (!rawPath) return
+      const folderPath = resolveDL(rawPath)
       const email = parsed.searchParams.get('email') || ''
-      let quoteId = parsed.searchParams.get('quoteId') || ''
-      if (!folderPath) return
-
-      const { existsSync, readFileSync } = await import('fs')
-      const { join: pathJoin } = await import('path')
-      if (!existsSync(folderPath)) {
-        // Folder was deleted — recreate it via download-to-folder
-        if (quoteId) {
-          console.log('[DeepLink] Folder missing, falling back to download-to-folder:', folderPath)
-          const target = parsed.searchParams.get('target') || 'global'
-          await handleProtocolUrl(`presscal-fh://download-to-folder?quoteId=${encodeURIComponent(quoteId)}&target=${encodeURIComponent(target)}`)
-          return
-        }
-        showError('Φάκελος δεν βρέθηκε', `Ο φάκελος δεν υπάρχει:\n${folderPath}`)
-        return
-      }
-
-      // Auto-detect quoteId from .presskit file or folder name if not in deep link
-      if (!quoteId) {
-        try {
-          const meta = JSON.parse(readFileSync(pathJoin(folderPath, '.presskit'), 'utf-8'))
-          quoteId = meta.quoteId || ''
-        } catch {}
-      }
-      if (!quoteId) {
-        const folderName = folderPath.split(/[\\/]/).filter(Boolean).pop() || ''
-        const m = folderName.match(/^\[(QT-\d+)\]/)
-        if (m) quoteId = m[1]
-      }
-
-      // If we have a quoteId, check for new files and download them automatically
-      if (quoteId) {
-        const presscalUrl = (store.get('presscal.url') as string)?.replace(/\/$/, '')
-        const apiKey = store.get('presscal.apiKey') as string
-        if (presscalUrl && apiKey) {
-          try {
-            const checkUrl = `${presscalUrl}/api/filehelper/files?quoteId=${encodeURIComponent(quoteId)}&target=global&onlyNew=1`
-            const res = await fetch(checkUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } })
-            if (res.ok) {
-              const data = await res.json() as { newCount?: number }
-              if (data.newCount && data.newCount > 0) {
-                console.log(`[DeepLink] open-folder: ${data.newCount} new files, triggering download`)
-                await handleProtocolUrl(`presscal-fh://download-to-folder?quoteId=${encodeURIComponent(quoteId)}&target=global&onlyNew=1`)
-                return
-              }
-            }
-          } catch (err) {
-            console.warn('[DeepLink] open-folder: failed to check for new files:', err)
-          }
-        }
-      }
-
+      const quoteId = parsed.searchParams.get('quoteId') || ''
+      console.log('[DeepLink] open-folder: navigating in PressKit:', folderPath)
       if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore()
         mainWindow.showInactive()
@@ -463,6 +415,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
         setTimeout(() => mainWindow?.setAlwaysOnTop(false), 200)
         mainWindow.webContents.send('navigate-to-folder', { path: folderPath, email, quoteId })
       }
+      return
     }
 
     if (parsed.hostname === 'download-to-folder') {
@@ -525,13 +478,12 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       const files: Array<{ id?: string; filePath: string; fileName: string; source?: string; subfolder?: string }> = data.files || []
 
-      // 2. Resolve target directory — offer choice if customer folder exists
+      // 2. Resolve target directory
       let quoteFolderPath: string = data.folderPath || ''
-      let customerFolderPath = ''
       let quoteName = quoteId
       let quoteEmail = ''  // contactEmail or senderEmail from quote
 
-      // Fetch quote details (for folder name, customer folder, and email)
+      // Fetch quote details (for folder name and email)
       try {
         const qRes = await httpGet(`${presscalUrl}/api/filehelper/quotes/${encodeURIComponent(quoteId)}`)
         if (qRes.status === 200) {
@@ -540,14 +492,12 @@ async function handleProtocolUrl(url: string): Promise<void> {
           const customer = (quote.customerName && quote.customerName !== '–') ? quote.customerName : ''
           quoteName = customer ? `[${num}] ${customer}` : `[${num}]`
           quoteName = quoteName.replace(/[<>:"/\\|?*]/g, '_')
-          if (quote.customerFolderPath) customerFolderPath = quote.customerFolderPath
           quoteEmail = quote.contactEmail || quote.senderEmail || ''
         }
       } catch {}
 
       // Resolve portable paths from DB (e.g. <DROPBOX>\... → local absolute)
       if (quoteFolderPath) quoteFolderPath = resolveDL(quoteFolderPath)
-      if (customerFolderPath) customerFolderPath = resolveDL(customerFolderPath)
 
       // If no quote folder, create a default name
       if (!quoteFolderPath) {
@@ -559,31 +509,6 @@ async function handleProtocolUrl(url: string): Promise<void> {
       // customPath overrides all folder resolution
       if (customPath) {
         targetDir = resolveDL(customPath)
-      }
-      // Ask user to choose between quote folder and customer folder
-      else if (customerFolderPath && mainWindow) {
-        const quoteLabel = `Φάκελος Προσφοράς`
-        const customerLabel = `Φάκελος Πελάτη`
-        const choice = await new Promise<string>((resolve) => {
-          const id = `choice-${Date.now()}`
-          ipcMain.once(`dialog-result:${id}`, (_ev, result: string) => resolve(result))
-          mainWindow!.webContents.send('show-choice', {
-            id,
-            title: 'Αποθήκευση αρχείων',
-            message: `Πού θέλεις να αποθηκευτούν τα αρχεία;`,
-            choices: [quoteLabel, customerLabel],
-          })
-        })
-
-        if (!choice) {
-          // User cancelled
-          sendProgress('Ακυρώθηκε', 0, 0, true)
-          return
-        }
-
-        if (choice === customerLabel) {
-          targetDir = customerFolderPath
-        }
       }
 
       // Fix forward slashes on Windows, then normalize path segments (trim each)
@@ -646,8 +571,37 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       if (filesToDownload.length === 0) {
         sendProgress('Κανένα νέο αρχείο', 0, 0, true)
-        mainWindow?.webContents.send('navigate-to-folder', { path: targetDir, email: quoteEmail, quoteId })
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore()
+          mainWindow.setAlwaysOnTop(true)
+          mainWindow.focus()
+          setTimeout(() => mainWindow?.setAlwaysOnTop(false), 200)
+          mainWindow.webContents.send('navigate-to-folder', { path: targetDir, email: quoteEmail, quoteId })
+        }
         return
+      }
+
+      // Ask user whether to download new files or just open folder
+      if (mainWindow) {
+        const choice = await new Promise<string>((resolve) => {
+          const id = `dl-confirm-${Date.now()}`
+          ipcMain.once(`dialog-result:${id}`, (_ev, result: string) => resolve(result))
+          mainWindow!.webContents.send('show-choice', {
+            id,
+            title: 'Νέα αρχεία',
+            message: `Υπάρχουν ${filesToDownload.length} νέα αρχεία. Θέλεις να τα κατεβάσεις;`,
+            choices: ['Κατέβασε', 'Μόνο φάκελος'],
+          })
+        })
+        if (choice !== 'Κατέβασε') {
+          sendProgress('', 0, 0, true)
+          if (mainWindow.isMinimized()) mainWindow.restore()
+          mainWindow.setAlwaysOnTop(true)
+          mainWindow.focus()
+          setTimeout(() => mainWindow?.setAlwaysOnTop(false), 200)
+          mainWindow.webContents.send('navigate-to-folder', { path: targetDir, email: quoteEmail, quoteId })
+          return
+        }
       }
 
       sendProgress('Λήψη αρχείων...', 0, filesToDownload.length)
@@ -687,16 +641,42 @@ async function handleProtocolUrl(url: string): Promise<void> {
           if (file.id) downloadedFileIds.push(file.id)
           console.log(`[DeepLink] Saved: ${saveName} (${dlResult.body.length} bytes)`)
 
-          // Auto-extract ZIP
-          if (saveName.toLowerCase().endsWith('.zip')) {
+          // Auto-extract archives (.zip, .rar, .7z)
+          const ext = saveName.toLowerCase().split('.').pop() || ''
+          if (['zip', 'rar', '7z'].includes(ext)) {
             try {
               const { execFile: ef } = await import('child_process')
               const { promisify: prom } = await import('util')
-              await prom(ef)('tar', ['-xf', savePath, '-C', targetDir], { timeout: 60000 })
+              const { existsSync: exSync } = await import('fs')
               const { unlink } = await import('fs/promises')
-              await unlink(savePath)
-            } catch (zipErr) {
-              console.warn(`[DeepLink] Extract failed ${saveName}:`, zipErr)
+              const execP = prom(ef)
+
+              if (ext === 'zip') {
+                // Windows tar handles ZIP natively
+                await execP('tar', ['-xf', savePath, '-C', saveDir], { timeout: 60000 })
+                await unlink(savePath)
+              } else {
+                // Find 7-Zip or WinRAR
+                const candidates = [
+                  'C:\\Program Files\\7-Zip\\7z.exe',
+                  'C:\\Program Files (x86)\\7-Zip\\7z.exe',
+                  'C:\\Program Files\\WinRAR\\UnRAR.exe',
+                  'C:\\Program Files (x86)\\WinRAR\\UnRAR.exe',
+                ]
+                const tool = candidates.find(p => exSync(p))
+                if (tool) {
+                  const is7z = tool.toLowerCase().includes('7z')
+                  const args = is7z
+                    ? ['x', savePath, `-o${saveDir}`, '-y', '-bso0', '-bsp0']
+                    : ['x', savePath, saveDir, '-y', '-o+']
+                  await execP(tool, args, { timeout: 120000 })
+                  await unlink(savePath)
+                } else {
+                  console.warn(`[DeepLink] No extractor found for ${saveName} — keeping archive`)
+                }
+              }
+            } catch (extractErr) {
+              console.warn(`[DeepLink] Extract failed ${saveName}:`, extractErr)
             }
           }
         } catch (dlErr) {
@@ -736,9 +716,15 @@ async function handleProtocolUrl(url: string): Promise<void> {
         await writeFile(pathJoin(targetDir, '.presskit'), JSON.stringify({ quoteId }), 'utf-8')
       } catch {}
 
-      // 7. Navigate to folder
+      // 7. Navigate to folder in PressKit
       sendProgress('Ολοκληρώθηκε', downloaded, filesToDownload.length, true)
-      mainWindow?.webContents.send('navigate-to-folder', { path: targetDir, email: quoteEmail, quoteId })
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.setAlwaysOnTop(true)
+        mainWindow.focus()
+        setTimeout(() => mainWindow?.setAlwaysOnTop(false), 200)
+        mainWindow.webContents.send('navigate-to-folder', { path: targetDir, email: quoteEmail, quoteId })
+      }
     }
     // Archive a quote folder: presscal-fh://archive-quote?folderPath=C:\...
     // PressCal MUST use the exact folder name "_01 Archive" — it pre-writes
@@ -888,9 +874,9 @@ async function handleProtocolUrl(url: string): Promise<void> {
       const { rename: fsRename, mkdir: fsMkdir, readdir: rdDir2, copyFile: fsCopyFile, rm: fsRm, access: fsAccess2 } = await import('fs/promises')
       const { join: pathJoin, dirname: pathDirname, basename: pathBasename } = await import('path')
 
-      // Normalize paths
-      folderPath = folderPath.replace(/\//g, '\\').split('\\').map(s => s.trim()).join('\\')
-      restorePath = restorePath.replace(/\//g, '\\').split('\\').map(s => s.trim()).join('\\')
+      // Resolve portable path placeholders (<DROPBOX> etc.) and normalize
+      folderPath = resolveDL(folderPath).replace(/\//g, '\\').split('\\').map(s => s.trim()).join('\\')
+      restorePath = resolveDL(restorePath).replace(/\//g, '\\').split('\\').map(s => s.trim()).join('\\')
 
       // Segment-by-segment resolution (same as archive-quote)
       if (!fsExists(folderPath)) {
@@ -1752,6 +1738,32 @@ function startFileServer(): void {
       return
     }
 
+    // Create folder: GET /?createFolder=1&parentPath=<DROPBOX>/...&name=FolderName
+    if (parsed.query.createFolder) {
+      ;(async () => {
+        try {
+          const { join: pJoin } = await import('path')
+          const { mkdir } = await import('fs/promises')
+          const rawParent = (parsed.query.parentPath as string) || ''
+          const name = (parsed.query.name as string) || ''
+          if (!name) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Missing name parameter' }))
+            return
+          }
+          const parentPath = rawParent ? resolvePortablePath(rawParent) : (resolvePortablePath('<DROPBOX>'))
+          const fullPath = pJoin(parentPath, name.replace(/[<>:"/\\|?*]/g, '_').trim())
+          await mkdir(fullPath, { recursive: true })
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ path: toPortablePath(fullPath) }))
+        } catch (e: any) {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: e.message }))
+        }
+      })()
+      return
+    }
+
     // Pick folder dialog: GET /?pickFolder=1 → opens native folder picker,
     // returns { path: "..." } or { canceled: true }. Used by PressCal forms
     // (e.g. "Νέα εταιρεία") to set a folder without typing a path.
@@ -1766,9 +1778,12 @@ function startFileServer(): void {
             mainWindow.focus()
             mainWindow.setAlwaysOnTop(false)
           }
+          const rawDefault = parsed.query.defaultPath as string | undefined
+          const defaultPath = rawDefault ? resolvePortablePath(rawDefault) : undefined
           const result = await dialog.showOpenDialog(mainWindow!, {
             title: 'Επιλογή Φακέλου Πελάτη',
             properties: ['openDirectory'],
+            defaultPath,
           })
           res.writeHead(200, { 'Content-Type': 'application/json' })
           if (result.canceled || result.filePaths.length === 0) {

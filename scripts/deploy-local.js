@@ -27,7 +27,13 @@ async function main() {
 
   // 2. Prepare asar contents
   console.log('\n=== Preparing asar ===')
-  if (fs.existsSync(BUILD_DIR)) fs.rmSync(BUILD_DIR, { recursive: true, force: true })
+  if (fs.existsSync(BUILD_DIR)) {
+    try { fs.rmSync(BUILD_DIR, { recursive: true, force: true }) } catch {
+      // Dropbox lock — rename instead
+      const fallback = BUILD_DIR + '-old-' + Date.now()
+      try { fs.renameSync(BUILD_DIR, fallback) } catch { /* ignore */ }
+    }
+  }
   fs.mkdirSync(path.join(BUILD_DIR, 'out'), { recursive: true })
 
   // Copy built output under out/ (installed app expects out/main/index.js)
@@ -62,7 +68,7 @@ async function main() {
   }
 
   // Cleanup
-  fs.rmSync(BUILD_DIR, { recursive: true, force: true })
+  try { fs.rmSync(BUILD_DIR, { recursive: true, force: true }) } catch { /* Dropbox lock — ignore */ }
   console.log('\nDone!')
 }
 

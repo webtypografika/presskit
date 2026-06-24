@@ -343,44 +343,80 @@ export default function App() {
     let cancelled = false
 
     const run = async () => {
-      // Strategy 1: resolve via quoteId from deep link. Try single endpoint
-      // first, fall back to the list endpoint + find-by-id, then finally
-      // the jobs list (PressCal surfaces "active quotes" as jobs).
-      if (knownQuoteId) {
+      // Always try reading .presskit file from current or parent dirs — it's more
+      // reliable than the stale attachmentQuoteId which may be from a previous deep link.
+      let effectiveQuoteId = ''
+      if (currentPath) {
+        const components = currentPath.replace(/\\/g, '/').split('/').filter(Boolean)
+        // Walk from current dir upward looking for .presskit
+        for (let i = components.length; i >= 1; i--) {
+          try {
+            const dir = components.slice(0, i).join('/')
+            const buf = await window.api.fs.readFile(dir + '/.presskit')
+            if (cancelled) return
+            const text = new TextDecoder().decode(buf)
+            const parsed = JSON.parse(text)
+            if (parsed.quoteId) {
+              effectiveQuoteId = parsed.quoteId
+              break
+            }
+          } catch {}
+        }
+      }
+      // Fall back to deep-link quoteId if .presskit was not found
+      if (!effectiveQuoteId) effectiveQuoteId = knownQuoteId
+
+      // Strategy 1: resolve via quoteId from .presskit or deep link.
+      if (effectiveQuoteId) {
         let resolvedCustomerId: string | null = null
         let resolvedCustomerName: string | null = null
         let directEmail: string | null = null // contactEmail or senderEmail fallback
 
-        // 1a) Single-quote endpoint
+        // Helper: extract customer/email fields from a full quote detail object
+        const applyQuoteDetail = (q: any): void => {
+          if (!q || q.error) return
+          if (!resolvedCustomerId) resolvedCustomerId = q.customerId || q.companyId || null
+          if (!resolvedCustomerName) resolvedCustomerName = q.customerName || q.companyName || q.contactName || null
+          if (!directEmail) directEmail = q.contactEmail || q.senderEmail || q.email || null
+        }
+
+        // 1a) Single-quote endpoint (works with internal ID)
         try {
-          const quote = await window.api.presscal.getQuote(knownQuoteId)
+          const quote = await window.api.presscal.getQuote(effectiveQuoteId)
           if (cancelled) return
-          // API may use customerId OR companyId depending on version
-          resolvedCustomerId = quote?.customerId || quote?.companyId || null
-          resolvedCustomerName = quote?.customerName || quote?.companyName || null
-          directEmail = quote?.contactEmail || quote?.senderEmail || quote?.email || null
+          applyQuoteDetail(quote)
         } catch {}
 
-        // 1b) Fall back to getQuotes list
-        if (!resolvedCustomerId && !resolvedCustomerName) {
+        // 1b) Fall back to getQuotes list — then fetch full detail for contactEmail
+        if (!resolvedCustomerId && !resolvedCustomerName && !directEmail) {
           try {
             const quotes = await window.api.presscal.getQuotes({})
             if (cancelled) return
-            const q = quotes.find((x: any) => x.id === knownQuoteId)
+            const q = quotes.find((x: any) => x.id === effectiveQuoteId || x.number === effectiveQuoteId)
             if (q) {
-              resolvedCustomerId = q.customerId || q.companyId || null
-              if (!resolvedCustomerId) resolvedCustomerName = q.customerName || q.companyName || null
-              if (!directEmail) directEmail = q.contactEmail || q.senderEmail || q.email || null
+              // Store detected quote for contextual panel
+              useAppStore.setState({
+                detectedQuote: { id: q.id, number: q.number, status: q.status, title: q.title, customerName: q.customerName }
+              })
+              // List response lacks contactEmail — fetch full detail by internal ID
+              try {
+                const detail = await window.api.presscal.getQuote(q.id)
+                if (cancelled) return
+                applyQuoteDetail(detail)
+              } catch {
+                // Fall back to list fields
+                applyQuoteDetail(q)
+              }
             }
           } catch {}
         }
 
         // 1c) Fall back to getJobs list (active quotes exposed as jobs)
-        if (!resolvedCustomerId && !resolvedCustomerName) {
+        if (!resolvedCustomerId && !resolvedCustomerName && !directEmail) {
           try {
             const jobs = await window.api.presscal.getJobs()
             if (cancelled) return
-            const j = jobs.find((x: any) => x.id === knownQuoteId)
+            const j = jobs.find((x: any) => x.id === effectiveQuoteId || x.number === effectiveQuoteId)
             if (j) {
               resolvedCustomerId = j.customerId || j.companyId || null
               if (!resolvedCustomerId) resolvedCustomerName = j.customerName || j.companyName || null
@@ -466,10 +502,15 @@ export default function App() {
       }
 
       // Strategy 1b: extract quote number from folder name pattern [QT-xxxx-xxxx]
-      // and resolve via API (covers the common case where quoteId was not in the deep link)
+      // and resolve via API (covers the common case where quoteId was not in the deep link).
+      // Scan ALL path components (not just the last) — user may be in a subfolder.
       if (!currentPath) return
-      const folderBasename = currentPath.replace(/\\/g, '/').split('/').filter(Boolean).pop() || ''
-      const quoteNumberMatch = folderBasename.match(/\[QT[- ](\d{4}[- ]\d{4})\]/)
+      const pathComponents = currentPath.replace(/\\/g, '/').split('/').filter(Boolean)
+      let quoteNumberMatch: RegExpMatchArray | null = null
+      for (let i = pathComponents.length - 1; i >= 0; i--) {
+        quoteNumberMatch = pathComponents[i].match(/\[QT[- ](\d{4}[- ]\d{4})\]/)
+        if (quoteNumberMatch) break
+      }
       if (quoteNumberMatch) {
         const quoteNumber = 'QT-' + quoteNumberMatch[1].replace(/\s/g, '-')
         try {
@@ -480,16 +521,26 @@ export default function App() {
             return num === quoteNumber.toUpperCase()
           })
           if (q) {
+            // Fetch full quote detail (list lacks contactEmail)
+            let fullQuote = q
+            try {
+              const detail = await window.api.presscal.getQuote(q.id)
+              if (cancelled) return
+              if (detail && !detail.error) fullQuote = detail
+            } catch {}
+
             // Store detected quote
             useAppStore.setState({
-              detectedQuote: { id: q.id, number: q.number, status: q.status, title: q.title, customerName: q.customerName }
+              detectedQuote: { id: q.id, number: q.number, status: q.status, title: q.title, customerName: fullQuote.customerName || fullQuote.contactName || q.customerName }
             })
             const customers = await getCachedCustomers()
             if (cancelled) return
             let customer: PresscalCustomer | undefined
-            if (q.customerId) customer = customers.find(c => c.id === q.customerId)
-            if (!customer && q.customerName) {
-              const needle = q.customerName.toLowerCase().trim()
+            const custId = fullQuote.customerId || fullQuote.companyId || q.customerId
+            const custName = fullQuote.customerName || fullQuote.companyName || fullQuote.contactName || q.customerName
+            if (custId) customer = customers.find(c => c.id === custId)
+            if (!customer && custName) {
+              const needle = custName.toLowerCase().trim()
               customer = customers.find(c =>
                 c.name?.toLowerCase().trim() === needle ||
                 c.company?.toLowerCase().trim() === needle
@@ -500,7 +551,7 @@ export default function App() {
                 detectedCustomer: { id: customer.id, name: customer.name, company: customer.company, email: customer.email }
               })
             }
-            const directEmail = q.contactEmail || q.senderEmail || null
+            const directEmail = fullQuote.contactEmail || fullQuote.senderEmail || null
             const options = extractEmailOptions(customer)
             if (directEmail) {
               const already = options.some(o => o.email.toLowerCase() === directEmail!.toLowerCase())

@@ -29,7 +29,7 @@ export function registerPreviewHandlers(ipcMain: IpcMain): void {
       try {
         const sharp = (await import('sharp')).default
         const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000))
-        const render = sharp(filePath, { failOn: 'none' })
+        const render = sharp(filePath, { failOn: 'none', limitInputPixels: false })
           .flatten({ background: { r: 255, g: 255, b: 255 } })
           .resize(size, size, { fit: 'inside', withoutEnlargement: true })
           .png()
@@ -122,12 +122,11 @@ export function registerPreviewHandlers(ipcMain: IpcMain): void {
   // Full preview for the preview panel
   ipcMain.handle('preview:full', async (_e, filePath: string): Promise<PreviewResult> => {
     const ext = extname(filePath).toLowerCase()
-
     // Images
     if (['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.bmp'].includes(ext)) {
       try {
         const sharp = (await import('sharp')).default
-        const image = sharp(filePath)
+        const image = sharp(filePath, { limitInputPixels: false })
         const meta = await image.metadata()
 
         // For large images, resize for display
