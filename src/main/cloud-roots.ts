@@ -184,6 +184,10 @@ export function registerCloudRootsHandlers(ipcMain: IpcMain): void {
     return getCloudRoots()
   })
 
+  ipcMain.handle('cloudRoots:resolve', async (_e, portablePath: string) => {
+    return resolvePortablePath(portablePath)
+  })
+
   ipcMain.handle('cloudRoots:detect', async () => {
     return detectCloudRoots()
   })

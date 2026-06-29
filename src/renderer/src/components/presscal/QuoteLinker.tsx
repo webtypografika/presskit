@@ -113,8 +113,9 @@ export function QuoteLinker() {
     // Try to get the full quote details to find the folder path
     try {
       const full = await window.api.presscal.getQuote(quote.id)
-      const folderPath = full?.jobFolderPath || full?.folderPath
-      if (folderPath) {
+      const rawPath = full?.jobFolderPath || full?.folderPath
+      if (rawPath) {
+        const folderPath = await window.api.cloudRoots.resolve(rawPath)
         const exists = await window.api.fs.exists(folderPath)
         if (exists) {
           navigateTo(folderPath)

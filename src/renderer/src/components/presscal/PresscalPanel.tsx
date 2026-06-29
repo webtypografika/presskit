@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAppStore } from '@/stores/app-store'
 import {
   Link2, FileText, Users, ExternalLink, Plus,
-  Loader2, Mail, Building2, FolderOpen, Calculator
+  Loader2, Mail, Building2, FolderOpen, Calculator, Search, X
 } from 'lucide-react'
 import type { PresscalQuote } from '@/lib/ipc'
 import { CostingDialog } from './CostingDialog'
@@ -24,6 +24,15 @@ const STATUS_COLORS: Record<string, string> = {
   rejected: 'var(--th-error)',
 }
 
+const ACTIVE_STATUSES = new Set(['draft', 'sent', 'approved'])
+
+// Extra fields from getQuote(id) that the list endpoint doesn't return
+interface QuoteDetail {
+  customerName?: string
+  contactEmail?: string
+  folderPath?: string
+}
+
 export function PresscalPanel() {
   const presscalConnected = useAppStore(s => s.presscalConnected)
   const presscalOrgName = useAppStore(s => s.presscalOrgName)
@@ -43,26 +52,300 @@ export function PresscalPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {detectedCustomer || detectedQuote ? (
-          <ContextualInfo />
-        ) : (
-          <EmptyState />
-        )}
+        {(detectedCustomer || detectedQuote) && <ContextualInfo />}
+        <ActiveQuotesList />
       </div>
     </div>
   )
 }
 
-function EmptyState() {
+/* ─── Active Quotes List ─────────────────────────────────────── */
+
+type StatusFilter = 'all' | 'draft' | 'sent' | 'approved'
+
+const FILTER_TABS: { key: StatusFilter; label: string }[] = [
+  { key: 'all', label: 'Όλες' },
+  { key: 'approved', label: 'Εγκρίθηκε' },
+  { key: 'sent', label: 'Εστάλη' },
+  { key: 'draft', label: 'Πρόχειρη' },
+]
+
+function ActiveQuotesList() {
+  const navigateTo = useAppStore(s => s.navigateTo)
+  const setSource = useAppStore(s => s.setSource)
+  const source = useAppStore(s => s.source)
+  const [quotes, setQuotes] = useState<PresscalQuote[]>([])
+  const [details, setDetails] = useState<Record<string, QuoteDetail>>({})
+  const [loading, setLoading] = useState(false)
+  const [presscalUrl, setPresscalUrl] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [searchText, setSearchText] = useState('')
+
+  useEffect(() => {
+    window.api.settings.get('presscal.url').then((url: any) => setPresscalUrl((url || '').replace(/\/$/, ''))).catch(() => {})
+  }, [])
+
+  const fetchQuotes = useCallback(async () => {
+    setLoading(true)
+    try {
+      const all: PresscalQuote[] = await window.api.presscal.getQuotes({})
+      const active = all
+        .filter(q => ACTIVE_STATUSES.has(q.status))
+        .sort((a, b) => (b.number || '').localeCompare(a.number || ''))
+      setQuotes(active)
+
+      // Enrich with details (name, email, folder) in parallel
+      const results = await Promise.allSettled(
+        active.map(async q => {
+          const f = await window.api.presscal.getQuote(q.id) as any
+          const rawPath = f?.jobFolderPath || f?.folderPath || ''
+          // Resolve portable paths like <DROPBOX>\... to absolute local paths
+          const folderPath = rawPath ? await window.api.cloudRoots.resolve(rawPath) : ''
+          return {
+            id: q.id,
+            customerName: f?.customerName || f?.companyName || f?.contactName || '',
+            contactEmail: f?.contactEmail || f?.senderEmail || '',
+            folderPath,
+          }
+        })
+      )
+      const map: Record<string, QuoteDetail> = {}
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          map[r.value.id] = { customerName: r.value.customerName, contactEmail: r.value.contactEmail, folderPath: r.value.folderPath }
+        }
+      }
+      setDetails(map)
+    } catch {
+      setQuotes([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // Fetch on mount + every 5 minutes
+  useEffect(() => {
+    fetchQuotes()
+    const timer = setInterval(fetchQuotes, 5 * 60 * 1000)
+    return () => clearInterval(timer)
+  }, [fetchQuotes])
+
+  const openFolder = async (quote: PresscalQuote) => {
+    const detail = details[quote.id]
+    if (detail?.folderPath) {
+      const exists = await window.api.fs.exists(detail.folderPath)
+      if (exists) {
+        if (source !== 'local') setSource('local')
+        navigateTo(detail.folderPath)
+        useAppStore.setState({ attachmentQuoteId: quote.id })
+        return
+      }
+    }
+    // Folder not found — try fetching fresh + resolve portable path
+    try {
+      const full = await window.api.presscal.getQuote(quote.id)
+      const rawFp = (full as any)?.jobFolderPath || (full as any)?.folderPath
+      if (rawFp) {
+        const fp = await window.api.cloudRoots.resolve(rawFp)
+        const exists = await window.api.fs.exists(fp)
+        if (exists) {
+          if (source !== 'local') setSource('local')
+          navigateTo(fp)
+          useAppStore.setState({ attachmentQuoteId: quote.id })
+          return
+        }
+      }
+    } catch {}
+  }
+
+  const openInPressCal = (quoteId: string) => {
+    if (presscalUrl) {
+      window.api.shell.openExternal(`${presscalUrl}/quotes/${quoteId}`)
+    }
+  }
+
+  // Apply filters
+  const filtered = quotes.filter(q => {
+    if (statusFilter !== 'all' && q.status !== statusFilter) return false
+    if (searchText) {
+      const s = searchText.toLowerCase()
+      const name = (q.customerName || details[q.id]?.customerName || '').toLowerCase()
+      const email = (details[q.id]?.contactEmail || '').toLowerCase()
+      const num = (q.number || '').toLowerCase()
+      const title = (q.title || '').toLowerCase()
+      if (!name.includes(s) && !email.includes(s) && !num.includes(s) && !title.includes(s)) return false
+    }
+    return true
+  })
+
   return (
-    <div style={{ padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-      <FolderOpen size={32} style={{ color: 'var(--th-text-muted)' }} />
-      <div style={{ fontSize: 13, color: 'var(--th-text-muted)', textAlign: 'center', lineHeight: 1.6 }}>
-        Πλοηγηθείτε σε φάκελο πελάτη για να δείτε στοιχεία και ιστορικό προσφορών
+    <div>
+      {/* Header */}
+      <div style={{
+        padding: '12px 20px 8px', fontSize: 12, fontWeight: 600,
+        color: 'var(--th-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5,
+        borderTop: '1px solid var(--th-border)',
+      }}>
+        Ενεργές Προσφορές ({quotes.length})
       </div>
+
+      {/* Search */}
+      <div style={{ padding: '4px 20px 8px' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          background: 'var(--th-bg-primary)', border: '1px solid var(--th-border)',
+          borderRadius: 6, padding: '5px 10px',
+        }}>
+          <Search size={12} style={{ color: 'var(--th-text-muted)', flexShrink: 0 }} />
+          <input
+            type="text"
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+            placeholder="Αναζήτηση..."
+            style={{
+              flex: 1, background: 'none', border: 'none', outline: 'none',
+              fontSize: 12, color: 'var(--th-text-primary)',
+            }}
+          />
+          {searchText && (
+            <button
+              onClick={() => setSearchText('')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--th-text-muted)', padding: 0, display: 'flex' }}
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Filter tabs */}
+      <div style={{
+        display: 'flex', gap: 0, padding: '0 20px 8px',
+        borderBottom: '1px solid var(--th-border)',
+      }}>
+        {FILTER_TABS.map(tab => {
+          const isActive = statusFilter === tab.key
+          const count = tab.key === 'all' ? quotes.length : quotes.filter(q => q.status === tab.key).length
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setStatusFilter(tab.key)}
+              style={{
+                padding: '4px 8px', fontSize: 11, fontWeight: isActive ? 600 : 400,
+                color: isActive ? 'var(--th-accent)' : 'var(--th-text-muted)',
+                background: 'none', border: 'none', cursor: 'pointer',
+                borderBottom: isActive ? '2px solid var(--th-accent)' : '2px solid transparent',
+                marginBottom: -1,
+              }}
+            >
+              {tab.label} ({count})
+            </button>
+          )
+        })}
+      </div>
+
+      {loading && quotes.length === 0 ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
+          <Loader2 size={18} className="animate-spin" style={{ color: 'var(--th-text-muted)' }} />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div style={{ padding: '12px 20px', fontSize: 12, color: 'var(--th-text-muted)' }}>
+          {quotes.length === 0 ? 'Δεν υπάρχουν ενεργές προσφορές' : 'Κανένα αποτέλεσμα'}
+        </div>
+      ) : (
+        <div>
+          {filtered.map(q => {
+            const detail = details[q.id]
+            const email = detail?.contactEmail || ''
+            const hasFolder = !!detail?.folderPath
+
+            return (
+              <div
+                key={q.id}
+                style={{
+                  padding: '10px 20px',
+                  borderBottom: '1px solid rgba(255,255,255,0.04)',
+                }}
+              >
+                {/* Row 1: Customer name + status */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <FileText size={13} style={{ color: STATUS_COLORS[q.status] || 'var(--th-text-muted)', flexShrink: 0 }} />
+                  <span style={{
+                    fontSize: 13, fontWeight: 500, color: 'var(--th-text-primary)',
+                    flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {q.customerName || detail?.customerName || '—'}
+                  </span>
+                  <span style={{
+                    fontSize: 10, padding: '1px 6px', borderRadius: 3, flexShrink: 0,
+                    color: STATUS_COLORS[q.status] || 'var(--th-text-muted)',
+                    background: 'var(--th-bg-primary)',
+                  }}>
+                    {STATUS_LABELS[q.status] || q.status}
+                  </span>
+                </div>
+
+                {/* Row 2: Email + quote number */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, paddingLeft: 19 }}>
+                  {email ? (
+                    <span style={{
+                      fontSize: 11, color: 'var(--th-text-muted)', flex: 1,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {email}
+                    </span>
+                  ) : (
+                    <span style={{ flex: 1 }} />
+                  )}
+                  <span style={{ fontSize: 11, color: 'var(--th-text-muted)', flexShrink: 0 }}>
+                    {q.number}
+                  </span>
+                </div>
+
+                {/* Row 3: Action buttons */}
+                <div style={{ display: 'flex', gap: 6, marginTop: 6, paddingLeft: 19 }}>
+                  <button
+                    onClick={() => openFolder(q)}
+                    disabled={!hasFolder}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      padding: '4px 10px', borderRadius: 5, fontSize: 11, fontWeight: 500,
+                      background: hasFolder ? 'rgba(110,200,200,0.12)' : 'var(--th-bg-primary)',
+                      color: hasFolder ? 'var(--th-accent)' : 'var(--th-text-muted)',
+                      border: '1px solid ' + (hasFolder ? 'rgba(110,200,200,0.25)' : 'var(--th-border)'),
+                      cursor: hasFolder ? 'pointer' : 'default',
+                      opacity: hasFolder ? 1 : 0.5,
+                    }}
+                    title={detail?.folderPath || 'Δεν έχει δηλωμένο φάκελο'}
+                  >
+                    <FolderOpen size={12} />
+                    Φάκελος
+                  </button>
+                  <button
+                    onClick={() => openInPressCal(q.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      padding: '4px 10px', borderRadius: 5, fontSize: 11, fontWeight: 500,
+                      background: 'var(--th-bg-primary)',
+                      color: 'var(--th-text-secondary)',
+                      border: '1px solid var(--th-border)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <ExternalLink size={12} />
+                    PressCal
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
+
+/* ─── Contextual Info (detected customer/quote) ──────────────── */
 
 function ContextualInfo() {
   const detectedCustomer = useAppStore(s => s.detectedCustomer)
@@ -114,8 +397,9 @@ function ContextualInfo() {
   const openQuoteFolder = async (quote: PresscalQuote) => {
     try {
       const full = await window.api.presscal.getQuote(quote.id)
-      const folderPath = full?.jobFolderPath || full?.folderPath
-      if (folderPath) {
+      const rawPath = full?.jobFolderPath || full?.folderPath
+      if (rawPath) {
+        const folderPath = await window.api.cloudRoots.resolve(rawPath)
         const exists = await window.api.fs.exists(folderPath)
         if (exists) {
           navigateTo(folderPath)

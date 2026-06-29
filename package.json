@@ -1,6 +1,6 @@
 {
   "name": "presskit",
-  "version": "2.3.3",
+  "version": "2.3.4",
   "description": "PressKit - Print & Design File Manager",
   "main": "./out/main/index.js",
   "scripts": {
@@ -12,6 +12,7 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
+    "adm-zip": "^0.5.17",
     "ag-psd": "^30.1.0",
     "better-sqlite3": "^12.8.0",
     "chokidar": "^5.0.0",

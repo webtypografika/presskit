@@ -133,6 +133,7 @@ const api = {
   // Cloud roots (portable paths)
   cloudRoots: {
     get: () => ipcRenderer.invoke('cloudRoots:get'),
+    resolve: (portablePath: string) => ipcRenderer.invoke('cloudRoots:resolve', portablePath),
     detect: () => ipcRenderer.invoke('cloudRoots:detect'),
     save: (roots: any[]) => ipcRenderer.invoke('cloudRoots:save', roots),
     migrate: () => ipcRenderer.invoke('cloudRoots:migrate'),
