@@ -85,21 +85,15 @@ function ActiveQuotesList() {
     window.api.settings.get('presscal.url').then((url: any) => setPresscalUrl((url || '').replace(/\/$/, ''))).catch(() => {})
   }, [])
 
-  const fetchQuotes = useCallback(async () => {
-    setLoading(true)
-    try {
-      const all: PresscalQuote[] = await window.api.presscal.getQuotes({})
-      const active = all
-        .filter(q => ACTIVE_STATUSES.has(q.status))
-        .sort((a, b) => (b.number || '').localeCompare(a.number || ''))
-      setQuotes(active)
-
-      // Enrich with details (name, email, folder) in parallel
+  // Enrich details in batches of 5 to avoid overwhelming the API
+  const enrichQuotes = useCallback(async (active: PresscalQuote[]) => {
+    const BATCH = 5
+    for (let i = 0; i < active.length; i += BATCH) {
+      const batch = active.slice(i, i + BATCH)
       const results = await Promise.allSettled(
-        active.map(async q => {
+        batch.map(async q => {
           const f = await window.api.presscal.getQuote(q.id) as any
           const rawPath = f?.jobFolderPath || f?.folderPath || ''
-          // Resolve portable paths like <DROPBOX>\... to absolute local paths
           const folderPath = rawPath ? await window.api.cloudRoots.resolve(rawPath) : ''
           return {
             id: q.id,
@@ -109,13 +103,31 @@ function ActiveQuotesList() {
           }
         })
       )
-      const map: Record<string, QuoteDetail> = {}
-      for (const r of results) {
-        if (r.status === 'fulfilled') {
-          map[r.value.id] = { customerName: r.value.customerName, contactEmail: r.value.contactEmail, folderPath: r.value.folderPath }
+      // Update details progressively
+      setDetails(prev => {
+        const next = { ...prev }
+        for (const r of results) {
+          if (r.status === 'fulfilled') {
+            next[r.value.id] = { customerName: r.value.customerName, contactEmail: r.value.contactEmail, folderPath: r.value.folderPath }
+          }
         }
-      }
-      setDetails(map)
+        return next
+      })
+    }
+  }, [])
+
+  const fetchQuotes = useCallback(async () => {
+    setLoading(true)
+    try {
+      const all: PresscalQuote[] = await window.api.presscal.getQuotes({ limit: 500 })
+      const active = all
+        .filter(q => ACTIVE_STATUSES.has(q.status))
+        .sort((a, b) => (b.number || '').localeCompare(a.number || ''))
+      setQuotes(active)
+      setLoading(false)
+
+      // Enrich in background (don't block UI)
+      enrichQuotes(active)
     } catch {
       setQuotes([])
     } finally {
