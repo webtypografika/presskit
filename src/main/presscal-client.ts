@@ -173,13 +173,14 @@ export function registerPresscalHandlers(ipcMain: IpcMain): void {
   })
 
   // Quotes
-  ipcMain.handle('presscal:getQuotes', async (_e, filters?: { status?: string; search?: string }) => {
+  ipcMain.handle('presscal:getQuotes', async (_e, filters?: { status?: string; search?: string; limit?: number }) => {
     const params = new URLSearchParams()
     if (filters?.status) params.set('status', filters.status)
     if (filters?.search) params.set('search', filters.search)
+    params.set('limit', String(filters?.limit || 200))
     const query = params.toString()
 
-    return presscalFetch<any[]>(`/quotes${query ? `?${query}` : ''}`)
+    return presscalFetch<any[]>(`/quotes?${query}`)
   })
 
   ipcMain.handle('presscal:getQuote', async (_e, quoteId: string) => {
