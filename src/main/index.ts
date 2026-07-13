@@ -1551,32 +1551,37 @@ async function handleExportImposition(body: any): Promise<{
           }
         }
 
-        // Crop marks — drawn after content so they're always visible
+        // Crop marks — PERIMETER ONLY, matching presscal-next (commit dec7c2c there).
+        // The old per-cell corner marks extended into neighboring cells on interior
+        // positions (markOff+markLen > gutter) — the blade lands on them and they
+        // survive on the finished product. Perimeter ticks flag every cut line from
+        // outside the grid, which is all a full-stroke guillotine can follow.
         if (showCropMarks) {
           const markLen = 5 * MM_PT   // 5 mm line length
           const markOff = bleedPt + 0.5 * MM_PT // start just outside bleed
           const markColor = rgb(0, 0, 0)
           const markThk = 0.5
 
+          const uX: number[] = []
+          for (let col = 0; col < cols; col++) {
+            const { trimX } = cellTrimPos(0, col, isBack)
+            uX.push(trimX, trimX + trimWpt)
+          }
+          const uY: number[] = []
           for (let row = 0; row < rows; row++) {
-            for (let col = 0; col < cols; col++) {
-              const { trimX, trimY } = cellTrimPos(row, col, isBack)
-              const x0 = trimX, x1 = trimX + trimWpt
-              const y0 = trimY, y1 = trimY + trimHpt
+            const { trimY } = cellTrimPos(row, 0, isBack)
+            uY.push(trimY, trimY + trimHpt)
+          }
+          const gL = Math.min(...uX), gR = Math.max(...uX)
+          const gB = Math.min(...uY), gT = Math.max(...uY)
 
-              // Top-left corner
-              page.drawLine({ start: { x: x0 - markOff - markLen, y: y1 }, end: { x: x0 - markOff, y: y1 }, thickness: markThk, color: markColor })
-              page.drawLine({ start: { x: x0, y: y1 + markOff }, end: { x: x0, y: y1 + markOff + markLen }, thickness: markThk, color: markColor })
-              // Top-right corner
-              page.drawLine({ start: { x: x1 + markOff, y: y1 }, end: { x: x1 + markOff + markLen, y: y1 }, thickness: markThk, color: markColor })
-              page.drawLine({ start: { x: x1, y: y1 + markOff }, end: { x: x1, y: y1 + markOff + markLen }, thickness: markThk, color: markColor })
-              // Bottom-left corner
-              page.drawLine({ start: { x: x0 - markOff - markLen, y: y0 }, end: { x: x0 - markOff, y: y0 }, thickness: markThk, color: markColor })
-              page.drawLine({ start: { x: x0, y: y0 - markOff - markLen }, end: { x: x0, y: y0 - markOff }, thickness: markThk, color: markColor })
-              // Bottom-right corner
-              page.drawLine({ start: { x: x1 + markOff, y: y0 }, end: { x: x1 + markOff + markLen, y: y0 }, thickness: markThk, color: markColor })
-              page.drawLine({ start: { x: x1, y: y0 - markOff - markLen }, end: { x: x1, y: y0 - markOff }, thickness: markThk, color: markColor })
-            }
+          for (const vx of uX) {
+            page.drawLine({ start: { x: vx, y: gT + markOff }, end: { x: vx, y: gT + markOff + markLen }, thickness: markThk, color: markColor })
+            page.drawLine({ start: { x: vx, y: gB - markOff }, end: { x: vx, y: gB - markOff - markLen }, thickness: markThk, color: markColor })
+          }
+          for (const hy of uY) {
+            page.drawLine({ start: { x: gL - markOff, y: hy }, end: { x: gL - markOff - markLen, y: hy }, thickness: markThk, color: markColor })
+            page.drawLine({ start: { x: gR + markOff, y: hy }, end: { x: gR + markOff + markLen, y: hy }, thickness: markThk, color: markColor })
           }
         }
       }
