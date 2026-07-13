@@ -10,3 +10,11 @@ Thumbs.db
 *.tsbuildinfo
 vendor/Everything/Everything.db
 vendor/Everything/Everything.ini
+
+# Local deploy artifacts
+.asar-build/
+app-deploy.asar
+app-deploy.asar.unpacked/
+app-full*.asar
+asar-build2/
+Usersinfodropboxpresscal-filehelper.asar-build/

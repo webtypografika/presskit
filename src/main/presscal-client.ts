@@ -172,15 +172,27 @@ export function registerPresscalHandlers(ipcMain: IpcMain): void {
     }
   })
 
-  // Quotes
+  // Quotes — paginate to fetch all results (server caps at ~20 per page)
   ipcMain.handle('presscal:getQuotes', async (_e, filters?: { status?: string; search?: string; limit?: number }) => {
     const params = new URLSearchParams()
     if (filters?.status) params.set('status', filters.status)
     if (filters?.search) params.set('search', filters.search)
-    params.set('limit', String(filters?.limit || 200))
-    const query = params.toString()
 
-    return presscalFetch<any[]>(`/quotes?${query}`)
+    const PAGE_SIZE = 50
+    params.set('limit', String(PAGE_SIZE))
+
+    const allResults: any[] = []
+    let page = 1
+    while (true) {
+      params.set('page', String(page))
+      const batch = await presscalFetch<any[]>(`/quotes?${params.toString()}`)
+      if (!Array.isArray(batch) || batch.length === 0) break
+      allResults.push(...batch)
+      if (batch.length < PAGE_SIZE) break  // last page
+      page++
+      if (page > 20) break  // safety cap
+    }
+    return allResults
   })
 
   ipcMain.handle('presscal:getQuote', async (_e, quoteId: string) => {

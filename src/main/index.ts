@@ -590,16 +590,20 @@ async function handleProtocolUrl(url: string): Promise<void> {
             id,
             title: 'Νέα αρχεία',
             message: `Υπάρχουν ${filesToDownload.length} νέα αρχεία. Θέλεις να τα κατεβάσεις;`,
-            choices: ['Κατέβασε', 'Μόνο φάκελος'],
+            choices: ['Κατέβασε', 'Άνοιξε φάκελο'],
           })
         })
-        if (choice !== 'Κατέβασε') {
+        if (choice === 'Άνοιξε φάκελο') {
           sendProgress('', 0, 0, true)
           if (mainWindow.isMinimized()) mainWindow.restore()
           mainWindow.setAlwaysOnTop(true)
           mainWindow.focus()
           setTimeout(() => mainWindow?.setAlwaysOnTop(false), 200)
           mainWindow.webContents.send('navigate-to-folder', { path: targetDir, email: quoteEmail, quoteId })
+          return
+        }
+        if (choice !== 'Κατέβασε') {
+          sendProgress('', 0, 0, true)
           return
         }
       }
@@ -652,8 +656,9 @@ async function handleProtocolUrl(url: string): Promise<void> {
               const execP = prom(ef)
 
               if (ext === 'zip') {
-                // Windows tar handles ZIP natively
-                await execP('tar', ['-xf', savePath, '-C', saveDir], { timeout: 60000 })
+                const AdmZip = (await import('adm-zip')).default
+                const zip = new AdmZip(savePath)
+                zip.extractAllTo(saveDir, true)
                 await unlink(savePath)
               } else {
                 // Find 7-Zip or WinRAR

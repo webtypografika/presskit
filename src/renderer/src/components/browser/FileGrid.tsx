@@ -195,6 +195,19 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   const [renamingPath, setRenamingPath] = useState<string | null>(null)
   const refreshDirectory = useAppStore(s => s.refreshDirectory)
   const lastClickedIndexRef = useRef<number>(-1)
+  const selectedRef = useRef<HTMLDivElement | null>(null)
+
+  // Scroll selected file into view after layout reflow (e.g. preview panel open/close)
+  useEffect(() => {
+    if (!selectedFile) return
+    // Double rAF to wait for layout to settle after panel resize
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        selectedRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      })
+    })
+    return () => cancelAnimationFrame(id)
+  }, [selectedFile?.path])
 
   // F2 to rename selected file
   useEffect(() => {
@@ -650,6 +663,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
           return (
             <div
               key={file.path}
+              ref={selectedFile?.path === file.path ? selectedRef : undefined}
               data-file-item
               className={clsx(
                 'cursor-pointer',
@@ -783,6 +797,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         {files.map((file, index) => (
           <div
             key={file.path}
+            ref={selectedFile?.path === file.path ? selectedRef : undefined}
             data-file-item
             className="flex flex-col items-center rounded-lg cursor-pointer"
             onMouseDown={(e) => handleItemMouseDown(e, file)}

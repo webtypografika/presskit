@@ -475,13 +475,18 @@ export const useAppStore = create<AppState>((set, get) => {
       const isStale = () => _selectSeq !== seq || get().activeTabId !== activeTabId
 
       if (previewOpen) {
+        console.log('[selectFile] requesting preview:full for', file.path, 'seq:', seq)
         window.api.preview.full(file.path)
           .then(preview => {
+            console.log('[selectFile] preview result:', preview?.type, 'stale:', isStale(), 'dataLen:', preview?.data?.length)
             if (!isStale()) updateActiveTab({ preview, previewLoading: false })
           })
-          .catch(() => {
+          .catch((err) => {
+            console.error('[selectFile] preview FAILED:', err)
             if (!isStale()) updateActiveTab({ previewLoading: false })
           })
+      } else {
+        console.log('[selectFile] preview panel closed, skipping preview:full')
       }
 
       window.api.fs.getMetadata(file.path)

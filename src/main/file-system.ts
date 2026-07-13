@@ -629,9 +629,9 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('fs:extractZip', async (_e, zipPath: string): Promise<{ ok: boolean; error?: string }> => {
     const targetDir = dirname(zipPath)
     try {
-      const { execFile } = await import('child_process')
-      const { promisify } = await import('util')
-      await promisify(execFile)('tar', ['-xf', zipPath, '-C', targetDir], { timeout: 120000 })
+      const AdmZip = (await import('adm-zip')).default
+      const zip = new AdmZip(zipPath)
+      zip.extractAllTo(targetDir, true)
       return { ok: true }
     } catch (err: any) {
       return { ok: false, error: err.message || String(err) }

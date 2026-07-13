@@ -1,7 +1,15 @@
 import { IpcMain } from 'electron'
-import { readFile } from 'fs/promises'
-import { extname } from 'path'
+import { readFile, appendFile } from 'fs/promises'
+import { extname, join } from 'path'
+import { tmpdir } from 'os'
 import { isRawExtension, extractRawPreview } from './raw-preview'
+
+const _logFile = join(tmpdir(), 'presskit-preview.log')
+function _plog(msg: string) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`
+  console.log(line.trim())
+  appendFile(_logFile, line).catch(() => {})
+}
 
 export interface PreviewResult {
   type: 'image' | 'pdf-page' | 'svg' | 'font-sample' | 'none'
@@ -28,8 +36,8 @@ export function registerPreviewHandlers(ipcMain: IpcMain): void {
     if (['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.bmp'].includes(ext)) {
       try {
         const sharp = (await import('sharp')).default
-        const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000))
-        const render = sharp(filePath, { failOn: 'none', limitInputPixels: false })
+        const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 30000))
+        const render = sharp(filePath, { failOn: 'none', limitInputPixels: false, sequentialRead: true })
           .flatten({ background: { r: 255, g: 255, b: 255 } })
           .resize(size, size, { fit: 'inside', withoutEnlargement: true })
           .png()
@@ -122,29 +130,33 @@ export function registerPreviewHandlers(ipcMain: IpcMain): void {
   // Full preview for the preview panel
   ipcMain.handle('preview:full', async (_e, filePath: string): Promise<PreviewResult> => {
     const ext = extname(filePath).toLowerCase()
+    _plog(`[Preview:full] request: ext=${ext} path=${filePath}`)
     // Images
     if (['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.bmp'].includes(ext)) {
       try {
         const sharp = (await import('sharp')).default
-        const image = sharp(filePath, { limitInputPixels: false })
+        const image = sharp(filePath, { failOn: 'none', limitInputPixels: false, sequentialRead: true })
         const meta = await image.metadata()
 
-        // For large images, resize for display
+        // For large images, resize for display; flatten for CMYK/transparency
+        let pipeline = image.flatten({ background: { r: 255, g: 255, b: 255 } })
         let buffer: Buffer
         const maxDim = 2048
         if ((meta.width && meta.width > maxDim) || (meta.height && meta.height > maxDim)) {
-          buffer = await image.resize(maxDim, maxDim, { fit: 'inside' }).png().toBuffer()
+          buffer = await pipeline.resize(maxDim, maxDim, { fit: 'inside' }).png().toBuffer()
         } else {
-          buffer = await image.png().toBuffer()
+          buffer = await pipeline.png().toBuffer()
         }
 
+        _plog(`[Preview:full] OK image ${meta.width}x${meta.height} ${meta.space} buffer:${buffer.length}`)
         return {
           type: 'image',
           data: `data:image/png;base64,${buffer.toString('base64')}`,
           width: meta.width,
           height: meta.height
         }
-      } catch {
+      } catch (err) {
+        _plog(`[Preview:full] FAILED image: ${filePath} err=${(err as Error).message}`)
         return { type: 'none', data: '' }
       }
     }
@@ -166,6 +178,7 @@ export function registerPreviewHandlers(ipcMain: IpcMain): void {
             buffer = await image.png().toBuffer()
           }
 
+          _plog(`[Preview:full] OK RAW ${meta.width}x${meta.height} buffer:${buffer.length}`)
           return {
             type: 'image',
             data: `data:image/png;base64,${buffer.toString('base64')}`,
@@ -173,7 +186,9 @@ export function registerPreviewHandlers(ipcMain: IpcMain): void {
             height: meta.height
           }
         }
-      } catch {
+        _plog(`[Preview:full] RAW no embedded preview: ${filePath}`)
+      } catch (err) {
+        _plog(`[Preview:full] FAILED RAW: ${filePath} err=${(err as Error).message}`)
         return { type: 'none', data: '' }
       }
     }
@@ -201,6 +216,7 @@ export function registerPreviewHandlers(ipcMain: IpcMain): void {
           data = `data:image/png;base64,${buffer.toString('base64')}`
         }
 
+        _plog(`[Preview:full] OK PSD ${psd.width}x${psd.height} layers:${layers.length}`)
         return {
           type: 'image',
           data,
@@ -208,7 +224,8 @@ export function registerPreviewHandlers(ipcMain: IpcMain): void {
           height: psd.height,
           layers
         }
-      } catch {
+      } catch (err) {
+        _plog(`[Preview:full] FAILED PSD: ${filePath} err=${(err as Error).message}`)
         return { type: 'none', data: '' }
       }
     }
@@ -217,12 +234,14 @@ export function registerPreviewHandlers(ipcMain: IpcMain): void {
     if (['.pdf', '.ai'].includes(ext)) {
       try {
         const fileBuffer = await readFile(filePath)
+        _plog(`[Preview:full] OK PDF/AI ${fileBuffer.length} bytes`)
         return {
           type: 'pdf-page',
           data: `data:application/pdf;base64,${fileBuffer.toString('base64')}`,
           pageCount: 0 // Will be determined by PDF.js in renderer
         }
-      } catch {
+      } catch (err) {
+        _plog(`[Preview:full] FAILED PDF: ${filePath} err=${(err as Error).message}`)
         return { type: 'none', data: '' }
       }
     }
@@ -231,11 +250,13 @@ export function registerPreviewHandlers(ipcMain: IpcMain): void {
     if (['.svg', '.svgz'].includes(ext)) {
       try {
         const content = await readFile(filePath, 'utf-8')
+        _plog(`[Preview:full] OK SVG ${content.length} chars`)
         return {
           type: 'svg',
           data: content
         }
-      } catch {
+      } catch (err) {
+        _plog(`[Preview:full] FAILED SVG: ${filePath} err=${(err as Error).message}`)
         return { type: 'none', data: '' }
       }
     }
@@ -271,6 +292,7 @@ export function registerPreviewHandlers(ipcMain: IpcMain): void {
       }
     }
 
+    _plog(`[Preview:full] no handler for ext=${ext}`)
     return { type: 'none', data: '' }
   })
 }
