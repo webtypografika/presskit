@@ -112,7 +112,14 @@
       "Read(//c/Users/info/dropbox/presscal-filehelper/$APPDATA/presskit/**)",
       "Read(//c/Users/info/dropbox/presscal-filehelper/$APPDATA/press-kit/**)",
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(''''URL:'''', d.get\\(''''presscal'''',{}\\).get\\(''''url'''',''''\\(empty\\)''''\\)\\); print\\(''''Key:'''', d.get\\(''''presscal'''',{}\\).get\\(''''apiKey'''',''''\\(empty\\)''''\\)[:20]+''''...'''' if d.get\\(''''presscal'''',{}\\).get\\(''''apiKey''''\\) else ''''\\(empty\\)''''\\)\")",
-      "Bash(node -e \"const d=require\\(''''$APPDATA/presskit/profiles/default/config.json''''\\); console.log\\(''''URL:'''', d?.presscal?.url || ''''\\(empty\\)''''\\); console.log\\(''''Key:'''', d?.presscal?.apiKey ? d.presscal.apiKey.slice\\(0,20\\)+''''...'''' : ''''\\(empty\\)''''\\)\")"
+      "Bash(node -e \"const d=require\\(''''$APPDATA/presskit/profiles/default/config.json''''\\); console.log\\(''''URL:'''', d?.presscal?.url || ''''\\(empty\\)''''\\); console.log\\(''''Key:'''', d?.presscal?.apiKey ? d.presscal.apiKey.slice\\(0,20\\)+''''...'''' : ''''\\(empty\\)''''\\)\")",
+      "PowerShell(npm run *)",
+      "PowerShell(node \"C:\\\\Users\\\\info\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-info-dropbox-presscal-filehelper\\\\0b746acf-0429-4efe-ae26-2f50fc81dd02\\\\scratchpad\\\\test-extract.js\")",
+      "PowerShell(git status --short; git log --oneline -3; node -p \"require\\('./package.json'\\).version\")",
+      "PowerShell(git log --oneline -3 -- .claude/settings.local.json; git diff --stat .claude/settings.local.json; Get-Content electron-builder.yml -ErrorAction SilentlyContinue | Select-Object -First 40; node -p \"JSON.stringify\\(require\\('./package.json'\\).build || 'no build key'\\)\" 2>$null)",
+      "PowerShell(gh release *)",
+      "PowerShell(Out-Null *)",
+      "PowerShell(npm version *)"
     ]
   }
 }

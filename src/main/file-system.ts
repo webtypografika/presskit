@@ -625,19 +625,6 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
     }
   })
 
-  // Extract ZIP archive to same directory
-  ipcMain.handle('fs:extractZip', async (_e, zipPath: string): Promise<{ ok: boolean; error?: string }> => {
-    const targetDir = dirname(zipPath)
-    try {
-      const AdmZip = (await import('adm-zip')).default
-      const zip = new AdmZip(zipPath)
-      zip.extractAllTo(targetDir, true)
-      return { ok: true }
-    } catch (err: any) {
-      return { ok: false, error: err.message || String(err) }
-    }
-  })
-
   // ─── File watcher ────────────────────────────────────────────────
   let watcher: any = null
 

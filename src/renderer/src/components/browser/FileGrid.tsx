@@ -582,12 +582,8 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         requestNewFolder()
         break
       case 'extractZip': {
-        window.api.fs.extractZip(file.path).then((result) => {
-          if (!result.ok) {
-            showAlert(`Αποτυχία αποσυμπίεσης: ${result.error}`)
-          }
-          setTimeout(() => refreshDirectory(), 300)
-        })
+        // Hand off to the default Windows app (WinRAR/Explorer) — same model as "Open with"
+        window.api.shell.openPath(file.path)
         break
       }
       case 'delete': {

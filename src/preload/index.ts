@@ -42,7 +42,6 @@ const api = {
     trash: (paths: string[]) => ipcRenderer.invoke('fs:trash', paths),
     rename: (oldPath: string, newName: string) => ipcRenderer.invoke('fs:rename', oldPath, newName) as Promise<{ ok: boolean; newPath?: string; error?: string }>,
     createDirectory: (dirPath: string) => ipcRenderer.invoke('fs:createDirectory', dirPath),
-    extractZip: (zipPath: string) => ipcRenderer.invoke('fs:extractZip', zipPath) as Promise<{ ok: boolean; error?: string }>,
     getNotes: (filePath: string) => ipcRenderer.invoke('notes:get', filePath) as Promise<string>,
     setNotes: (filePath: string, note: string) => ipcRenderer.invoke('notes:set', filePath, note),
     watch: (dirPath: string) => ipcRenderer.invoke('fs:watch', dirPath),

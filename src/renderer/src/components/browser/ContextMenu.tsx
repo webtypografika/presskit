@@ -166,7 +166,7 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
         <>
           {isPrint && <MenuItem icon={<Scan size={13} />} label="Run Preflight" onClick={() => onAction('preflight')} accent />}
           {canConvert && <MenuItem icon={<RefreshCw size={13} />} label="Convert..." onClick={() => onAction('convert')} />}
-          {isZip && <MenuItem icon={<PackageOpen size={13} />} label="Αποσυμπίεση εδώ" onClick={() => onAction('extractZip')} />}
+          {isZip && <MenuItem icon={<PackageOpen size={13} />} label="Αποσυμπίεση..." onClick={() => onAction('extractZip')} />}
           <Divider />
         </>
       )}

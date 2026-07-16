@@ -671,10 +671,13 @@ async function handleProtocolUrl(url: string): Promise<void> {
               const execP = prom(ef)
 
               if (ext === 'zip') {
-                const AdmZip = (await import('adm-zip')).default
-                const zip = new AdmZip(savePath)
-                zip.extractAllTo(saveDir, true)
-                await unlink(savePath)
+                const { extractZipRobust } = await import('./zip-extract')
+                const zipResult = await extractZipRobust(savePath, saveDir)
+                if (zipResult.ok) {
+                  await unlink(savePath)
+                } else {
+                  console.warn(`[DeepLink] All zip extractors failed for ${saveName} — keeping archive: ${zipResult.error}`)
+                }
               } else {
                 // Find 7-Zip or WinRAR
                 const candidates = [
