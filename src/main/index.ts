@@ -423,6 +423,8 @@ async function handleProtocolUrl(url: string): Promise<void> {
       const target = parsed.searchParams.get('target') || 'global'
       const onlyNew = parsed.searchParams.get('onlyNew') === '1'
       const customPath = parsed.searchParams.get('customPath')
+      // Single-file mode: PressCal's per-file "save to working folder" button
+      const fileLinkId = parsed.searchParams.get('fileLinkId')
       if (!quoteId) return
 
       const { writeFile, mkdir, access: fsAccess, readdir: rdDir } = await import('fs/promises')
@@ -476,7 +478,18 @@ async function handleProtocolUrl(url: string): Promise<void> {
       console.log('[DeepLink] folderPath:', data.folderPath)
       console.log('[DeepLink] files:', data.files?.length, 'newCount:', data.newCount)
 
-      const files: Array<{ id?: string; filePath: string; fileName: string; source?: string; subfolder?: string }> = data.files || []
+      let files: Array<{ id?: string; filePath: string; fileName: string; source?: string; subfolder?: string }> = data.files || []
+
+      // Single-file mode: keep only the requested file
+      if (fileLinkId) {
+        files = files.filter(f => f.id === fileLinkId)
+        if (files.length === 0) {
+          deepLog(`[DeepLink] fileLinkId ${fileLinkId} not found in quote file list`)
+          sendProgress('Το αρχείο δεν βρέθηκε', 0, 0, true)
+          showError('Αποθήκευση αρχείου', 'Το αρχείο δεν βρέθηκε στη λίστα της προσφοράς.')
+          return
+        }
+      }
 
       // 2. Resolve target directory
       let quoteFolderPath: string = data.folderPath || ''
@@ -550,8 +563,9 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       // 3. Filter files that already exist locally (skip when onlyNew — PressCal already filtered)
       let filesToDownload: typeof files
-      if (onlyNew) {
-        // PressCal says these are new — download even if same filename exists (corrected files)
+      if (onlyNew || fileLinkId) {
+        // onlyNew: PressCal says these are new — download even if same filename exists (corrected files)
+        // fileLinkId: explicit user action on one file — always download (overwrites corrected files)
         filesToDownload = files
       } else {
         filesToDownload = []
@@ -582,7 +596,8 @@ async function handleProtocolUrl(url: string): Promise<void> {
       }
 
       // Ask user whether to download new files or just open folder
-      if (mainWindow) {
+      // (skipped in single-file mode — the user explicitly asked to save this file)
+      if (mainWindow && !fileLinkId) {
         const choice = await new Promise<string>((resolve) => {
           const id = `dl-confirm-${Date.now()}`
           ipcMain.once(`dialog-result:${id}`, (_ev, result: string) => resolve(result))
