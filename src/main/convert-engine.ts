@@ -115,16 +115,19 @@ async function cropToTrimBox(
     left: cropLeft, top: cropTop, width: cropWidth, height: cropHeight
   })
 
-  // Re-encode in the same format
+  // Re-encode in the same format — must re-apply DPI, otherwise sharp writes
+  // its default resolution (1 px/mm = 25.4 dpi) and the file opens at giant physical size
+  const dpi = options.dpi || 300
   switch (options.format) {
     case 'tiff':
-      pipeline = pipeline.tiff({ compression: 'lzw' })
+      // sharp tiff xres/yres are in pixels/mm, not DPI
+      pipeline = pipeline.tiff({ compression: 'lzw', xres: dpi / 25.4, yres: dpi / 25.4 })
       break
     case 'png':
-      pipeline = pipeline.png({ compressionLevel: 6 })
+      pipeline = pipeline.withMetadata({ density: dpi }).png({ compressionLevel: 6 })
       break
     case 'jpg':
-      pipeline = pipeline.jpeg({ quality: options.quality || 95 })
+      pipeline = pipeline.withMetadata({ density: dpi }).jpeg({ quality: options.quality || 95 })
       break
   }
 
@@ -153,7 +156,8 @@ async function resizeImage(imagePath: string, options: ConvertOptions): Promise<
   const dpi = options.dpi || 300
   switch (options.format) {
     case 'tiff':
-      pipeline = pipeline.tiff({ compression: 'lzw', xres: dpi, yres: dpi })
+      // sharp tiff xres/yres are in pixels/mm, not DPI
+      pipeline = pipeline.tiff({ compression: 'lzw', xres: dpi / 25.4, yres: dpi / 25.4 })
       break
     case 'png':
       pipeline = pipeline.withMetadata({ density: dpi }).png({ compressionLevel: 6 })
@@ -439,7 +443,8 @@ async function convertImage(inputPath: string, outputPath: string, options: Conv
   const dpi = options.dpi || 300
   switch (options.format) {
     case 'tiff':
-      pipeline = pipeline.tiff({ compression: 'lzw', xres: dpi, yres: dpi })
+      // sharp tiff xres/yres are in pixels/mm, not DPI
+      pipeline = pipeline.tiff({ compression: 'lzw', xres: dpi / 25.4, yres: dpi / 25.4 })
       break
     case 'png':
       pipeline = pipeline.withMetadata({ density: dpi }).png({ compressionLevel: 6 })
@@ -500,7 +505,8 @@ async function convertRaw(inputPath: string, outputPath: string, options: Conver
   const dpi = options.dpi || 300
   switch (options.format) {
     case 'tiff':
-      pipeline = pipeline.tiff({ compression: 'lzw', xres: dpi, yres: dpi })
+      // sharp tiff xres/yres are in pixels/mm, not DPI
+      pipeline = pipeline.tiff({ compression: 'lzw', xres: dpi / 25.4, yres: dpi / 25.4 })
       break
     case 'png':
       pipeline = pipeline.withMetadata({ density: dpi }).png({ compressionLevel: 6 })
@@ -564,7 +570,8 @@ async function convertPsd(inputPath: string, outputPath: string, options: Conver
   const dpi = options.dpi || 300
   switch (options.format) {
     case 'tiff':
-      pipeline = pipeline.tiff({ compression: 'lzw', xres: dpi, yres: dpi })
+      // sharp tiff xres/yres are in pixels/mm, not DPI
+      pipeline = pipeline.tiff({ compression: 'lzw', xres: dpi / 25.4, yres: dpi / 25.4 })
       break
     case 'png':
       pipeline = pipeline.withMetadata({ density: dpi }).png({ compressionLevel: 6 })
