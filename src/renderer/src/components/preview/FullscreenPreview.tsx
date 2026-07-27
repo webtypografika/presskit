@@ -173,6 +173,7 @@ export function FullscreenPreview() {
           draggable={false}
           style={{
             maxWidth: '100%', maxHeight: '100%', objectFit: 'contain',
+            background: '#e5e5e5', // light matte so transparent files with dark content stay visible
             transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
             transformOrigin: 'center center',
             transition: dragging ? 'none' : 'transform 0.1s ease-out',
@@ -193,6 +194,8 @@ export function FullscreenPreview() {
         <div
           style={{
             padding: 32,
+            background: '#e5e5e5',
+            borderRadius: 4,
             transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
             transformOrigin: 'center center',
             transition: dragging ? 'none' : 'transform 0.1s ease-out',
