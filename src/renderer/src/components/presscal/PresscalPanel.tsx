@@ -135,11 +135,21 @@ function ActiveQuotesList() {
     }
   }, [])
 
-  // Fetch on mount + every 5 minutes
+  // Fetch on mount + every 15 minutes + on window focus.
+  // 5-min polls matched Neon's 5-min sleep threshold exactly, so the DB
+  // never suspended while PressKit was open (billed compute 24/7). Focus
+  // refresh keeps the list fresh the moment the user actually looks at it.
   useEffect(() => {
     fetchQuotes()
-    const timer = setInterval(fetchQuotes, 5 * 60 * 1000)
-    return () => clearInterval(timer)
+    const timer = setInterval(() => {
+      if (!document.hidden) fetchQuotes()
+    }, 15 * 60 * 1000)
+    const onFocus = () => fetchQuotes()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+    }
   }, [fetchQuotes])
 
   const openFolder = async (quote: PresscalQuote) => {

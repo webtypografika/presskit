@@ -1107,9 +1107,12 @@ async function handleProtocolUrl(url: string): Promise<void> {
 let pendingArchivesTimer: ReturnType<typeof setInterval> | null = null
 
 function startPendingArchivesPoller() {
-  // Initial check after 5s (let app settle), then every 30s
+  // Initial check after 5s (let app settle), then every 5 minutes.
+  // Archiving is not time-critical, and each poll wakes the PressCal DB —
+  // Neon bills compute per active hour and only sleeps after 5 quiet minutes,
+  // so a 30s poll from any shop PC kept the DB awake (and billed) 24/7.
   setTimeout(() => processPendingArchives(), 5000)
-  pendingArchivesTimer = setInterval(() => processPendingArchives(), 30000)
+  pendingArchivesTimer = setInterval(() => processPendingArchives(), 5 * 60 * 1000)
 }
 
 async function processPendingArchives() {
