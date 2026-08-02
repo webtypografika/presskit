@@ -35,8 +35,14 @@ interface ProfilesIndex {
 const PROFILES_INDEX_NAME = 'profiles'
 const DEFAULT_PROFILE_ID = 'default'
 
-let profilesIndex: Store<ProfilesIndex> | null = null
-let activeProfileStore: Store | null = null
+// Module state lives on an object: rollup 4.6x wrongly dead-store-eliminates
+// assignments to a bare module-level `let` that is only read in another
+// function (the 2.3.8 "Profile system not initialized" startup crash) —
+// property writes are immune to that analysis.
+const state: { profilesIndex: Store<ProfilesIndex> | null; activeProfileStore: Store | null } = {
+  profilesIndex: null,
+  activeProfileStore: null,
+}
 
 function getUserDataDir(): string {
   return app.getPath('userData')
@@ -103,7 +109,7 @@ function migrateLegacyConfigIfNeeded(): void {
 
   // Seed the profiles index regardless — so a fresh install also gets a
   // Default profile to write into.
-  profilesIndex = new Store<ProfilesIndex>({
+  state.profilesIndex = new Store<ProfilesIndex>({
     name: PROFILES_INDEX_NAME,
     defaults: {
       activeId: DEFAULT_PROFILE_ID,
@@ -125,8 +131,8 @@ function migrateLegacyConfigIfNeeded(): void {
  */
 export function initializeProfiles(): void {
   migrateLegacyConfigIfNeeded()
-  if (!profilesIndex) {
-    profilesIndex = new Store<ProfilesIndex>({
+  if (!state.profilesIndex) {
+    state.profilesIndex = new Store<ProfilesIndex>({
       name: PROFILES_INDEX_NAME,
       defaults: {
         activeId: DEFAULT_PROFILE_ID,
@@ -141,35 +147,35 @@ export function initializeProfiles(): void {
     })
   }
 
-  const activeId = profilesIndex.get('activeId')
+  const activeId = state.profilesIndex.get('activeId')
   ensureProfileDir(activeId)
-  activeProfileStore = new Store({ name: 'config', cwd: profileDir(activeId) })
+  state.activeProfileStore = new Store({ name: 'config', cwd: profileDir(activeId) })
 
   // Bump lastUsedAt for the active profile.
-  const profiles = profilesIndex.get('profiles')
+  const profiles = state.profilesIndex.get('profiles')
   const idx = profiles.findIndex(p => p.id === activeId)
   if (idx >= 0) {
     profiles[idx].lastUsedAt = Date.now()
-    profilesIndex.set('profiles', profiles)
+    state.profilesIndex.set('profiles', profiles)
   }
 }
 
 /** Returns the active profile's electron-store. Throws if not initialized. */
 export function getActiveStore(): Store {
-  if (!activeProfileStore) {
+  if (!state.activeProfileStore) {
     throw new Error('Profile system not initialized — call initializeProfiles() first.')
   }
-  return activeProfileStore
+  return state.activeProfileStore
 }
 
 export function listProfiles(): ProfileMetadata[] {
-  if (!profilesIndex) return []
-  return profilesIndex.get('profiles')
+  if (!state.profilesIndex) return []
+  return state.profilesIndex.get('profiles')
 }
 
 export function getActiveProfileId(): string {
-  if (!profilesIndex) return DEFAULT_PROFILE_ID
-  return profilesIndex.get('activeId')
+  if (!state.profilesIndex) return DEFAULT_PROFILE_ID
+  return state.profilesIndex.get('activeId')
 }
 
 export function getActiveProfile(): ProfileMetadata | null {
@@ -182,7 +188,7 @@ export function getActiveProfile(): ProfileMetadata | null {
  * subsequently call switchProfile() to activate it (which restarts the app).
  */
 export function createProfile(input: { name: string; email?: string; presscalUrl?: string }): ProfileMetadata {
-  if (!profilesIndex) throw new Error('Not initialized')
+  if (!state.profilesIndex) throw new Error('Not initialized')
   const id = generateProfileId(input.name)
   ensureProfileDir(id)
   const meta: ProfileMetadata = {
@@ -194,20 +200,20 @@ export function createProfile(input: { name: string; email?: string; presscalUrl
     createdAt: Date.now(),
     lastUsedAt: Date.now(),
   }
-  const profiles = profilesIndex.get('profiles')
+  const profiles = state.profilesIndex.get('profiles')
   profiles.push(meta)
-  profilesIndex.set('profiles', profiles)
+  state.profilesIndex.set('profiles', profiles)
   return meta
 }
 
 /** Updates editable fields on a profile. */
 export function updateProfile(id: string, patch: Partial<Pick<ProfileMetadata, 'name' | 'email' | 'color' | 'presscalUrl' | 'orgName'>>): ProfileMetadata | null {
-  if (!profilesIndex) return null
-  const profiles = profilesIndex.get('profiles')
+  if (!state.profilesIndex) return null
+  const profiles = state.profilesIndex.get('profiles')
   const idx = profiles.findIndex(p => p.id === id)
   if (idx < 0) return null
   profiles[idx] = { ...profiles[idx], ...patch }
-  profilesIndex.set('profiles', profiles)
+  state.profilesIndex.set('profiles', profiles)
   return profiles[idx]
 }
 
@@ -216,13 +222,13 @@ export function updateProfile(id: string, patch: Partial<Pick<ProfileMetadata, '
  * profile — caller must switch away first. Cannot delete the last profile.
  */
 export function deleteProfile(id: string): { ok: boolean; error?: string } {
-  if (!profilesIndex) return { ok: false, error: 'Not initialized' }
+  if (!state.profilesIndex) return { ok: false, error: 'Not initialized' }
   if (id === getActiveProfileId()) return { ok: false, error: 'Cannot delete the active profile' }
-  const profiles = profilesIndex.get('profiles')
+  const profiles = state.profilesIndex.get('profiles')
   if (profiles.length <= 1) return { ok: false, error: 'Cannot delete the last remaining profile' }
   const filtered = profiles.filter(p => p.id !== id)
   if (filtered.length === profiles.length) return { ok: false, error: 'Profile not found' }
-  profilesIndex.set('profiles', filtered)
+  state.profilesIndex.set('profiles', filtered)
   // Best-effort folder removal — don't fail the operation if it can't be
   // deleted right now (Dropbox locks, antivirus scans, etc.). The orphaned
   // folder is harmless.
@@ -240,10 +246,10 @@ export function deleteProfile(id: string): { ok: boolean; error?: string } {
  * cold-swap by design, much simpler and more reliable than hot-swap.
  */
 export function switchProfile(id: string): { ok: boolean; error?: string } {
-  if (!profilesIndex) return { ok: false, error: 'Not initialized' }
-  const profiles = profilesIndex.get('profiles')
+  if (!state.profilesIndex) return { ok: false, error: 'Not initialized' }
+  const profiles = state.profilesIndex.get('profiles')
   if (!profiles.some(p => p.id === id)) return { ok: false, error: 'Profile not found' }
-  profilesIndex.set('activeId', id)
+  state.profilesIndex.set('activeId', id)
   // Relaunch WITHOUT any `presscal-fh://` argv. If the app was started by a
   // deep link (e.g. `presscal-fh://connect?...&addProfile=1`), passing argv
   // through unchanged would make the restarted instance re-process that URL,
