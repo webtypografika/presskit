@@ -162,13 +162,16 @@ export function registerPresscalHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('presscal:status', async () => {
     const config = getConfig()
-    if (!config) return { connected: false }
+    if (!config) return { connected: false, error: 'PressCal not configured' }
 
     try {
       const result = await presscalFetch<{ ok: boolean; orgName: string }>('')
       return { connected: true, url: config.url, orgName: result.orgName }
-    } catch {
-      return { connected: false, url: config.url }
+    } catch (err: any) {
+      // Pass the reason up — "Failed" with no cause is undebuggable from the
+      // Settings dialog (wrong key vs wrong URL vs expired license all look
+      // identical without it).
+      return { connected: false, url: config.url, error: String(err?.message || err) }
     }
   })
 

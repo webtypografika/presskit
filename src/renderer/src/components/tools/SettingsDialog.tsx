@@ -103,6 +103,7 @@ function PresscalSettings() {
   const [showKey, setShowKey] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null)
+  const [testError, setTestError] = useState('')
 
   useEffect(() => {
     window.api.settings.get('presscal.url').then((v: any) => setUrl(v || ''))
@@ -112,6 +113,7 @@ function PresscalSettings() {
   const testConnection = async () => {
     setTesting(true)
     setTestResult(null)
+    setTestError('')
     try {
       await window.api.presscal.configure(url, apiKey)
       const status = await window.api.presscal.status()
@@ -120,9 +122,11 @@ function PresscalSettings() {
         useAppStore.setState({ presscalConnected: true, presscalOrgName: (status as any).orgName || '' })
       } else {
         setTestResult('fail')
+        setTestError((status as any).error || '')
       }
-    } catch {
+    } catch (err: any) {
       setTestResult('fail')
+      setTestError(String(err?.message || err))
     } finally {
       setTesting(false)
     }
@@ -211,6 +215,15 @@ function PresscalSettings() {
           </button>
         )}
       </div>
+      {testResult === 'fail' && testError && (
+        <div style={{
+          marginTop: 10, padding: '10px 14px', borderRadius: 8, fontSize: 13, lineHeight: 1.5,
+          background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)',
+          color: '#ef4444', wordBreak: 'break-word',
+        }}>
+          {testError}
+        </div>
+      )}
     </div>
   )
 }

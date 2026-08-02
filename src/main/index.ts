@@ -1036,8 +1036,22 @@ async function handleProtocolUrl(url: string): Promise<void> {
       const email = parsed.searchParams.get('email') ?? undefined
 
       if (url && apiKey) {
+        const cleanUrl = url.replace(/\/$/, '')
+
+        // A profile name counts as "auto-derived" (safe to overwrite on
+        // reconnect) when the user never typed it themselves: it's the
+        // generic default or it mirrors the profile's own email / org /
+        // hostname. Keeps the fix for the 02/08 «καπάρωμα»: a profile that
+        // changed accounts kept its stale name next to fresh credentials.
+        const isAutoName = (p: { name?: string; email?: string; orgName?: string }): boolean => {
+          if (!p.name || p.name === 'Default' || p.name === 'New profile') return true
+          if (p.email && p.name === p.email) return true
+          if (p.orgName && p.name === p.orgName) return true
+          try { if (p.name === new URL(cleanUrl).hostname.replace(/^www\./, '')) return true } catch {}
+          return false
+        }
+
         if (addProfile) {
-          const cleanUrl = url.replace(/\/$/, '')
           // Upsert by URL + account: multiple accounts (orgs) can live on the
           // SAME PressCal instance (e.g. a demo user and the owner, both on eu).
           // Matching by URL alone overwrote the first profile's credentials
@@ -1049,56 +1063,88 @@ async function handleProtocolUrl(url: string): Promise<void> {
             p.presscalUrl === cleanUrl && (!email || !p.email || p.email === email)
           )
 
-          let profileId: string
-          if (existing) {
-            // Update existing profile's credentials & metadata
-            const patch: Record<string, string> = {}
-            if (email) patch.email = email
-            if (orgName) patch.orgName = orgName
-            updateProfile(existing.id, patch)
-            profileId = existing.id
-            deepLog('[DeepLink] Updated existing profile:', profileId)
-          } else {
-            // Create new profile
-            const suggestedName = email || orgName || (() => {
-              try { return new URL(cleanUrl).hostname.replace(/^www\./, '') } catch { return 'New profile' }
-            })()
-            const profile = createProfile({ name: suggestedName, email, presscalUrl: cleanUrl })
-            profileId = profile.id
-            deepLog('[DeepLink] Created new profile:', profileId)
+          // Reconnecting the profile that's already active needs no restart —
+          // fall through to the in-place path below, same as a plain connect.
+          if (!existing || existing.id !== getActiveProfileId()) {
+            let profileId: string
+            let profileName: string
+            let isNew = false
+            if (existing) {
+              // Update existing profile's credentials & metadata
+              const patch: Record<string, string> = {}
+              if (email) patch.email = email
+              if (orgName) patch.orgName = orgName
+              if (isAutoName(existing)) {
+                const synced = email || orgName
+                if (synced && synced !== existing.name) patch.name = synced
+              }
+              const updated = updateProfile(existing.id, patch)
+              profileId = existing.id
+              profileName = updated?.name || existing.name
+              deepLog('[DeepLink] Updated existing profile:', profileId)
+            } else {
+              // Create new profile
+              isNew = true
+              const suggestedName = email || orgName || (() => {
+                try { return new URL(cleanUrl).hostname.replace(/^www\./, '') } catch { return 'New profile' }
+              })()
+              const profile = createProfile({ name: suggestedName, email, presscalUrl: cleanUrl })
+              profileId = profile.id
+              profileName = profile.name
+              deepLog('[DeepLink] Created new profile:', profileId)
+            }
+
+            // Stash the credentials in the profile's store before we switch
+            // (we have to write them via a temp store since `store` proxies to
+            // the active profile, which is still the OLD one).
+            const StoreModule = await import('electron-store')
+            const path = await import('path')
+            const profileStore = new StoreModule.default({
+              name: 'config',
+              cwd: path.join(app.getPath('userData'), 'profiles', profileId),
+            })
+            profileStore.set('presscal.url', cleanUrl)
+            profileStore.set('presscal.apiKey', apiKey)
+
+            // Tell the user what just happened BEFORE the cold-swap restart —
+            // without this the window simply vanishes and the connect looks
+            // like a crash (the 02/08 first-run test verdict).
+            const parentWin = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
+            const dialogOpts = {
+              type: 'info' as const,
+              title: 'PressKit',
+              message: `Συνδέθηκε: ${email || orgName || cleanUrl}`,
+              detail:
+                `${cleanUrl}\n\n` +
+                (isNew
+                  ? `Δημιουργήθηκε νέο profile «${profileName}».`
+                  : `Ενημερώθηκε το profile «${profileName}».`) +
+                `\n\nΤο PressKit θα επανεκκινήσει τώρα για να αλλάξει σε αυτό το profile.`,
+              buttons: ['OK'],
+            }
+            if (parentWin) dialog.showMessageBoxSync(parentWin, dialogOpts)
+            else dialog.showMessageBoxSync(dialogOpts)
+
+            // Switch to the profile (restarts the app)
+            switchProfile(profileId)
+            return
           }
-
-          // Stash the credentials in the profile's store before we switch
-          // (we have to write them via a temp store since `store` proxies to
-          // the active profile, which is still the OLD one).
-          const StoreModule = await import('electron-store')
-          const path = await import('path')
-          const profileStore = new StoreModule.default({
-            name: 'config',
-            cwd: path.join(app.getPath('userData'), 'profiles', profileId),
-          })
-          profileStore.set('presscal.url', cleanUrl)
-          profileStore.set('presscal.apiKey', apiKey)
-
-          // Switch to the profile (restarts the app)
-          switchProfile(profileId)
-          return
+          deepLog('[DeepLink] addProfile matched the active profile — updating in place, no restart')
         }
 
-        const cleanUrl = url.replace(/\/$/, '')
         store.set('presscal.url', cleanUrl)
         store.set('presscal.apiKey', apiKey)
 
         // Update active profile metadata so the ProfileSwitcher shows a
-        // meaningful name instead of "Default".
+        // meaningful name instead of "Default" (or a stale auto-derived one).
         const activeProfile = getActiveProfile()
         if (activeProfile) {
           const patch: Record<string, string> = { presscalUrl: cleanUrl }
           if (email) patch.email = email
           if (orgName) patch.orgName = orgName
-          // Update name only if it's still the generic "Default"
-          if (activeProfile.name === 'Default') {
-            patch.name = email || orgName || activeProfile.name
+          if (isAutoName(activeProfile)) {
+            const synced = email || orgName
+            if (synced && synced !== activeProfile.name) patch.name = synced
           }
           updateProfile(activeProfile.id, patch)
         }
