@@ -264,14 +264,16 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
     if (parsed.hostname === 'pick-folder') {
       const customerId = parsed.searchParams.get('customerId')
-      if (!customerId) return
+      // target=jobFolderRoot → pick the org-wide job folders root (Settings → PressKit)
+      const target = parsed.searchParams.get('target')
+      if (!customerId && target !== 'jobFolderRoot') return
 
       const { dialog } = await import('electron')
       if (mainWindow) { mainWindow.setAlwaysOnTop(true); mainWindow.focus(); mainWindow.setAlwaysOnTop(false); }
 
       const result = await dialog.showOpenDialog(mainWindow!, {
-        title: 'Επιλογή Φακέλου Πελάτη',
-        properties: ['openDirectory']
+        title: customerId ? 'Επιλογή Φακέλου Πελάτη' : 'Επιλογή Ριζικού Φακέλου Εργασιών',
+        properties: ['openDirectory', 'createDirectory']
       })
 
       if (result.canceled || !result.filePaths[0]) return
@@ -282,11 +284,19 @@ async function handleProtocolUrl(url: string): Promise<void> {
       const apiKey = store.get('presscal.apiKey') as string
 
       if (presscalUrl && apiKey) {
-        await fetch(`${presscalUrl}/api/filehelper/customers`, {
-          method: 'PATCH',
-          headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: customerId, folderPath: toPortablePath(selectedPath) })
-        })
+        if (customerId) {
+          await fetch(`${presscalUrl}/api/filehelper/customers`, {
+            method: 'PATCH',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: customerId, folderPath: toPortablePath(selectedPath) })
+          })
+        } else {
+          await fetch(`${presscalUrl}/api/filehelper/org`, {
+            method: 'PATCH',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jobFolderRoot: toPortablePath(selectedPath) })
+          })
+        }
       }
 
       // Navigate file browser to the folder
