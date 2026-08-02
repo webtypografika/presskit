@@ -59,10 +59,10 @@ export class ErrorBoundary extends Component<Props, State> {
         }}
       >
         <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 12, color: '#ef4444' }}>
-          Κάτι πήγε στραβά
+          Something went wrong
         </h1>
         <p style={{ marginBottom: 16, color: 'var(--th-text-secondary, #9ca3af)' }}>
-          Παρουσιάστηκε σφάλμα στο UI. Μπορείς να δοκιμάσεις επαναφορά ή να κάνεις reload.
+          A UI error occurred. You can try restoring the view or reloading the app.
         </p>
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
@@ -79,7 +79,7 @@ export class ErrorBoundary extends Component<Props, State> {
               fontWeight: 500,
             }}
           >
-            Επαναφορά
+            Restore
           </button>
           <button
             onClick={this.handleReload}
@@ -93,13 +93,13 @@ export class ErrorBoundary extends Component<Props, State> {
               fontSize: 13,
             }}
           >
-            Reload εφαρμογής
+            Reload app
           </button>
         </div>
 
         <details open style={{ marginTop: 16 }}>
           <summary style={{ cursor: 'pointer', marginBottom: 8, color: 'var(--th-text-muted, #6b7280)' }}>
-            Τεχνικές λεπτομέρειες
+            Technical details
           </summary>
           <pre
             style={{

@@ -20,11 +20,11 @@ const statusConfig = {
 }
 
 const categoryLabels: Record<string, string> = {
-  resolution: 'Ανάλυση',
-  color: 'Χρώματα',
+  resolution: 'Resolution',
+  color: 'Color',
   bleed: 'Bleed',
-  fonts: 'Γραμματοσειρές',
-  general: 'Γενικά',
+  fonts: 'Fonts',
+  general: 'General',
 }
 
 export function PrintChecklist() {
@@ -52,7 +52,7 @@ export function PrintChecklist() {
     return (
       <div style={{ padding: 20, textAlign: 'center' }}>
         <ClipboardCheck size={28} style={{ color: '#475569', margin: '0 auto 8px' }} />
-        <div style={{ fontSize: 12, color: '#64748b' }}>Επιλέξτε αρχείο εκτύπωσης</div>
+        <div style={{ fontSize: 12, color: '#64748b' }}>Select a print file</div>
       </div>
     )
   }

@@ -45,8 +45,8 @@ export function FileBrowser() {
       }, 1500)
     } catch (e) {
       console.error('Link file error:', e)
-      const msg = (e as any)?.message || String(e) || 'Άγνωστο σφάλμα'
-      useDialogStore.getState().showAlert(`Αποτυχία σύνδεσης αρχείου:\n\n${msg}\n\nΈλεγξε τις ρυθμίσεις PressCal (URL & API key).`)
+      const msg = (e as any)?.message || String(e) || 'Unknown error'
+      useDialogStore.getState().showAlert(`Failed to link file:\n\n${msg}\n\nCheck the PressCal settings (URL & API key).`)
     } finally {
       setLinking(false)
     }
@@ -77,18 +77,18 @@ export function FileBrowser() {
           {linked ? (
             <>
               <CheckCircle size={16} style={{ color: '#22c55e' }} />
-              <span style={{ fontSize: 13, color: '#22c55e', fontWeight: 600, flex: 1 }}>Αρχείο συνδέθηκε!</span>
+              <span style={{ fontSize: 13, color: '#22c55e', fontWeight: 600, flex: 1 }}>File linked!</span>
             </>
           ) : linking ? (
             <>
               <Loader2 size={16} className="animate-spin" style={{ color: 'var(--th-accent)' }} />
-              <span style={{ fontSize: 13, color: 'var(--th-accent)', flex: 1 }}>Σύνδεση...</span>
+              <span style={{ fontSize: 13, color: 'var(--th-accent)', flex: 1 }}>Linking...</span>
             </>
           ) : (
             <>
               <Link2 size={16} style={{ color: 'var(--th-accent)' }} />
               <span style={{ fontSize: 13, color: 'var(--th-accent)', fontWeight: 600, flex: 1 }}>
-                Επιλέξτε αρχείο για σύνδεση με είδος προσφοράς
+                Select a file to link to a quote item
               </span>
               <button
                 onClick={() => useAppStore.setState({ pickFileMode: null })}
@@ -190,7 +190,7 @@ function EmptyFolderView() {
       {newFolderPending ? (
         <NewFolderInline onSubmit={createNewFolder} onCancel={clearNewFolder} />
       ) : (
-        'Κενός φάκελος'
+        'Empty folder'
       )}
 
       {bgCtx && (
@@ -216,7 +216,7 @@ function EmptyFolderView() {
             onClick={() => { setBgCtx(null); requestNewFolder() }}
           >
             <FolderPlus size={13} />
-            Νέος Φάκελος
+            New Folder
           </button>
         </div>
       )}
@@ -234,7 +234,7 @@ function NewFolderInline({ onSubmit, onCancel }: { onSubmit: (name: string) => v
       <FolderPlus size={16} color="var(--th-accent)" />
       <input
         ref={inputRef}
-        defaultValue="Νέος Φάκελος"
+        defaultValue="New Folder"
         onKeyDown={(e) => {
           if (e.key === 'Enter') onSubmit(inputRef.current?.value || '')
           if (e.key === 'Escape') onCancel()

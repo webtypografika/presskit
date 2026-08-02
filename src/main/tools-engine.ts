@@ -246,10 +246,10 @@ const DEFAULT_TEMPLATES: FolderTemplate[] = [
   {
     name: 'Standard Print Job',
     folders: [
-      'Αρχεία Πελάτη',
-      'Αρχεία Πελάτη/Original',
-      'Αρχεία Πελάτη/Fonts',
-      'Αρχεία Πελάτη/Links',
+      'Customer Files',
+      'Customer Files/Original',
+      'Customer Files/Fonts',
+      'Customer Files/Links',
       'Proofs',
       'Proofs/Soft Proof',
       'Proofs/Hard Proof',
@@ -262,11 +262,11 @@ const DEFAULT_TEMPLATES: FolderTemplate[] = [
   {
     name: 'Packaging Job',
     folders: [
-      'Αρχεία Πελάτη',
-      'Αρχεία Πελάτη/Artwork',
-      'Αρχεία Πελάτη/Dieline',
-      'Αρχεία Πελάτη/Fonts',
-      'Αρχεία Πελάτη/Images',
+      'Customer Files',
+      'Customer Files/Artwork',
+      'Customer Files/Dieline',
+      'Customer Files/Fonts',
+      'Customer Files/Images',
       'Proofs',
       'Proofs/3D Mockup',
       'Proofs/Flat Proof',
@@ -280,7 +280,7 @@ const DEFAULT_TEMPLATES: FolderTemplate[] = [
   {
     name: 'Business Cards / Stationery',
     folders: [
-      'Αρχεία Πελάτη',
+      'Customer Files',
       'Logo',
       'Proofs',
       'Print Ready',
@@ -290,10 +290,10 @@ const DEFAULT_TEMPLATES: FolderTemplate[] = [
   {
     name: 'Book / Catalog',
     folders: [
-      'Αρχεία Πελάτη',
-      'Αρχεία Πελάτη/Text',
-      'Αρχεία Πελάτη/Images',
-      'Αρχεία Πελάτη/Fonts',
+      'Customer Files',
+      'Customer Files/Text',
+      'Customer Files/Images',
+      'Customer Files/Fonts',
       'Layout',
       'Proofs',
       'Proofs/Chapter Proofs',
@@ -309,7 +309,7 @@ const DEFAULT_TEMPLATES: FolderTemplate[] = [
   {
     name: 'Large Format / Banner',
     folders: [
-      'Αρχεία Πελάτη',
+      'Customer Files',
       'Proofs',
       'Print Ready',
       'Print Ready/High Res',
@@ -629,31 +629,31 @@ async function generatePrintChecklist(filePath: string): Promise<PrintChecklistI
       id: 'res-dpi', label: 'Resolution ≥ 300 DPI', category: 'resolution',
       status: !meta.density ? 'warning' : meta.density >= 300 ? 'pass' : 'error',
       value: meta.density ? `${meta.density} DPI` : 'Unknown',
-      detail: meta.density && meta.density < 300 ? 'Χαμηλή ανάλυση — θα φαίνεται pixelated στην εκτύπωση' : undefined,
+      detail: meta.density && meta.density < 300 ? 'Low resolution — will look pixelated in print' : undefined,
     })
 
     items.push({
       id: 'color-cmyk', label: 'CMYK Color Space', category: 'color',
       status: meta.space === 'cmyk' ? 'pass' : 'warning',
       value: (meta.space || 'unknown').toUpperCase(),
-      detail: meta.space !== 'cmyk' ? 'Μετατροπή σε CMYK πριν την εκτύπωση' : undefined,
+      detail: meta.space !== 'cmyk' ? 'Convert to CMYK before printing' : undefined,
     })
 
     items.push({
       id: 'icc-embedded', label: 'ICC Profile Embedded', category: 'color',
       status: meta.icc ? 'pass' : 'warning',
       value: meta.icc ? 'Yes' : 'No',
-      detail: !meta.icc ? 'Χωρίς ICC profile τα χρώματα μπορεί να αλλάξουν' : undefined,
+      detail: !meta.icc ? 'Without an ICC profile colors may shift' : undefined,
     })
 
     items.push({
       id: 'no-alpha', label: 'No Transparency', category: 'general',
       status: meta.hasAlpha ? 'warning' : 'pass',
       value: meta.hasAlpha ? 'Has Alpha' : 'No Alpha',
-      detail: meta.hasAlpha ? 'Το alpha channel μπορεί να δημιουργήσει πρόβλημα στο RIP' : undefined,
+      detail: meta.hasAlpha ? 'Alpha channel may cause problems in the RIP' : undefined,
     })
 
-    items.push({ id: 'bleed', label: 'Bleed ≥ 3mm', category: 'bleed', status: 'na', value: 'N/A (image)', detail: 'Ελέγξτε στο layout αρχείο' })
+    items.push({ id: 'bleed', label: 'Bleed ≥ 3mm', category: 'bleed', status: 'na', value: 'N/A (image)', detail: 'Check in the layout file' })
     items.push({ id: 'fonts', label: 'Fonts Embedded/Outlined', category: 'fonts', status: 'na', value: 'N/A (image)' })
 
   } else if (['.pdf', '.ai'].includes(ext)) {
@@ -665,7 +665,7 @@ async function generatePrintChecklist(filePath: string): Promise<PrintChecklistI
       id: 'res-check', label: 'Image Resolution', category: 'resolution',
       status: 'info' as any || 'pass',
       value: 'Check embedded images',
-      detail: 'Ελέγξτε τα ενσωματωμένα images για ≥300 DPI',
+      detail: 'Check embedded images for ≥300 DPI',
     })
     // Correct status
     items[items.length - 1].status = 'pass'
@@ -677,7 +677,7 @@ async function generatePrintChecklist(filePath: string): Promise<PrintChecklistI
       id: 'color-cmyk', label: 'CMYK Color Space', category: 'color',
       status: hasRGB ? 'error' : hasCMYK ? 'pass' : 'warning',
       value: hasRGB && hasCMYK ? 'Mixed RGB+CMYK' : hasRGB ? 'RGB detected' : hasCMYK ? 'CMYK' : 'Unknown',
-      detail: hasRGB ? 'Περιέχει RGB αντικείμενα — μετατρέψτε σε CMYK' : undefined,
+      detail: hasRGB ? 'Contains RGB objects — convert to CMYK' : undefined,
     })
 
     // Spot colors
@@ -718,13 +718,13 @@ async function generatePrintChecklist(filePath: string): Promise<PrintChecklistI
       items.push({
         id: 'bleed', label: 'Bleed ≥ 3mm', category: 'bleed',
         status: 'error', value: 'No BleedBox',
-        detail: 'Λείπει BleedBox — πιθανόν χωρίς bleed',
+        detail: 'BleedBox missing — likely no bleed',
       })
     } else {
       items.push({
         id: 'bleed', label: 'Bleed ≥ 3mm', category: 'bleed',
         status: 'warning', value: 'No TrimBox/BleedBox',
-        detail: 'Δεν βρέθηκαν box definitions — ελέγξτε χειροκίνητα',
+        detail: 'No box definitions found — check manually',
       })
     }
 
@@ -739,7 +739,7 @@ async function generatePrintChecklist(filePath: string): Promise<PrintChecklistI
       id: 'fonts', label: 'Fonts Embedded/Outlined', category: 'fonts',
       status: noFonts ? 'pass' : hasFontDescriptor ? 'pass' : 'warning',
       value: noFonts ? 'All outlined (no fonts)' : hasFontDescriptor ? 'Fonts embedded' : 'Check embedding',
-      detail: !noFonts && !hasFontDescriptor ? 'Βεβαιωθείτε ότι όλες οι γραμματοσειρές είναι embedded' : undefined,
+      detail: !noFonts && !hasFontDescriptor ? 'Make sure all fonts are embedded' : undefined,
     })
 
     // Transparency
@@ -748,7 +748,7 @@ async function generatePrintChecklist(filePath: string): Promise<PrintChecklistI
       id: 'transparency', label: 'Transparency Flattened', category: 'general',
       status: hasTrans ? 'warning' : 'pass',
       value: hasTrans ? 'Live transparency' : 'No transparency',
-      detail: hasTrans ? 'Flatten transparency για παλιά RIP systems' : undefined,
+      detail: hasTrans ? 'Flatten transparency for older RIP systems' : undefined,
     })
 
     // Overprint
@@ -757,7 +757,7 @@ async function generatePrintChecklist(filePath: string): Promise<PrintChecklistI
       id: 'overprint', label: 'Overprint Settings', category: 'general',
       status: hasOverprint ? 'warning' : 'pass',
       value: hasOverprint ? 'Overprint detected' : 'No overprint',
-      detail: hasOverprint ? 'Ελέγξτε ότι το overprint είναι σωστά ρυθμισμένο' : undefined,
+      detail: hasOverprint ? 'Check that overprint is set correctly' : undefined,
     })
 
     // PDF/X
@@ -766,7 +766,7 @@ async function generatePrintChecklist(filePath: string): Promise<PrintChecklistI
       id: 'pdfx', label: 'PDF/X Compliance', category: 'general',
       status: hasPdfX ? 'pass' : 'warning',
       value: hasPdfX ? 'PDF/X compliant' : 'Not PDF/X',
-      detail: !hasPdfX ? 'Χρησιμοποιήστε PDF/X-1a ή PDF/X-4 για εκτύπωση' : undefined,
+      detail: !hasPdfX ? 'Use PDF/X-1a or PDF/X-4 for print' : undefined,
     })
   }
 

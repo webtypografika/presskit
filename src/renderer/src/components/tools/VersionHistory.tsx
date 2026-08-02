@@ -38,7 +38,7 @@ export function VersionHistory() {
     return (
       <div style={{ padding: 20, textAlign: 'center' }}>
         <History size={28} style={{ color: '#475569', margin: '0 auto 8px' }} />
-        <div style={{ fontSize: 12, color: '#64748b' }}>Επιλέξτε αρχείο</div>
+        <div style={{ fontSize: 12, color: '#64748b' }}>Select a file</div>
       </div>
     )
   }
@@ -55,9 +55,9 @@ export function VersionHistory() {
     return (
       <div style={{ padding: 20, textAlign: 'center' }}>
         <History size={28} style={{ color: '#475569', margin: '0 auto 8px' }} />
-        <div style={{ fontSize: 12, color: '#64748b' }}>Δεν βρέθηκαν παλαιότερες εκδόσεις</div>
+        <div style={{ fontSize: 12, color: '#64748b' }}>No earlier versions found</div>
         <div style={{ fontSize: 11, color: '#475569', marginTop: 4 }}>
-          Αναζήτηση patterns: _v1, _v2, (1), (2), _final, _revised
+          Searched patterns: _v1, _v2, (1), (2), _final, _revised
         </div>
       </div>
     )
@@ -66,7 +66,7 @@ export function VersionHistory() {
   return (
     <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
-        {versions.length} εκδόσεις
+        {versions.length} versions
       </div>
 
       {versions.map((v, i) => (

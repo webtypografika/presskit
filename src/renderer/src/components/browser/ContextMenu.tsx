@@ -166,7 +166,7 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
         <>
           {isPrint && <MenuItem icon={<Scan size={13} />} label="Run Preflight" onClick={() => onAction('preflight')} accent />}
           {canConvert && <MenuItem icon={<RefreshCw size={13} />} label="Convert..." onClick={() => onAction('convert')} />}
-          {isZip && <MenuItem icon={<PackageOpen size={13} />} label="Αποσυμπίεση..." onClick={() => onAction('extractZip')} />}
+          {isZip && <MenuItem icon={<PackageOpen size={13} />} label="Extract..." onClick={() => onAction('extractZip')} />}
           <Divider />
         </>
       )}
@@ -184,7 +184,7 @@ export function ContextMenu({ file, x, y, onClose, onAction }: ContextMenuProps)
       <MenuItem icon={<Star size={13} />} label={file.isDirectory ? 'Bookmark folder' : 'Copy name'} onClick={() => onAction(file.isDirectory ? 'bookmark' : 'copyName')} />
 
       <Divider />
-      <MenuItem icon={<FolderPlus size={13} />} label="Νέος Φάκελος" onClick={() => onAction('newFolder')} />
+      <MenuItem icon={<FolderPlus size={13} />} label="New Folder" onClick={() => onAction('newFolder')} />
       <MenuItem icon={<Trash2 size={13} />} label="Delete" onClick={() => onAction('delete')} danger />
     </div>
   )

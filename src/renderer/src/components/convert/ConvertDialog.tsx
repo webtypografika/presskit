@@ -203,7 +203,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
 
         {/* Row 3: Resize */}
         <div>
-          <SectionLabel><Maximize size={13} style={{ marginRight: 6 }} />Διαστάσεις (mm)</SectionLabel>
+          <SectionLabel><Maximize size={13} style={{ marginRight: 6 }} />Dimensions (mm)</SectionLabel>
           <div className="flex items-center" style={{ gap: 6, marginTop: 6 }}>
             <span style={{ fontSize: 11, color: 'var(--th-text-muted)' }}>W</span>
             <input
@@ -240,7 +240,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
             />
           </div>
           <div style={{ marginTop: 4, fontSize: 10, color: 'var(--th-text-muted)', opacity: 0.7 }}>
-            Αλλάζει μέγεθος αναλογικά. Κενό = χωρίς αλλαγή.
+            Resizes proportionally. Leave empty for no resizing.
           </div>
         </div>
 
@@ -300,7 +300,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
                 : <XCircle size={16} style={{ color: '#ef4444' }} />
               }
               <span style={{ fontSize: 13, fontWeight: 600, color: result.success ? '#22c55e' : '#ef4444', flex: 1 }}>
-                {result.success ? 'OK' : 'Αποτυχία'}
+                {result.success ? 'OK' : 'Failed'}
               </span>
               {result.success && (
                 <span style={{ fontSize: 12, color: 'var(--th-text-muted)' }}>
@@ -319,7 +319,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
                   className="flex items-center"
                   style={{ gap: 4, color: 'var(--th-accent)', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0 }}
                 >
-                  <FolderOpen size={13} /> Φάκελος
+                  <FolderOpen size={13} /> Show in folder
                 </button>
               </div>
             ) : (
@@ -336,7 +336,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
                   color: 'var(--th-text-secondary)', cursor: 'pointer',
                 }}
               >
-                <RefreshCw size={14} /> Νέα
+                <RefreshCw size={14} /> New
               </button>
               <button
                 onClick={onClose}
@@ -363,7 +363,7 @@ export function ConvertDialog({ onClose }: { onClose: () => void }) {
             }}
           >
             {converting ? (
-              <><Loader2 size={16} className="animate-spin" /> Μετατροπή...</>
+              <><Loader2 size={16} className="animate-spin" /> Converting...</>
             ) : (
               <><ArrowRight size={16} /> Convert to {options.format === 'pdf' ? 'Flat PDF' : options.format.toUpperCase()}</>
             )}
@@ -386,7 +386,7 @@ function PanelHeader({ onClose, selectedFile }: { onClose: () => void; selectedF
       </span>
       <button
         onClick={onClose}
-        title="Κλείσιμο"
+        title="Close"
         style={{
           background: 'none', border: 'none', cursor: 'pointer',
           padding: 4, borderRadius: 6, color: 'var(--th-text-muted)',

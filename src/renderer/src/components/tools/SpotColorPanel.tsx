@@ -40,7 +40,7 @@ export function SpotColorPanel() {
     return (
       <div style={{ padding: 20, textAlign: 'center' }}>
         <Droplet size={28} style={{ color: '#475569', margin: '0 auto 8px' }} />
-        <div style={{ fontSize: 12, color: '#64748b' }}>Επιλέξτε PDF/AI αρχείο</div>
+        <div style={{ fontSize: 12, color: '#64748b' }}>Select a PDF/AI file</div>
       </div>
     )
   }
@@ -49,7 +49,7 @@ export function SpotColorPanel() {
     return (
       <div style={{ padding: 20, textAlign: 'center' }}>
         <Loader2 size={20} className="animate-spin" style={{ color: 'var(--th-accent)', margin: '0 auto 8px' }} />
-        <div style={{ fontSize: 12, color: '#64748b' }}>Ανάλυση spot colors...</div>
+        <div style={{ fontSize: 12, color: '#64748b' }}>Analyzing spot colors...</div>
       </div>
     )
   }
@@ -58,8 +58,8 @@ export function SpotColorPanel() {
     return (
       <div style={{ padding: 20, textAlign: 'center' }}>
         <Droplet size={28} style={{ color: '#22c55e', margin: '0 auto 8px' }} />
-        <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 600 }}>Καμία spot color</div>
-        <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>Μόνο process colors (CMYK)</div>
+        <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 600 }}>No spot colors</div>
+        <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>Process colors only (CMYK)</div>
       </div>
     )
   }
@@ -109,7 +109,7 @@ export function SpotColorPanel() {
       ))}
 
       <div style={{ padding: '8px 10px', borderRadius: 6, background: 'rgba(234,179,8,0.06)', border: '1px solid rgba(234,179,8,0.2)', fontSize: 11, color: '#eab308' }}>
-        Οι spot colors απαιτούν ξεχωριστή πλάκα εκτύπωσης. Αν η δουλειά είναι CMYK, μετατρέψτε τις.
+        Spot colors require a separate printing plate. If the job is CMYK-only, convert them.
       </div>
     </div>
   )

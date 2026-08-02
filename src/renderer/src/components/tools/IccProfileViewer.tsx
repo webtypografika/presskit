@@ -45,7 +45,7 @@ export function IccProfileViewer() {
     return (
       <div style={{ padding: 20, textAlign: 'center' }}>
         <Monitor size={28} style={{ color: '#475569', margin: '0 auto 8px' }} />
-        <div style={{ fontSize: 12, color: '#64748b' }}>Επιλέξτε αρχείο εικόνας</div>
+        <div style={{ fontSize: 12, color: '#64748b' }}>Select an image file</div>
       </div>
     )
   }
@@ -62,9 +62,9 @@ export function IccProfileViewer() {
     return (
       <div style={{ padding: 20, textAlign: 'center' }}>
         <Monitor size={28} style={{ color: '#eab308', margin: '0 auto 8px' }} />
-        <div style={{ fontSize: 13, color: '#eab308', fontWeight: 600 }}>Χωρίς ICC Profile</div>
+        <div style={{ fontSize: 13, color: '#eab308', fontWeight: 600 }}>No ICC Profile</div>
         <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
-          Τα χρώματα μπορεί να αλλάξουν κατά την εκτύπωση
+          Colors may shift when printed
         </div>
       </div>
     )
@@ -89,10 +89,10 @@ export function IccProfileViewer() {
 
   // Common profile presets
   const wellKnown: Record<string, { label: string; use: string }> = {
-    'FOGRA39': { label: 'ISO Coated v2', use: 'Offset εκτύπωση (coated paper)' },
-    'FOGRA47': { label: 'Uncoated Yellowish', use: 'Offset εκτύπωση (uncoated paper)' },
-    'FOGRA51': { label: 'PSO Coated v3', use: 'Offset εκτύπωση (modern coated)' },
-    'FOGRA52': { label: 'PSO Uncoated v3', use: 'Offset εκτύπωση (modern uncoated)' },
+    'FOGRA39': { label: 'ISO Coated v2', use: 'Offset printing (coated paper)' },
+    'FOGRA47': { label: 'Uncoated Yellowish', use: 'Offset printing (uncoated paper)' },
+    'FOGRA51': { label: 'PSO Coated v3', use: 'Offset printing (modern coated)' },
+    'FOGRA52': { label: 'PSO Uncoated v3', use: 'Offset printing (modern uncoated)' },
     'GRACoL': { label: 'GRACoL 2006', use: 'Commercial printing (US)' },
     'SWOP': { label: 'SWOP v2', use: 'Web offset (US)' },
     'sRGB': { label: 'sRGB', use: 'Web / Screen display' },
@@ -145,7 +145,7 @@ export function IccProfileViewer() {
           background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)',
           fontSize: 11, color: '#22c55e',
         }}>
-          Γνωστό ICC profile: {matchedPreset[1].label}
+          Known ICC profile: {matchedPreset[1].label}
         </div>
       )}
 
@@ -156,7 +156,7 @@ export function IccProfileViewer() {
           background: 'rgba(234,179,8,0.06)', border: '1px solid rgba(234,179,8,0.2)',
           fontSize: 11, color: '#eab308',
         }}>
-          RGB profile — μετατρέψτε σε CMYK (FOGRA39/51) για εκτύπωση
+          RGB profile — convert to CMYK (FOGRA39/51) for print
         </div>
       )}
     </div>

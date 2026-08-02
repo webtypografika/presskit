@@ -47,10 +47,10 @@ export function QuoteLinker() {
   // Fixed status order matching PressCal flow
   const STATUS_ORDER = ['draft', 'sent', 'approved', 'completed']
   const STATUS_LABELS: Record<string, string> = {
-    draft: 'Σε Επεξεργασία',
-    sent: 'Εστάλησαν',
-    approved: 'Εγκρίθηκαν',
-    completed: 'Ολοκληρώθηκαν',
+    draft: 'In Progress',
+    sent: 'Sent',
+    approved: 'Approved',
+    completed: 'Completed',
   }
 
   const statuses = useMemo(() => {

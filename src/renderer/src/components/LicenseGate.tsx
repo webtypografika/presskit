@@ -8,7 +8,7 @@ const CHECKOUT_URL = 'https://presscal.com/el/checkout'
 // default for brand-new installs. "Custom" (typed URL) is handled separately.
 const PRESSCAL_INSTANCES = [
   { label: 'PressCal (gr.presscal.com)', value: 'https://gr.presscal.com' },
-  { label: 'Δοκιμαστικός (demo.gr.presscal.com)', value: 'https://demo.gr.presscal.com' },
+  { label: 'Demo (demo.gr.presscal.com)', value: 'https://demo.gr.presscal.com' },
 ] as const
 const DEFAULT_PRESSCAL_BASE = PRESSCAL_INSTANCES[0].value
 const CUSTOM_INSTANCE = '__custom__'
@@ -193,7 +193,7 @@ function InstancePicker({ base, onChange }: { base: string; onChange: (v: string
   return (
     <div style={{ marginBottom: 20, textAlign: 'left' }}>
       <label style={{ display: 'block', fontSize: 12, color: 'var(--th-text-muted, #94a3b8)', marginBottom: 6 }}>
-        Διακομιστής PressCal
+        PressCal server
       </label>
       <select
         value={known ? known.value : CUSTOM_INSTANCE}
@@ -203,7 +203,7 @@ function InstancePicker({ base, onChange }: { base: string; onChange: (v: string
         {PRESSCAL_INSTANCES.map(i => (
           <option key={i.value} value={i.value}>{i.label}</option>
         ))}
-        <option value={CUSTOM_INSTANCE}>Άλλος διακομιστής…</option>
+        <option value={CUSTOM_INSTANCE}>Other server…</option>
       </select>
       {!known && (
         <input
@@ -255,14 +255,14 @@ function LockScreen({
             <InstancePicker base={signInPicker.base} onChange={signInPicker.setBase} />
           ) : (
             <div style={{ marginBottom: 20, fontSize: 12, color: 'var(--th-text-muted, #94a3b8)' }}>
-              Διακομιστής: <strong>{signInPicker.base.replace(/^https?:\/\//, '').replace(/\/$/, '') || 'gr.presscal.com'}</strong>
+              Server: <strong>{signInPicker.base.replace(/^https?:\/\//, '').replace(/\/$/, '') || 'gr.presscal.com'}</strong>
               {' · '}
               <a
                 href="#"
                 onClick={(e) => { e.preventDefault(); setShowPicker(true) }}
                 style={{ color: 'var(--th-text-muted, #94a3b8)', textDecoration: 'underline' }}
               >
-                Αλλαγή
+                Change
               </a>
             </div>
           )
@@ -274,7 +274,7 @@ function LockScreen({
           </button>
           <button style={secondaryBtn} onClick={onRefresh} disabled={refreshing}>
             {refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            Επανέλεγχος
+            Check again
           </button>
         </div>
         {manualSetup && (
@@ -284,7 +284,7 @@ function LockScreen({
               onClick={(e) => { e.preventDefault(); openSettings() }}
               style={{ color: 'var(--th-text-muted, #94a3b8)', textDecoration: 'underline' }}
             >
-              Manual setup με API key
+              Manual setup with API key
             </a>
           </div>
         )}
@@ -323,13 +323,13 @@ function TrialBanner({ daysLeft, expiresAt }: { daysLeft: number; expiresAt: str
   const expiresText = expiresAt
     ? new Date(expiresAt).toLocaleDateString('el-GR', { day: '2-digit', month: 'short', year: 'numeric' })
     : ''
-  const dayWord = daysLeft === 1 ? 'ημέρα' : 'ημέρες'
+  const dayWord = daysLeft === 1 ? 'day' : 'days'
   return (
     <div style={banner}>
       <AlertTriangle size={12} />
       <span>
-        Δοκιμαστική έκδοση — απομένουν <strong>{daysLeft} {dayWord}</strong>
-        {expiresText && <> (έως {expiresText})</>}
+        Trial version — <strong>{daysLeft} {dayWord}</strong> left
+        {expiresText && <> (until {expiresText})</>}
       </span>
       <button
         onClick={openCheckout}
@@ -346,7 +346,7 @@ function TrialBanner({ daysLeft, expiresAt }: { daysLeft: number; expiresAt: str
           lineHeight: 1.3,
         }}
       >
-        Αγορά συνδρομής
+        Buy subscription
       </button>
     </div>
   )
@@ -362,18 +362,18 @@ function pickLockProps(
     case 'not_configured':
       return {
         icon: <KeyRound size={32} color="var(--th-accent)" />,
-        title: 'Σύνδεση με PressCal',
+        title: 'Connect to PressCal',
         message: (
           <>
-            Συνδέσου με τον λογαριασμό σου στο PressCal για να ενεργοποιήσεις το PressKit.
+            Sign in with your PressCal account to activate PressKit.
             <br />
             <br />
             <span style={{ fontSize: 12, color: 'var(--th-text-muted, #64748b)' }}>
-              Νέοι χρήστες παίρνουν αυτόματα <strong>15 ημέρες δοκιμή</strong>.
+              New users automatically get a <strong>15-day trial</strong>.
             </span>
           </>
         ),
-        primary: { label: 'Σύνδεση με Google', onClick: () => void openGoogleSignIn(signIn.base), icon: <GoogleIcon size={16} /> },
+        primary: { label: 'Sign in with Google', onClick: () => void openGoogleSignIn(signIn.base), icon: <GoogleIcon size={16} /> },
         manualSetup: true,
         signInPicker: signIn,
         status,
@@ -383,9 +383,9 @@ function pickLockProps(
     case 'unauthorized':
       return {
         icon: <Lock size={32} color="#dc2626" />,
-        title: 'Η σύνδεση δεν είναι έγκυρη',
-        message: 'Η σύνδεσή σου με το PressCal έληξε ή ανακλήθηκε. Πάτησε «Σύνδεση με Google» για να συνδεθείς ξανά αυτόματα.',
-        primary: { label: 'Σύνδεση με Google', onClick: () => void openGoogleSignIn(signIn.base), icon: <GoogleIcon size={16} /> },
+        title: 'Connection is no longer valid',
+        message: 'Your PressCal connection has expired or been revoked. Click "Sign in with Google" to reconnect automatically.',
+        primary: { label: 'Sign in with Google', onClick: () => void openGoogleSignIn(signIn.base), icon: <GoogleIcon size={16} /> },
         manualSetup: true,
         signInPicker: signIn,
         status,
@@ -395,9 +395,9 @@ function pickLockProps(
     case 'offline_no_cache':
       return {
         icon: <WifiOff size={32} color="#94a3b8" />,
-        title: 'Δεν υπάρχει σύνδεση',
-        message: 'Το PressKit δεν μπορεί να επικοινωνήσει με το PressCal για να επαληθεύσει την άδειά σου. Έλεγξε τη σύνδεσή σου στο internet και δοκίμασε ξανά.',
-        primary: { label: 'Δοκίμασε ξανά', onClick: refresh, icon: <RefreshCw size={16} /> },
+        title: 'No connection',
+        message: 'PressKit cannot reach PressCal to verify your license. Check your internet connection and try again.',
+        primary: { label: 'Try again', onClick: refresh, icon: <RefreshCw size={16} /> },
         status,
         onRefresh: refresh,
         refreshing,
@@ -405,18 +405,18 @@ function pickLockProps(
     case 'expired':
       return {
         icon: <Lock size={32} color="#dc2626" />,
-        title: status.plan === 'trial' || status.isTrial ? 'Η δοκιμαστική περίοδος έληξε' : 'Η συνδρομή σου έληξε',
+        title: status.plan === 'trial' || status.isTrial ? 'Your trial has expired' : 'Your subscription has expired',
         message: (
           <>
-            Για να συνεχίσεις να χρησιμοποιείς το PressKit, απόκτησε συνδρομή PressCal Pro.
+            To keep using PressKit, get a PressCal Pro subscription.
             <br />
             <br />
             <span style={{ fontSize: 12, color: 'var(--th-text-muted, #64748b)' }}>
-              Όλα τα δεδομένα σου παραμένουν ασφαλή και θα είναι διαθέσιμα μετά την ενεργοποίηση.
+              All your data remains safe and will be available again after activation.
             </span>
           </>
         ),
-        primary: { label: 'Αγορά συνδρομής', onClick: openCheckout, icon: <ShoppingCart size={16} /> },
+        primary: { label: 'Buy subscription', onClick: openCheckout, icon: <ShoppingCart size={16} /> },
         status,
         onRefresh: refresh,
         refreshing,

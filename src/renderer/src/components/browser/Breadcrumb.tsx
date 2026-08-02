@@ -57,7 +57,7 @@ export function Breadcrumb() {
       ))}
       <button
         onClick={copyPath}
-        title="Αντιγραφή path"
+        title="Copy path"
         className="flex-shrink-0 rounded hover:bg-bg-hover transition-colors text-text-muted hover:text-text-primary"
         style={{ marginLeft: 8, padding: 4 }}
       >

@@ -117,7 +117,7 @@ export function InspectorPanel() {
         )}
         {!hasFile && inspectorTab !== 'presscal' && inspectorTab !== 'tools' && (
           <div className="flex items-center justify-center h-full" style={{ color: '#475569', fontSize: 13 }}>
-            Επιλέξτε αρχείο
+            Select a file
           </div>
         )}
       </div>

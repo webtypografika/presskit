@@ -67,7 +67,7 @@ export function JobFolderTemplates() {
             <FolderPlus size={16} style={{ color: selected === t.name ? 'var(--th-accent)' : '#64748b', flexShrink: 0 }} />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 500 }}>{t.name}</div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>{t.folders.length} φάκελοι</div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>{t.folders.length} folders</div>
             </div>
             {selected === t.name && <Check size={14} style={{ color: 'var(--th-accent)' }} />}
           </button>
@@ -77,7 +77,7 @@ export function JobFolderTemplates() {
       {/* Preview selected template */}
       {selectedTemplate && (
         <div style={{ padding: 10, borderRadius: 8, background: 'var(--th-bg-primary)', border: '1px solid var(--th-border)', maxHeight: 160, overflowY: 'auto' }}>
-          <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 6 }}>Δομή φακέλων:</div>
+          <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 6 }}>Folder structure:</div>
           {selectedTemplate.folders.map((f, i) => {
             const depth = f.split('/').length - 1
             return (
@@ -96,19 +96,19 @@ export function JobFolderTemplates() {
         <>
           <div>
             <label style={{ fontSize: 11, color: '#64748b', fontWeight: 600, display: 'block', marginBottom: 4 }}>
-              Όνομα εργασίας
+              Job name
             </label>
             <input
               value={jobName}
               onChange={e => setJobName(e.target.value)}
-              placeholder="π.χ. Κατάλογος_2026_Papasotiriou"
+              placeholder="e.g. Catalog_2026_Papasotiriou"
               onKeyDown={e => e.key === 'Enter' && handleCreate()}
               style={inp}
             />
           </div>
 
           <div style={{ fontSize: 11, color: '#475569' }}>
-            Φάκελος: <span style={{ color: '#94a3b8', fontFamily: 'monospace' }}>{currentPath}/{jobName || '...'}</span>
+            Folder: <span style={{ color: '#94a3b8', fontFamily: 'monospace' }}>{currentPath}/{jobName || '...'}</span>
           </div>
 
           <button
@@ -121,7 +121,7 @@ export function JobFolderTemplates() {
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             }}
           >
-            {created ? <><Check size={14} /> Δημιουργήθηκε!</> : <><FolderPlus size={14} /> Δημιουργία Φακέλων</>}
+            {created ? <><Check size={14} /> Created!</> : <><FolderPlus size={14} /> Create Folders</>}
           </button>
         </>
       )}

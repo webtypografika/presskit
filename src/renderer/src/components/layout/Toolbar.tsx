@@ -106,7 +106,7 @@ export function Toolbar() {
           <ToolbarButton icon={<ArrowRight size={18} />} onClick={navigateForward} disabled={!canGoForward} title="Forward" />
           <ToolbarButton icon={<ArrowUp size={18} />} onClick={navigateUp} title="Up" />
           <ToolbarButton icon={<RefreshCw size={18} />} onClick={refreshDirectory} title="Refresh" />
-          <ToolbarButton icon={<FolderPlus size={18} />} onClick={requestNewFolder} title="Νέος Φάκελος" />
+          <ToolbarButton icon={<FolderPlus size={18} />} onClick={requestNewFolder} title="New Folder" />
         </div>
 
         <div className="w-px h-7 bg-border flex-shrink-0" style={{ margin: '0 14px' }} />
@@ -125,7 +125,7 @@ export function Toolbar() {
           <LabeledButton icon={<RefreshCcw size={16} />} label="Convert" onClick={() => setOverlay(overlay === 'convert' ? 'none' : 'convert')} active={overlay === 'convert'} disabled={!canPreflight} />
           <LabeledButton icon={<Package size={16} />} label="Collect" onClick={() => setShowPackager(true)} />
           {canArchive && (
-            <LabeledButton icon={<Archive size={16} />} label="Αρχειοθέτηση" onClick={handleArchive} />
+            <LabeledButton icon={<Archive size={16} />} label="Archive" onClick={handleArchive} />
           )}
         </div>
 
@@ -145,7 +145,7 @@ export function Toolbar() {
               onMouseLeave={e => (e.currentTarget.style.background = 'rgba(110,200,200,0.1)')}
             >
               <Send size={14} />
-              Αποστολή {filesToSend.length > 1 ? `(${filesToSend.length})` : ''}
+              Send {filesToSend.length > 1 ? `(${filesToSend.length})` : ''}
             </button>
           </>
         )}
@@ -321,45 +321,45 @@ function friendlyEmailError(e: any): string {
     raw.includes('invalid authentication credentials') ||
     /Gmail send failed[\s\S]*401/.test(raw)
   ) {
-    return 'Η σύνδεση Gmail έληξε. Κάνε logout/login στο PressCal και δοκίμασε ξανά.'
+    return 'Your Gmail connection has expired. Log out and back in to PressCal, then try again.'
   }
 
   // Gmail quota / rate limit
   if (raw.includes('quotaExceeded') || raw.includes('rateLimitExceeded')) {
-    return 'Το όριο αποστολής email του Gmail έχει εξαντληθεί. Δοκίμασε σε λίγα λεπτά.'
+    return 'Gmail sending limit reached. Try again in a few minutes.'
   }
 
   // Invalid recipient
   if (raw.includes('Invalid To header') || raw.includes('invalid recipient')) {
-    return 'Μη έγκυρη διεύθυνση παραλήπτη.'
+    return 'Invalid recipient address.'
   }
 
   // PressCal not configured
   if (raw.includes('PressCal not configured')) {
-    return 'Το PressCal δεν είναι ρυθμισμένο. Πήγαινε στις ρυθμίσεις.'
+    return 'PressCal is not configured. Go to Settings.'
   }
 
   // Attachment too large (Vercel body limit or Gmail 25MB limit)
   if (raw.includes('too large') || raw.includes('Message size') ||
       raw.includes('Request Entity Too Large') || raw.includes('PAYLOAD_TOO_LARGE') ||
       raw.includes('413')) {
-    return 'Τα αρχεία είναι πολύ μεγάλα για αποστολή μέσω email (όριο 25 MB). Δοκίμασε WeTransfer ή Dropbox link.'
+    return 'The files are too large to send by email (25 MB limit). Try WeTransfer or a Dropbox link.'
   }
 
   // SMTP / BadCredentials from direct Gmail send
   if (raw.includes('BadCredentials') || raw.includes('Username and Password not accepted') ||
       raw.includes('Invalid login') || raw.includes('535-5.7.8')) {
-    return 'Η σύνδεση Gmail έληξε. Κάνε logout/login στο PressCal και δοκίμασε ξανά.'
+    return 'Your Gmail connection has expired. Log out and back in to PressCal, then try again.'
   }
 
   // Generic 500 — strip the stack and keep a short line
   const m = raw.match(/PressCal API error: \d+ [^—]+(?:— (.+))?/)
   if (m) {
-    const detail = m[1]?.split('\n')[0]?.slice(0, 200) || 'Άγνωστο σφάλμα από τον server'
-    return `Αποτυχία αποστολής: ${detail}`
+    const detail = m[1]?.split('\n')[0]?.slice(0, 200) || 'Unknown server error'
+    return `Send failed: ${detail}`
   }
 
-  return raw || 'Αποτυχία αποστολής email'
+  return raw || 'Failed to send email'
 }
 
 function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void }) {
@@ -370,7 +370,7 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
   const pickFileQuoteId = useAppStore(s => s.pickFileMode?.quoteId)
   const currentQuoteId = attachmentQuoteId || pickFileQuoteId || ''
   const [to, setTo] = useState(lastCustomerEmail || '')
-  const [subject, setSubject] = useState('Αρχεία για έγκριση')
+  const [subject, setSubject] = useState('Files for approval')
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
@@ -461,7 +461,7 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
     return createPortal(
       <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }}>
         <div style={{ width: 400, background: 'var(--th-bg-secondary)', borderRadius: 14, border: '1px solid var(--th-border)', padding: 32, textAlign: 'center' }}>
-          <div style={{ fontSize: 14, color: 'var(--th-text-muted)', marginBottom: 16 }}>Συνδεθείτε πρώτα στο PressCal (Settings → PressCal)</div>
+          <div style={{ fontSize: 14, color: 'var(--th-text-muted)', marginBottom: 16 }}>Connect to PressCal first (Settings → PressCal)</div>
           <button onClick={onClose} style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid var(--th-border)', background: 'transparent', color: 'var(--th-text-muted)', cursor: 'pointer' }}>OK</button>
         </div>
       </div>,
@@ -482,7 +482,7 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
         {/* Header */}
         <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--th-border)', display: 'flex', alignItems: 'center', gap: 10 }}>
           <Send size={18} style={{ color: 'var(--th-accent)' }} />
-          <span style={{ fontSize: 16, fontWeight: 600, flex: 1, color: 'var(--th-text-primary)' }}>Αποστολή Email</span>
+          <span style={{ fontSize: 16, fontWeight: 600, flex: 1, color: 'var(--th-text-primary)' }}>Send Email</span>
           <button onClick={onClose} style={{ border: 'none', background: 'transparent', color: 'var(--th-text-muted)', cursor: 'pointer', fontSize: 18 }}>&times;</button>
         </div>
 
@@ -499,19 +499,19 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
             </span>
           ))}
           <span style={{ fontSize: 11, color: 'var(--th-text-muted)', alignSelf: 'center', marginLeft: 4 }}>
-            {files.length} αρχεί{files.length === 1 ? 'ο' : 'α'} · {formatSize(totalSize)}
+            {files.length} file{files.length === 1 ? '' : 's'} · {formatSize(totalSize)}
           </span>
         </div>
         {totalSize > 25 * 1024 * 1024 && (
           <div style={{ padding: '8px 24px', background: 'rgba(239,68,68,0.08)', borderBottom: '1px solid var(--th-border)', fontSize: 12, color: '#ef4444' }}>
-            Τα αρχεία ξεπερνούν τα 25 MB — δεν μπορούν να σταλούν μέσω email. Δοκίμασε WeTransfer ή Dropbox link.
+            The files exceed 25 MB — they cannot be sent by email. Try WeTransfer or a Dropbox link.
           </div>
         )}
 
         {/* Form */}
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12, flex: 1, overflow: 'auto' }}>
           <div style={{ position: 'relative' }}>
-            <label style={{ fontSize: 12, color: 'var(--th-text-muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Προς</label>
+            <label style={{ fontSize: 12, color: 'var(--th-text-muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>To</label>
             <div style={{ position: 'relative' }}>
               <input
                 value={to}
@@ -521,7 +521,7 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
                   else setShowCustomerSearch(true)
                 }}
                 onBlur={() => setTimeout(() => { setEmailMenuOpen(false); setShowCustomerSearch(false) }, 200)}
-                placeholder="email ή όνομα πελάτη..."
+                placeholder="email or customer name..."
                 style={{ ...inp, paddingRight: lastCustomerEmailOptions.length > 1 ? 36 : 14 }}
                 autoFocus
               />
@@ -529,7 +529,7 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
                 <button
                   type="button"
                   onClick={() => setEmailMenuOpen(o => !o)}
-                  title="Διαθέσιμα emails πελάτη"
+                  title="Available customer emails"
                   style={{
                     position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
                     width: 26, height: 26, borderRadius: 6, border: 'none', cursor: 'pointer',
@@ -574,7 +574,7 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
                           color: opt.kind === 'company' ? 'var(--th-accent)' : 'var(--th-text-muted)',
                           fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.04em',
                         }}>
-                          {opt.kind === 'company' ? 'εταιρεία' : 'επαφή'}
+                          {opt.kind === 'company' ? 'company' : 'contact'}
                         </span>
                       </span>
                       <span style={{ fontSize: 11, color: 'var(--th-text-muted)' }}>{opt.email}</span>
@@ -626,12 +626,12 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
             </div>
           </div>
           <div>
-            <label style={{ fontSize: 12, color: 'var(--th-text-muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Θέμα</label>
-            <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Αρχεία για έγκριση" style={inp} />
+            <label style={{ fontSize: 12, color: 'var(--th-text-muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Subject</label>
+            <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Files for approval" style={inp} />
           </div>
           <div>
-            <label style={{ fontSize: 12, color: 'var(--th-text-muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Μήνυμα</label>
-            <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Σας αποστέλλουμε τα αρχεία..." rows={4} style={{ ...inp, resize: 'vertical' }} />
+            <label style={{ fontSize: 12, color: 'var(--th-text-muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Message</label>
+            <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Please find the files attached..." rows={4} style={{ ...inp, resize: 'vertical' }} />
           </div>
 
           {error && (
@@ -646,7 +646,7 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
                   cursor: 'pointer', opacity: sending ? 0.5 : 1,
                 }}
               >
-                Δοκίμασε ξανά
+                Try again
               </button>
             </div>
           )}
@@ -655,7 +655,7 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
         {/* Actions */}
         <div style={{ padding: '14px 24px', borderTop: '1px solid var(--th-border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid var(--th-border)', background: 'transparent', color: 'var(--th-text-muted)', fontSize: 14, cursor: 'pointer' }}>
-            Ακύρωση
+            Cancel
           </button>
           <button
             onClick={handleSend}
@@ -668,7 +668,7 @@ function SendEmailDialog({ files, onClose }: { files: any[]; onClose: () => void
               display: 'flex', alignItems: 'center', gap: 6,
             }}
           >
-            {sending ? 'Αποστολή...' : sent ? '✓ Εστάλη!' : <><Send size={14} /> Αποστολή</>}
+            {sending ? 'Sending...' : sent ? '✓ Sent!' : <><Send size={14} /> Send</>}
           </button>
         </div>
       </div>
@@ -843,7 +843,7 @@ function SearchBox() {
               else if (!query.trim() && searchHistory.length > 0) setShowHistory(true)
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Αναζήτηση..."
+            placeholder="Search..."
             style={{
               border: 'none', background: 'transparent', color: 'var(--th-text-primary)',
               fontSize: 13, outline: 'none', width: '100%',
@@ -863,7 +863,7 @@ function SearchBox() {
           maxHeight: 480, overflowY: 'auto', zIndex: 9999,
         }}>
           {searching && (
-            <div style={{ padding: '8px 14px', fontSize: 12, color: 'var(--th-text-muted)' }}>Αναζήτηση...</div>
+            <div style={{ padding: '8px 14px', fontSize: 12, color: 'var(--th-text-muted)' }}>Searching...</div>
           )}
           {results.map(f => {
             // Short parent path for context
@@ -901,7 +901,7 @@ function SearchBox() {
             )
           })}
           <div style={{ padding: '6px 14px', fontSize: 11, color: 'var(--th-text-muted)', borderTop: '1px solid var(--th-border)', textAlign: 'right' }}>
-            {results.length} αποτελέσματα
+            {results.length} result{results.length === 1 ? '' : 's'}
           </div>
         </div>,
         document.body
@@ -917,7 +917,7 @@ function SearchBox() {
           maxHeight: 400, overflowY: 'auto', zIndex: 9999,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderBottom: '1px solid var(--th-border)' }}>
-            <span style={{ fontSize: 12, color: 'var(--th-text-muted)', fontWeight: 500 }}>Πρόσφατες αναζητήσεις</span>
+            <span style={{ fontSize: 12, color: 'var(--th-text-muted)', fontWeight: 500 }}>Recent searches</span>
             <button
               onMouseDown={(e) => {
                 e.preventDefault()
@@ -929,7 +929,7 @@ function SearchBox() {
               style={{ background: 'none', border: 'none', color: 'var(--th-text-muted)', cursor: 'pointer', fontSize: 11, padding: '2px 6px', borderRadius: 4 }}
               onMouseEnter={e => (e.currentTarget.style.color = 'var(--th-text-primary)')}
               onMouseLeave={e => (e.currentTarget.style.color = 'var(--th-text-muted)')}
-            >Εκκαθάριση</button>
+            >Clear</button>
           </div>
           {searchHistory.slice(0, 15).map(h => {
             const d = new Date(h.time)

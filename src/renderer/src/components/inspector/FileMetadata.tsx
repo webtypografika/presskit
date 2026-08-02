@@ -164,7 +164,7 @@ function FileNotes({ filePath }: { filePath: string }) {
         <textarea
           value={note}
           onChange={e => handleChange(e.target.value)}
-          placeholder="Προσθήκη σημείωσης..."
+          placeholder="Add a note..."
           style={{
             width: '100%', minHeight: 64, padding: '8px 10px', fontSize: 12,
             background: 'var(--th-bg-primary)', border: '1px solid var(--th-border)',

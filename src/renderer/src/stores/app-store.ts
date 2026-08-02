@@ -676,11 +676,11 @@ export const useAppStore = create<AppState>((set, get) => {
         const failures = (results || []).filter(r => !r.ok)
         if (failures.length > 0) {
           const list = failures.map(f =>
-            `• ${f.source.split(/[\\/]/).pop()}: ${f.error || 'άγνωστο σφάλμα'}`
+            `• ${f.source.split(/[\\/]/).pop()}: ${f.error || 'unknown error'}`
           ).join('\n')
           useDialogStore.getState().showAlert(
-            `${clipboard.mode === 'copy' ? 'Αντιγραφή' : 'Μετακίνηση'} απέτυχε για ${failures.length} αρχεί${failures.length === 1 ? 'ο' : 'α'}:\n\n${list}\n\n` +
-            `Πιθανή αιτία: το αρχείο είναι ανοιχτό σε άλλη εφαρμογή ή κλειδωμένο από Dropbox/antivirus.`
+            `${clipboard.mode === 'copy' ? 'Copy' : 'Move'} failed for ${failures.length} file${failures.length === 1 ? '' : 's'}:\n\n${list}\n\n` +
+            `Likely cause: the file is open in another application or locked by Dropbox/antivirus.`
           )
         }
       } catch (err) {
@@ -712,7 +712,7 @@ export const useAppStore = create<AppState>((set, get) => {
       if (result.ok) {
         await get().refreshDirectory()
       } else {
-        useDialogStore.getState().showAlert(`Αποτυχία δημιουργίας φακέλου: ${result.error}`)
+        useDialogStore.getState().showAlert(`Failed to create folder: ${result.error}`)
       }
     },
 

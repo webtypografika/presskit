@@ -19,7 +19,7 @@ const PROFILE_COLORS = [
 ]
 
 function formatHost(url?: string): string {
-  if (!url) return 'μη συνδεδεμένο'
+  if (!url) return 'not connected'
   try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url }
 }
 
@@ -56,16 +56,16 @@ export function ManageProfilesDialog({ onClose }: { onClose: () => void }) {
 
   const handleDelete = async (p: Profile) => {
     if (p.id === activeId) {
-      alert('Δεν μπορείς να διαγράψεις το ενεργό profile. Πρέπει πρώτα να αλλάξεις σε άλλο.')
+      alert('You cannot delete the active profile. Switch to another profile first.')
       return
     }
     if (profiles.length <= 1) {
-      alert('Δεν μπορείς να διαγράψεις το τελευταίο profile.')
+      alert('You cannot delete the last profile.')
       return
     }
-    if (!confirm(`Διαγραφή profile «${p.name}»;\n\nΗ ρύθμιση και τα τοπικά bookmarks/picks αυτού του profile θα χαθούν. Τα αρχεία στον δίσκο δεν επηρεάζονται.`)) return
+    if (!confirm(`Delete profile "${p.name}"?\n\nThis profile's settings and local bookmarks/picks will be lost. Files on disk are not affected.`)) return
     const res = await window.api.profiles.delete(p.id)
-    if (!res?.ok) alert(res?.error || 'Αποτυχία διαγραφής')
+    if (!res?.ok) alert(res?.error || 'Failed to delete profile')
     void load()
   }
 
@@ -85,7 +85,7 @@ export function ManageProfilesDialog({ onClose }: { onClose: () => void }) {
     <div style={overlay} onClick={onClose}>
       <div style={card} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--th-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--th-text-primary)' }}>Διαχείριση profiles</div>
+          <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--th-text-primary)' }}>Manage profiles</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--th-text-muted)', minHeight: 'auto', padding: 4 }}>
             <X size={18} />
           </button>
@@ -184,7 +184,7 @@ export function ManageProfilesDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         <div style={{ padding: '14px 24px', borderTop: '1px solid var(--th-border)', fontSize: 12, color: 'var(--th-text-muted)' }}>
-          Για να δημιουργήσεις νέο profile, χρησιμοποίησε το switcher κάτω δεξιά → «+ Προσθήκη profile».
+          To create a new profile, use the switcher at the bottom right → "+ Add profile".
         </div>
       </div>
     </div>,

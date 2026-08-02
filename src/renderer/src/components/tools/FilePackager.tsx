@@ -69,22 +69,22 @@ export function FilePackager({ onClose }: { onClose: () => void }) {
         {/* Header */}
         <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--th-border)', display: 'flex', alignItems: 'center', gap: 10 }}>
           <Package size={18} style={{ color: 'var(--th-accent)' }} />
-          <span style={{ fontSize: 15, fontWeight: 600, flex: 1, color: 'var(--th-text-primary)' }}>Συλλογή αρχείων</span>
+          <span style={{ fontSize: 15, fontWeight: 600, flex: 1, color: 'var(--th-text-primary)' }}>Collect Files</span>
           <button onClick={onClose} style={{ border: 'none', background: 'transparent', color: 'var(--th-text-muted)', cursor: 'pointer', fontSize: 18 }}>&times;</button>
         </div>
 
         <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
           {/* Source */}
           <div style={{ fontSize: 12, color: 'var(--th-text-muted)' }}>
-            Από: <span style={{ fontFamily: 'monospace', color: 'var(--th-text-secondary)' }}>{currentPath}</span>
+            From: <span style={{ fontFamily: 'monospace', color: 'var(--th-text-secondary)' }}>{currentPath}</span>
           </div>
 
           {/* File type checkboxes */}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <span style={{ fontSize: 11, color: 'var(--th-text-muted)', fontWeight: 600, flex: 1 }}>Τύποι αρχείων</span>
-              <button onClick={selectAll} style={{ border: 'none', background: 'transparent', color: 'var(--th-accent)', cursor: 'pointer', fontSize: 11 }}>Όλα</button>
-              <button onClick={selectNone} style={{ border: 'none', background: 'transparent', color: 'var(--th-text-muted)', cursor: 'pointer', fontSize: 11 }}>Κανένα</button>
+              <span style={{ fontSize: 11, color: 'var(--th-text-muted)', fontWeight: 600, flex: 1 }}>File types</span>
+              <button onClick={selectAll} style={{ border: 'none', background: 'transparent', color: 'var(--th-accent)', cursor: 'pointer', fontSize: 11 }}>All</button>
+              <button onClick={selectNone} style={{ border: 'none', background: 'transparent', color: 'var(--th-text-muted)', cursor: 'pointer', fontSize: 11 }}>None</button>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {FILE_TYPE_GROUPS.map((group, idx) => {
@@ -117,7 +117,7 @@ export function FilePackager({ onClose }: { onClose: () => void }) {
               background: !moveMode ? 'var(--th-accent-subtle)' : 'transparent',
               color: !moveMode ? 'var(--th-accent)' : 'var(--th-text-muted)',
             }}>
-              <Copy size={13} /> Αντιγραφή
+              <Copy size={13} /> Copy
             </button>
             <button onClick={() => setMoveMode(true)} style={{
               flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600,
@@ -126,20 +126,20 @@ export function FilePackager({ onClose }: { onClose: () => void }) {
               background: moveMode ? 'var(--th-accent-subtle)' : 'transparent',
               color: moveMode ? 'var(--th-accent)' : 'var(--th-text-muted)',
             }}>
-              <Move size={13} /> Μεταφορά
+              <Move size={13} /> Move
             </button>
           </div>
 
           {/* Target folder */}
           <div>
             <label style={{ fontSize: 11, color: 'var(--th-text-muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>
-              Φάκελος προορισμού
+              Destination folder
             </label>
             <div style={{ display: 'flex', gap: 6 }}>
               <input
                 value={targetDir}
                 onChange={e => setTargetDir(e.target.value)}
-                placeholder="Επιλέξτε φάκελο..."
+                placeholder="Select a folder..."
                 style={{
                   flex: 1, padding: '8px 12px', borderRadius: 8,
                   background: 'var(--th-bg-primary)', border: '1px solid var(--th-border)',
@@ -168,10 +168,10 @@ export function FilePackager({ onClose }: { onClose: () => void }) {
           >
             {running ? <Loader2 size={14} className="animate-spin" /> : result ? <Check size={14} /> : <Package size={14} />}
             {running
-              ? 'Εκτέλεση...'
+              ? 'Working...'
               : result
-                ? `${result.processed} αρχεία ${moveMode ? 'μεταφέρθηκαν' : 'αντιγράφηκαν'}!`
-                : `${moveMode ? 'Μεταφορά' : 'Αντιγραφή'} (${selectedExtCount} τύποι)`}
+                ? `${result.processed} files ${moveMode ? 'moved' : 'copied'}!`
+                : `${moveMode ? 'Move' : 'Copy'} (${selectedExtCount} types)`}
           </button>
 
           {/* Errors */}
@@ -179,7 +179,7 @@ export function FilePackager({ onClose }: { onClose: () => void }) {
             <div style={{ padding: '8px 10px', borderRadius: 6, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                 <AlertTriangle size={12} style={{ color: '#ef4444' }} />
-                <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>{result.errors.length} σφάλματα</span>
+                <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>{result.errors.length} errors</span>
               </div>
               {result.errors.slice(0, 5).map((err, i) => (
                 <div key={i} style={{ fontSize: 11, color: 'var(--th-text-muted)' }}>{err}</div>

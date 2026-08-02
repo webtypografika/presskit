@@ -613,7 +613,7 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
     // Check target doesn't already exist
     try {
       await access(newPath)
-      return { ok: false, error: 'Υπάρχει ήδη αρχείο με αυτό το όνομα' }
+      return { ok: false, error: 'A file with this name already exists' }
     } catch {
       // good — target doesn't exist
     }

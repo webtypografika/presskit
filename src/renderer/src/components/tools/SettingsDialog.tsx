@@ -133,7 +133,7 @@ function PresscalSettings() {
   }
 
   const disconnect = async () => {
-    if (!confirm('Αποσύνδεση από PressCal;\n\nΘα διαγραφούν URL και API key. Θα χρειαστεί να συνδεθείς ξανά για να χρησιμοποιήσεις το PressKit.')) return
+    if (!confirm("Disconnect from PressCal?\n\nThis removes the URL and API key. You'll need to reconnect to use PressKit.")) return
     await window.api.presscal.configure('', '')
     setUrl('')
     setApiKey('')
@@ -211,7 +211,7 @@ function PresscalSettings() {
               border: '1px solid #ef4444', fontSize: 13, fontWeight: 500,
             }}
           >
-            Αποσύνδεση
+            Disconnect
           </button>
         )}
       </div>
@@ -582,7 +582,7 @@ function AboutSettings() {
                 display: 'flex', alignItems: 'center', gap: 8,
               }}
             >
-              <Download size={16} /> Εγκατάσταση v{updateVersion} & Επανεκκίνηση
+              <Download size={16} /> Install v{updateVersion} & Restart
             </button>
           ) : (
             <button
@@ -595,20 +595,20 @@ function AboutSettings() {
                 display: 'flex', alignItems: 'center', gap: 8,
               }}
             >
-              {updateStatus === 'checking' && <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Έλεγχος...</>}
-              {updateStatus === 'downloading' && <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Λήψη v{updateVersion}...</>}
-              {updateStatus !== 'checking' && updateStatus !== 'downloading' && <><RefreshCw size={16} /> Έλεγχος ενημερώσεων</>}
+              {updateStatus === 'checking' && <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Checking...</>}
+              {updateStatus === 'downloading' && <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Downloading v{updateVersion}...</>}
+              {updateStatus !== 'checking' && updateStatus !== 'downloading' && <><RefreshCw size={16} /> Check for Updates</>}
             </button>
           )}
 
           {updateStatus === 'up-to-date' && (
             <span className="flex items-center gap-2" style={{ color: '#22c55e', fontSize: 14 }}>
-              <CheckCircle size={16} /> Είστε ενημερωμένοι
+              <CheckCircle size={16} /> You're up to date
             </span>
           )}
           {updateStatus === 'error' && (
             <span className="flex items-center gap-2" style={{ color: '#ef4444', fontSize: 14 }}>
-              <XCircle size={16} /> Σφάλμα ελέγχου
+              <XCircle size={16} /> Update check failed
             </span>
           )}
         </div>

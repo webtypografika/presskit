@@ -8,12 +8,12 @@ import type { PresscalQuote } from '@/lib/ipc'
 import { CostingDialog } from './CostingDialog'
 
 const STATUS_LABELS: Record<string, string> = {
-  draft: 'Πρόχειρη',
-  sent: 'Εστάλη',
-  approved: 'Εγκρίθηκε',
-  completed: 'Ολοκληρώθηκε',
-  rejected: 'Απορρίφθηκε',
-  cancelled: 'Ακυρώθηκε',
+  draft: 'Draft',
+  sent: 'Sent',
+  approved: 'Approved',
+  completed: 'Completed',
+  rejected: 'Rejected',
+  cancelled: 'Cancelled',
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -64,10 +64,10 @@ export function PresscalPanel() {
 type StatusFilter = 'all' | 'draft' | 'sent' | 'approved'
 
 const FILTER_TABS: { key: StatusFilter; label: string }[] = [
-  { key: 'all', label: 'Όλες' },
-  { key: 'approved', label: 'Εγκρίθηκε' },
-  { key: 'sent', label: 'Εστάλη' },
-  { key: 'draft', label: 'Πρόχειρη' },
+  { key: 'all', label: 'All' },
+  { key: 'approved', label: 'Approved' },
+  { key: 'sent', label: 'Sent' },
+  { key: 'draft', label: 'Draft' },
 ]
 
 function ActiveQuotesList() {
@@ -208,7 +208,7 @@ function ActiveQuotesList() {
         color: 'var(--th-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5,
         borderTop: '1px solid var(--th-border)',
       }}>
-        Ενεργές Προσφορές ({quotes.length})
+        Active Quotes ({quotes.length})
       </div>
 
       {/* Search */}
@@ -223,7 +223,7 @@ function ActiveQuotesList() {
             type="text"
             value={searchText}
             onChange={e => setSearchText(e.target.value)}
-            placeholder="Αναζήτηση..."
+            placeholder="Search..."
             style={{
               flex: 1, background: 'none', border: 'none', outline: 'none',
               fontSize: 12, color: 'var(--th-text-primary)',
@@ -272,7 +272,7 @@ function ActiveQuotesList() {
         </div>
       ) : filtered.length === 0 ? (
         <div style={{ padding: '12px 20px', fontSize: 12, color: 'var(--th-text-muted)' }}>
-          {quotes.length === 0 ? 'Δεν υπάρχουν ενεργές προσφορές' : 'Κανένα αποτέλεσμα'}
+          {quotes.length === 0 ? 'No active quotes' : 'No results'}
         </div>
       ) : (
         <div>
@@ -338,10 +338,10 @@ function ActiveQuotesList() {
                       cursor: hasFolder ? 'pointer' : 'default',
                       opacity: hasFolder ? 1 : 0.5,
                     }}
-                    title={detail?.folderPath || 'Δεν έχει δηλωμένο φάκελο'}
+                    title={detail?.folderPath || 'No folder set'}
                   >
                     <FolderOpen size={12} />
-                    Φάκελος
+                    Folder
                   </button>
                   <button
                     onClick={() => openInPressCal(q.id)}
@@ -453,7 +453,7 @@ function ContextualInfo() {
               <button
                 onClick={() => openInPressCal(`/customers/${detectedCustomer.id}`)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--th-text-muted)', padding: 2 }}
-                title="Άνοιγμα στο PressCal"
+                title="Open in PressCal"
               >
                 <ExternalLink size={14} />
               </button>
@@ -491,7 +491,7 @@ function ContextualInfo() {
               <button
                 onClick={() => openInPressCal(`/quotes/${detectedQuote.id}`)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--th-text-muted)', padding: 2, marginLeft: 'auto' }}
-                title="Άνοιγμα στο PressCal"
+                title="Open in PressCal"
               >
                 <ExternalLink size={14} />
               </button>
@@ -518,7 +518,7 @@ function ContextualInfo() {
             }}
           >
             <Plus size={14} />
-            Νέα Προσφορά
+            New Quote
           </button>
         )}
         {selectedFile && !selectedFile.isDirectory && (
@@ -532,7 +532,7 @@ function ContextualInfo() {
             }}
           >
             <Calculator size={14} />
-            Κοστολόγηση: {selectedFile.name.length > 25 ? selectedFile.name.slice(0, 25) + '...' : selectedFile.name}
+            Costing: {selectedFile.name.length > 25 ? selectedFile.name.slice(0, 25) + '...' : selectedFile.name}
           </button>
         )}
       </div>
@@ -546,7 +546,7 @@ function ContextualInfo() {
       {detectedCustomer && (
         <div>
           <div style={{ padding: '12px 20px 8px', fontSize: 12, fontWeight: 600, color: 'var(--th-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            Ιστορικό Προσφορών ({customerQuotes.length})
+            Quote History ({customerQuotes.length})
           </div>
           {loading ? (
             <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
@@ -554,7 +554,7 @@ function ContextualInfo() {
             </div>
           ) : customerQuotes.length === 0 ? (
             <div style={{ padding: '12px 20px', fontSize: 12, color: 'var(--th-text-muted)' }}>
-              Δεν βρέθηκαν προσφορές
+              No quotes found
             </div>
           ) : (
             <div>

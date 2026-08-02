@@ -295,7 +295,7 @@ export function AnnotationOverlay({ previewWidth, previewHeight }: { previewWidt
             onChange={e => setTextValue(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') addTextAnnotation(); if (e.key === 'Escape') setTextInput(null) }}
             onBlur={addTextAnnotation}
-            placeholder="Κείμενο..."
+            placeholder="Text..."
             style={{
               padding: '4px 8px', borderRadius: 4, fontSize: 14,
               background: 'rgba(0,0,0,0.8)', border: `2px solid ${color}`,

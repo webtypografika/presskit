@@ -282,7 +282,7 @@ label {
 }
 
 /* Quote card delete */
-.quote-card-hover:hover button[title="Διαγραφή"] {
+.quote-card-hover:hover button[title="Delete"] {
   opacity: 1 !important;
 }
 

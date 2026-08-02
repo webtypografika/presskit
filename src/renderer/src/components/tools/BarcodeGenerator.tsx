@@ -61,7 +61,7 @@ export function BarcodeGenerator() {
       {/* Data input */}
       <div>
         <label style={{ fontSize: 11, color: '#64748b', fontWeight: 600, display: 'block', marginBottom: 4 }}>
-          {type === 'ean13' ? 'Αριθμός (12-13 ψηφία)' : type === 'code128' ? 'Κείμενο' : 'Κείμενο / URL'}
+          {type === 'ean13' ? 'Number (12-13 digits)' : type === 'code128' ? 'Text' : 'Text / URL'}
         </label>
         <input
           value={data}
@@ -80,7 +80,7 @@ export function BarcodeGenerator() {
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
       }}>
         <RefreshCw size={14} className={generating ? 'animate-spin' : ''} />
-        Δημιουργία
+        Generate
       </button>
 
       {/* Preview */}

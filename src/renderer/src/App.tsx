@@ -75,8 +75,8 @@ function extractEmailOptions(customer: any): EmailOption[] {
   }
 
   // Company-level email (multiple possible field names)
-  push(customer.email, customer.name || customer.company || 'Εταιρεία', 'company')
-  push(customer.companyEmail, customer.name || customer.company || 'Εταιρεία', 'company')
+  push(customer.email, customer.name || customer.company || 'Company', 'company')
+  push(customer.companyEmail, customer.name || customer.company || 'Company', 'company')
 
   // Contacts array under various possible property names
   const contactArrays: any[] = [
@@ -88,7 +88,7 @@ function extractEmailOptions(customer: any): EmailOption[] {
   for (const arr of contactArrays) {
     for (const c of arr) {
       if (!c) continue
-      const name = c.name || [c.firstName, c.lastName].filter(Boolean).join(' ').trim() || 'Επαφή'
+      const name = c.name || [c.firstName, c.lastName].filter(Boolean).join(' ').trim() || 'Contact'
       push(c.email, name, 'contact')
       // Some schemas use `emails: string[]`
       if (Array.isArray(c.emails)) {
@@ -228,13 +228,13 @@ export default function App() {
         e.preventDefault()
         const names = filesToDelete.length === 1
           ? `"${filesToDelete[0].name}"`
-          : `${filesToDelete.length} αρχεία`
-        useDialogStore.getState().showConfirm(`Διαγραφή ${names};`).then((ok) => {
+          : `${filesToDelete.length} files`
+        useDialogStore.getState().showConfirm(`Delete ${names}?`).then((ok) => {
           if (!ok) return
           window.api.fs.trash(filesToDelete.map(f => f.path)).then((results: any[]) => {
             const failed = results.filter((r: any) => !r.ok)
             if (failed.length > 0) {
-              useDialogStore.getState().showAlert(`Αποτυχία διαγραφής ${failed.length} αρχείων:\n${failed.map((f: any) => f.error).join('\n')}`)
+              useDialogStore.getState().showAlert(`Failed to delete ${failed.length} file(s):\n${failed.map((f: any) => f.error).join('\n')}`)
             }
             // Small delay before refresh — let filesystem settle (Dropbox, indexer, etc.)
             clearSelection()
@@ -473,7 +473,7 @@ export default function App() {
           if (directEmail) {
             const already = options.some(o => o.email.toLowerCase() === directEmail!.toLowerCase())
             if (!already) {
-              options.push({ label: 'Email Προσφοράς', email: directEmail, kind: 'contact' as const })
+              options.push({ label: 'Quote email', email: directEmail, kind: 'contact' as const })
             }
           }
           // Store detected customer for contextual panel
@@ -495,7 +495,7 @@ export default function App() {
         if (directEmail) {
           useAppStore.setState({
             lastCustomerEmail: directEmail,
-            lastCustomerEmailOptions: [{ label: 'Email Προσφοράς', email: directEmail, kind: 'contact' as const }]
+            lastCustomerEmailOptions: [{ label: 'Quote email', email: directEmail, kind: 'contact' as const }]
           })
           return
         }
@@ -555,7 +555,7 @@ export default function App() {
             const options = extractEmailOptions(customer)
             if (directEmail) {
               const already = options.some(o => o.email.toLowerCase() === directEmail!.toLowerCase())
-              if (!already) options.push({ label: 'Email Προσφοράς', email: directEmail, kind: 'contact' as const })
+              if (!already) options.push({ label: 'Quote email', email: directEmail, kind: 'contact' as const })
             }
             if (options.length > 0) {
               useAppStore.setState({ lastCustomerEmail: options[0].email, lastCustomerEmailOptions: options })
@@ -564,7 +564,7 @@ export default function App() {
             if (directEmail) {
               useAppStore.setState({
                 lastCustomerEmail: directEmail,
-                lastCustomerEmailOptions: [{ label: 'Email Προσφοράς', email: directEmail, kind: 'contact' as const }]
+                lastCustomerEmailOptions: [{ label: 'Quote email', email: directEmail, kind: 'contact' as const }]
               })
               return
             }
@@ -685,7 +685,7 @@ export default function App() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <Loader2 size={16} style={{ color: 'var(--th-accent)', animation: 'spin 1s linear infinite' }} />
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--th-text-primary, #e2e8f0)' }}>
-              Λήψη αρχείων...
+              Downloading files...
             </span>
           </div>
           <div style={{ fontSize: 12, color: 'var(--th-text-secondary, #94a3b8)', marginBottom: 8 }}>

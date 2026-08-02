@@ -196,7 +196,7 @@ function PreviewToolbar({ layout, onToggleLayout, showBleed, onToggleBleed, show
             onMouseLeave={e => { e.currentTarget.style.background = 'rgba(110,200,200,0.06)'; e.currentTarget.style.borderColor = 'rgba(110,200,200,0.3)' }}
           >
             <Calculator size={13} />
-            <span>Κοστολόγηση</span>
+            <span>Costing</span>
           </button>
         )}
 

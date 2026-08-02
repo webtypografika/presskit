@@ -285,7 +285,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
       if (mainWindow) { mainWindow.setAlwaysOnTop(true); mainWindow.focus(); mainWindow.setAlwaysOnTop(false); }
 
       const result = await dialog.showOpenDialog(mainWindow!, {
-        title: customerId ? 'Επιλογή Φακέλου Πελάτη' : 'Επιλογή Ριζικού Φακέλου Εργασιών',
+        title: customerId ? 'Select Customer Folder' : 'Select Job Folder Root',
         properties: ['openDirectory', 'createDirectory']
       })
 
@@ -383,7 +383,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       const { dialog } = await import('electron')
       const result = await dialog.showOpenDialog(mainWindow!, {
-        title: 'Επιλογή αρχείου για κοστολόγηση',
+        title: 'Select file for costing',
         defaultPath: startFolder,
         properties: ['openFile'],
         filters: [
@@ -399,7 +399,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
         // PressCal quote page auto-refreshes via polling + focus listener
       } catch (e) {
         const { dialog: dlg } = await import('electron')
-        showError('Σύνδεση αρχείου απέτυχε', (e as Error).message)
+        showError('File link failed', (e as Error).message)
       }
     }
 
@@ -467,7 +467,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
       const sendProgress = (step: string, current: number, total: number, done = false) => {
         mainWindow?.webContents.send('deeplink-progress', { step, current, total, done })
       }
-      sendProgress('Λήψη λίστας αρχείων...', 0, 0)
+      sendProgress('Fetching file list...', 0, 0)
 
       // Helper: HTTP GET that returns raw Buffer (bypasses Electron fetch UTF-8 issues)
       const httpGet = (url: string): Promise<{ status: number; body: Buffer }> => {
@@ -508,8 +508,8 @@ async function handleProtocolUrl(url: string): Promise<void> {
         files = files.filter(f => f.id === fileLinkId)
         if (files.length === 0) {
           deepLog(`[DeepLink] fileLinkId ${fileLinkId} not found in quote file list`)
-          sendProgress('Το αρχείο δεν βρέθηκε', 0, 0, true)
-          showError('Αποθήκευση αρχείου', 'Το αρχείο δεν βρέθηκε στη λίστα της προσφοράς.')
+          sendProgress('File not found', 0, 0, true)
+          showError('Save file', 'The file was not found in the quote file list.')
           return
         }
       }
@@ -607,7 +607,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
       console.log(`[DeepLink] ${filesToDownload.length} to download (${files.length - filesToDownload.length} exist)`)
 
       if (filesToDownload.length === 0) {
-        sendProgress('Κανένα νέο αρχείο', 0, 0, true)
+        sendProgress('No new files', 0, 0, true)
         if (mainWindow) {
           if (mainWindow.isMinimized()) mainWindow.restore()
           mainWindow.setAlwaysOnTop(true)
@@ -626,12 +626,12 @@ async function handleProtocolUrl(url: string): Promise<void> {
           ipcMain.once(`dialog-result:${id}`, (_ev, result: string) => resolve(result))
           mainWindow!.webContents.send('show-choice', {
             id,
-            title: 'Νέα αρχεία',
-            message: `Υπάρχουν ${filesToDownload.length} νέα αρχεία. Θέλεις να τα κατεβάσεις;`,
-            choices: ['Κατέβασε', 'Άνοιξε φάκελο'],
+            title: 'New files',
+            message: `${filesToDownload.length} new file(s) available. Download them?`,
+            choices: ['Download', 'Open folder'],
           })
         })
-        if (choice === 'Άνοιξε φάκελο') {
+        if (choice === 'Open folder') {
           sendProgress('', 0, 0, true)
           if (mainWindow.isMinimized()) mainWindow.restore()
           mainWindow.setAlwaysOnTop(true)
@@ -640,13 +640,13 @@ async function handleProtocolUrl(url: string): Promise<void> {
           mainWindow.webContents.send('navigate-to-folder', { path: targetDir, email: quoteEmail, quoteId })
           return
         }
-        if (choice !== 'Κατέβασε') {
+        if (choice !== 'Download') {
           sendProgress('', 0, 0, true)
           return
         }
       }
 
-      sendProgress('Λήψη αρχείων...', 0, filesToDownload.length)
+      sendProgress('Downloading files...', 0, filesToDownload.length)
 
       // 4. Download files
       let downloaded = 0
@@ -752,8 +752,8 @@ async function handleProtocolUrl(url: string): Promise<void> {
       if (failed > 0) {
         console.warn(`[DeepLink] ${failed} file(s) failed to download`)
         mainWindow?.webContents.send('show-alert', {
-          title: 'Λήψη αρχείων',
-          message: `${failed} αρχεί${failed === 1 ? 'ο' : 'α'} δεν κατέβηκ${failed === 1 ? 'ε' : 'αν'}. Δοκίμασε ξανά.`,
+          title: 'File download',
+          message: `${failed} file${failed === 1 ? '' : 's'} failed to download. Try again.`,
         })
       }
 
@@ -763,7 +763,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
       } catch {}
 
       // 7. Navigate to folder in PressKit
-      sendProgress('Ολοκληρώθηκε', downloaded, filesToDownload.length, true)
+      sendProgress('Done', downloaded, filesToDownload.length, true)
       if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore()
         mainWindow.setAlwaysOnTop(true)
@@ -780,7 +780,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
       let folderPath = parsed.searchParams.get('folderPath')
       if (!folderPath) {
         deepLog('[DeepLink] archive-quote: missing folderPath')
-        showError('Αρχειοθέτηση', 'Δεν δόθηκε path για τον φάκελο προσφοράς.')
+        showError('Archive', 'No path provided for the quote folder.')
         return
       }
 
@@ -880,10 +880,10 @@ async function handleProtocolUrl(url: string): Promise<void> {
               } catch (rmErr) {
                 if (i === 2) {
                   console.warn('[ARCHIVE] Copy succeeded but delete of original failed:', rmErr)
-                  showError('Αρχειοθέτηση',
-                    `Ο φάκελος αντιγράφηκε στο _01 Archive αλλά δεν μπόρεσε να διαγραφεί ο αρχικός.\n\n` +
-                    `Αιτία (πιθανή): αρχείο κλειδωμένο από Dropbox, antivirus ή κάποια εφαρμογή.\n\n` +
-                    `Κλείσε ό,τι μπορεί να έχει ανοιχτά αρχεία και διέγραψε χειροκίνητα:\n${folderPath}`)
+                  showError('Archive',
+                    `The folder was copied to _01 Archive but the original could not be deleted.\n\n` +
+                    `Likely cause: a file locked by Dropbox, antivirus, or another application.\n\n` +
+                    `Close anything that may have files open and delete manually:\n${folderPath}`)
                   return
                 }
                 await new Promise(r => setTimeout(r, 500))
@@ -900,7 +900,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
         mainWindow?.webContents.send('navigate-to-folder', { path: targetPath })
       } catch (err) {
         console.error('[ARCHIVE] Failed:', err)
-        showError('Αρχειοθέτηση', `Αποτυχία μετακίνησης φακέλου:\n${String(err)}`)
+        showError('Archive', `Failed to move folder:\n${String(err)}`)
       }
     }
 
@@ -912,7 +912,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
       const quoteId = parsed.searchParams.get('quoteId') || ''
       if (!folderPath || !restorePath) {
         deepLog('[DeepLink] restore-quote: missing folderPath or restorePath')
-        showError('Επαναφορά', 'Λείπουν παράμετροι (folderPath / restorePath).')
+        showError('Restore', 'Missing parameters (folderPath / restorePath).')
         return
       }
 
@@ -952,8 +952,8 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
       if (!fsExists(folderPath)) {
         deepLog('[DeepLink] restore-quote: folder not found:', folderPath)
-        showError('Επαναφορά',
-          `Ο αρχειοθετημένος φάκελος δεν βρέθηκε:\n${folderPath}`)
+        showError('Restore',
+          `The archived folder was not found:\n${folderPath}`)
         return
       }
 
@@ -995,9 +995,9 @@ async function handleProtocolUrl(url: string): Promise<void> {
               } catch (rmErr) {
                 if (i === 2) {
                   console.warn('[RESTORE] Copy succeeded but delete of archive failed:', rmErr)
-                  showError('Επαναφορά',
-                    `Ο φάκελος αντιγράφηκε αλλά δεν μπόρεσε να διαγραφεί ο αρχειοθετημένος.\n\n` +
-                    `Κλείσε ό,τι μπορεί να έχει ανοιχτά αρχεία και διέγραψε χειροκίνητα:\n${folderPath}`)
+                  showError('Restore',
+                    `The folder was copied but the archived copy could not be deleted.\n\n` +
+                    `Close anything that may have files open and delete manually:\n${folderPath}`)
                 }
                 await new Promise(r => setTimeout(r, 500))
               }
@@ -1022,7 +1022,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
         }
       } catch (err) {
         console.error('[RESTORE] Failed:', err)
-        showError('Επαναφορά', `Αποτυχία επαναφοράς φακέλου:\n${String(err)}`)
+        showError('Restore', `Failed to restore folder:\n${String(err)}`)
       }
     }
 
@@ -1113,13 +1113,13 @@ async function handleProtocolUrl(url: string): Promise<void> {
             const dialogOpts = {
               type: 'info' as const,
               title: 'PressKit',
-              message: `Συνδέθηκε: ${email || orgName || cleanUrl}`,
+              message: `Connected: ${email || orgName || cleanUrl}`,
               detail:
                 `${cleanUrl}\n\n` +
                 (isNew
-                  ? `Δημιουργήθηκε νέο profile «${profileName}».`
-                  : `Ενημερώθηκε το profile «${profileName}».`) +
-                `\n\nΤο PressKit θα επανεκκινήσει τώρα για να αλλάξει σε αυτό το profile.`,
+                  ? `New profile "${profileName}" created.`
+                  : `Profile "${profileName}" updated.`) +
+                `\n\nPressKit will now restart to switch to this profile.`,
               buttons: ['OK'],
             }
             if (parentWin) dialog.showMessageBoxSync(parentWin, dialogOpts)
@@ -1164,9 +1164,9 @@ async function handleProtocolUrl(url: string): Promise<void> {
 
         const successMsg = status.active
           ? (status.isTrial
-              ? `Συνδέθηκες! Trial ${status.daysLeft} ημερών ξεκίνησε.`
-              : 'Συνδέθηκες στο PressCal!')
-          : `Συνδέθηκες, αλλά η άδεια δεν είναι ενεργή.\n(${status.state})`
+              ? `Connected! Your ${status.daysLeft}-day trial has started.`
+              : 'Connected to PressCal!')
+          : `Connected, but the license is not active.\n(${status.state})`
         mainWindow?.webContents.send('show-alert', { title: 'PressCal', message: successMsg })
       }
     }
@@ -1407,10 +1407,10 @@ function createWindow(): void {
       const { dialog: d } = require('electron') as typeof import('electron')
       d.showMessageBox(mainWindow, {
         type: 'error',
-        title: 'Σφάλμα εφαρμογής',
-        message: 'Το παράθυρο κόλλησε απρόσμενα',
+        title: 'Application error',
+        message: 'The window stopped unexpectedly',
         detail: `Reason: ${details.reason}\nExit code: ${details.exitCode}`,
-        buttons: ['Reload', 'Κλείσιμο'],
+        buttons: ['Reload', 'Close'],
         defaultId: 0,
         cancelId: 1
       }).then(result => {
@@ -1888,7 +1888,7 @@ function startFileServer(): void {
           const rawDefault = parsed.query.defaultPath as string | undefined
           const defaultPath = rawDefault ? resolvePortablePath(rawDefault) : undefined
           const result = await dialog.showOpenDialog(mainWindow!, {
-            title: 'Επιλογή Φακέλου Πελάτη',
+            title: 'Select Customer Folder',
             properties: ['openDirectory'],
             defaultPath,
           })
@@ -2227,8 +2227,8 @@ function registerHandlers(): void {
       ipcMain.once(`dialog-result:${id}`, (_ev, result: boolean) => resolve(result))
       mainWindow!.webContents.send('show-confirm', {
         id,
-        title: 'Αρχειοθέτηση φακέλου',
-        message: `Αρχειοθέτηση του φακέλου "${basename(folderPath)}";\nΟ φάκελος θα μετακινηθεί στο _01 Archive/ του parent directory.`,
+        title: 'Archive folder',
+        message: `Archive folder "${basename(folderPath)}"?\nThe folder will be moved to _01 Archive/ in the parent directory.`,
       })
     })
     if (!confirmed) return { ok: false, cancelled: true }

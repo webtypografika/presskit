@@ -60,12 +60,12 @@ export function AppDialog() {
                 onClick={() => close(label)}
               />
             ))}
-            <DialogButton label="Άκυρο" onClick={() => close('')} />
+            <DialogButton label="Cancel" onClick={() => close('')} />
           </div>
         ) : (
           <div className="flex justify-end gap-3">
             {isConfirm && (
-              <DialogButton label="Άκυρο" onClick={() => close(false)} />
+              <DialogButton label="Cancel" onClick={() => close(false)} />
             )}
             <DialogButton
               label="OK"

@@ -94,7 +94,7 @@ function CostingConfirm({ filePath, fileName, quoteId, onClose }: CostingDialogP
       await doUpload(filePath, fileName, 'quote', quoteId, saveToFolder && !!customerFolder)
       onClose()
     } catch (e: any) {
-      setError(e.message || 'Αποτυχία upload')
+      setError(e.message || 'Upload failed')
       setUploading(false)
     }
   }
@@ -107,7 +107,7 @@ function CostingConfirm({ filePath, fileName, quoteId, onClose }: CostingDialogP
         <div className="flex items-center justify-between" style={{ padding: '20px 24px', borderBottom: '1px solid var(--th-border)' }}>
           <div className="flex items-center gap-3">
             <Calculator size={20} style={{ color: 'var(--th-accent)' }} />
-            <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--th-text-primary)' }}>Κοστολόγηση</span>
+            <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--th-text-primary)' }}>Costing</span>
           </div>
           <button onClick={onClose} style={{ padding: 6, background: 'none', border: 'none', cursor: 'pointer', borderRadius: 8, color: 'var(--th-text-muted)' }}>
             <X size={18} />
@@ -125,11 +125,11 @@ function CostingConfirm({ filePath, fileName, quoteId, onClose }: CostingDialogP
           {loading ? (
             <div className="flex items-center gap-2" style={{ color: 'var(--th-text-muted)' }}>
               <Loader2 size={14} className="animate-spin" />
-              <span style={{ fontSize: 13 }}>Φόρτωση...</span>
+              <span style={{ fontSize: 13 }}>Loading...</span>
             </div>
           ) : quote && (
             <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(110,200,200,0.06)', border: '1px solid rgba(110,200,200,0.15)' }}>
-              <div style={{ fontSize: 13, color: 'var(--th-accent)', fontWeight: 600 }}>Προσφορά #{quote.number}</div>
+              <div style={{ fontSize: 13, color: 'var(--th-accent)', fontWeight: 600 }}>Quote #{quote.number}</div>
               {quote.customerName && quote.customerName !== '–' && <div style={{ fontSize: 12, color: 'var(--th-text-secondary)', marginTop: 2 }}>{quote.customerName}</div>}
             </div>
           )}
@@ -144,7 +144,7 @@ function CostingConfirm({ filePath, fileName, quoteId, onClose }: CostingDialogP
               <input type="checkbox" checked={saveToFolder} readOnly style={{ width: 16, height: 16, accentColor: 'var(--th-accent)' }} />
               <FolderOpen size={14} style={{ color: saveToFolder ? 'var(--th-accent)' : 'var(--th-text-muted)', flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, color: 'var(--th-text-primary)' }}>Αποθήκευση στον φάκελο πελάτη</div>
+                <div style={{ fontSize: 13, color: 'var(--th-text-primary)' }}>Save to customer folder</div>
                 <div className="truncate" style={{ fontSize: 11, color: 'var(--th-text-muted)', marginTop: 2 }}>{customerFolder}</div>
               </div>
             </label>
@@ -159,7 +159,7 @@ function CostingConfirm({ filePath, fileName, quoteId, onClose }: CostingDialogP
             onClick={onClose}
             style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid var(--th-border)', background: 'transparent', color: 'var(--th-text-secondary)', fontSize: 13, cursor: 'pointer' }}
           >
-            Ακύρωση
+            Cancel
           </button>
           <button
             onClick={handleUpload}
@@ -172,7 +172,7 @@ function CostingConfirm({ filePath, fileName, quoteId, onClose }: CostingDialogP
             }}
           >
             {uploading ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
-            {uploading ? 'Αποστολή...' : 'Κοστολόγηση'}
+            {uploading ? 'Sending...' : 'Costing'}
           </button>
         </div>
       </div>
@@ -204,7 +204,7 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
         setQuotes(results)
       }
     } catch {
-      setError('Αποτυχία φόρτωσης')
+      setError('Failed to load')
     } finally {
       setLoading(false)
     }
@@ -229,7 +229,7 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
       await doUpload(filePath, fileName, target, selectedId, false)
       onClose()
     } catch (e: any) {
-      setError(e.message || 'Αποτυχία upload')
+      setError(e.message || 'Upload failed')
       setUploading(false)
     }
   }
@@ -248,7 +248,7 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
         <div className="flex items-center justify-between" style={{ padding: '20px 24px', borderBottom: '1px solid var(--th-border)' }}>
           <div className="flex items-center gap-3">
             <Calculator size={20} style={{ color: 'var(--th-accent)' }} />
-            <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--th-text-primary)' }}>Αποθήκευση & Κοστολόγηση</span>
+            <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--th-text-primary)' }}>Save & Costing</span>
           </div>
           <button onClick={onClose} style={{ padding: 6, background: 'none', border: 'none', cursor: 'pointer', borderRadius: 8, color: 'var(--th-text-muted)' }}>
             <X size={18} />
@@ -273,7 +273,7 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
             }}
           >
             <User size={15} />
-            Πελάτης
+            Customer
           </button>
           <button
             onClick={() => setTarget('quote')}
@@ -285,7 +285,7 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
             }}
           >
             <FileText size={15} />
-            Προσφορά
+            Quote
           </button>
         </div>
 
@@ -296,7 +296,7 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder={target === 'customer' ? 'Αναζήτηση πελάτη...' : 'Αναζήτηση προσφοράς...'}
+              placeholder={target === 'customer' ? 'Search customers...' : 'Search quotes...'}
               autoFocus
               style={{
                 width: '100%', padding: '10px 12px 10px 36px', borderRadius: 8,
@@ -371,7 +371,7 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
             (target === 'quote' && quotes.length === 0)
           ) && (
             <div style={{ padding: 32, textAlign: 'center', color: 'var(--th-text-muted)', fontSize: 13 }}>
-              Δεν βρέθηκαν αποτελέσματα
+              No results found
             </div>
           )}
         </div>
@@ -379,7 +379,7 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
         {/* Footer */}
         <div style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--th-border)' }}>
           <div style={{ fontSize: 12, color: 'var(--th-text-muted)' }}>
-            {selectedLabel && <>Επιλεγμένο: <span style={{ color: 'var(--th-accent)' }}>{selectedLabel}</span></>}
+            {selectedLabel && <>Selected: <span style={{ color: 'var(--th-accent)' }}>{selectedLabel}</span></>}
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <button
@@ -389,7 +389,7 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
                 background: 'transparent', color: 'var(--th-text-secondary)', fontSize: 13, cursor: 'pointer',
               }}
             >
-              Ακύρωση
+              Cancel
             </button>
             <button
               onClick={handleUpload}
@@ -402,7 +402,7 @@ function CostingPicker({ filePath, fileName, onClose }: CostingDialogProps) {
               }}
             >
               {uploading ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
-              {uploading ? 'Αποστολή...' : 'Κοστολόγηση'}
+              {uploading ? 'Sending...' : 'Costing'}
             </button>
           </div>
         </div>

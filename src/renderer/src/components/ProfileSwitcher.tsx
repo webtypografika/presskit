@@ -87,7 +87,7 @@ export function ProfileSwitcher({ onManage }: { onManage?: () => void }) {
       setOpen(false)
       return
     }
-    if (!confirm(`Αλλαγή profile σε «${profiles.find(p => p.id === id)?.name}»;\n\nΤο PressKit θα επανεκκινηθεί.`)) return
+    if (!confirm(`Switch to profile "${profiles.find(p => p.id === id)?.name}"?\n\nPressKit will restart.`)) return
     await window.api.profiles.switch(id)
     // The main process calls app.relaunch() — UI freezes momentarily.
   }
@@ -187,7 +187,7 @@ export function ProfileSwitcher({ onManage }: { onManage?: () => void }) {
                     {p.name}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--th-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {formatHost(p.presscalUrl) || 'μη συνδεδεμένο'}
+                    {formatHost(p.presscalUrl) || 'not connected'}
                   </div>
                 </div>
                 {isActive && <Check size={14} style={{ color: 'var(--th-accent)', flexShrink: 0 }} />}
@@ -217,7 +217,7 @@ export function ProfileSwitcher({ onManage }: { onManage?: () => void }) {
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
           >
             {adding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-            Προσθήκη profile
+            Add profile
           </button>
 
           {onManage && (
@@ -241,7 +241,7 @@ export function ProfileSwitcher({ onManage }: { onManage?: () => void }) {
               onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
             >
               <Settings size={14} />
-              Διαχείριση profiles
+              Manage profiles
             </button>
           )}
         </div>

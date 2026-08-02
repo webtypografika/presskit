@@ -230,7 +230,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
     const result = await window.api.fs.rename(file.path, trimmed)
     setRenamingPath(null)
     if (!result.ok) {
-      showAlert(result.error || 'Αποτυχία μετονομασίας')
+      showAlert(result.error || 'Rename failed')
     }
     setTimeout(() => refreshDirectory(), 200)
   }, [refreshDirectory])
@@ -429,11 +429,11 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         const failures = (results || []).filter((r: any) => !r.ok)
         if (failures.length > 0) {
           const list = failures.map((f: any) =>
-            `• ${f.source.split(/[\\/]/).pop()}: ${f.error || 'άγνωστο σφάλμα'}`
+            `• ${f.source.split(/[\\/]/).pop()}: ${f.error || 'unknown error'}`
           ).join('\n')
           showAlert(
-            `${e.ctrlKey ? 'Αντιγραφή' : 'Μετακίνηση'} απέτυχε για ${failures.length} αρχεί${failures.length === 1 ? 'ο' : 'α'}:\n\n${list}\n\n` +
-            `Πιθανή αιτία: ανοιχτό σε άλλη εφαρμογή ή κλειδωμένο από Dropbox/antivirus.`
+            `${e.ctrlKey ? 'Copy' : 'Move'} failed for ${failures.length} file${failures.length === 1 ? '' : 's'}:\n\n${list}\n\n` +
+            `Possible cause: open in another app or locked by Dropbox/antivirus.`
           )
         }
       } catch (err) {
@@ -484,9 +484,9 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
       const failed = results.filter((r: any) => !r.ok)
       if (failed.length > 0) {
         const list = failed.map((f: any) =>
-          `• ${f.source.split(/[\\/]/).pop()}: ${f.error || 'άγνωστο σφάλμα'}`
+          `• ${f.source.split(/[\\/]/).pop()}: ${f.error || 'unknown error'}`
         ).join('\n')
-        showAlert(`Αντιγραφή απέτυχε για ${failed.length} αρχεί${failed.length === 1 ? 'ο' : 'α'}:\n\n${list}`)
+        showAlert(`Copy failed for ${failed.length} file${failed.length === 1 ? '' : 's'}:\n\n${list}`)
       }
       refreshDirectory()
     } catch {}
@@ -508,9 +508,9 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
       const failed = results.filter((r: any) => !r.ok)
       if (failed.length > 0) {
         const list = failed.map((f: any) =>
-          `• ${f.source.split(/[\\/]/).pop()}: ${f.error || 'άγνωστο σφάλμα'}`
+          `• ${f.source.split(/[\\/]/).pop()}: ${f.error || 'unknown error'}`
         ).join('\n')
-        showAlert(`Αντιγραφή απέτυχε για ${failed.length} αρχεί${failed.length === 1 ? 'ο' : 'α'}:\n\n${list}`)
+        showAlert(`Copy failed for ${failed.length} file${failed.length === 1 ? '' : 's'}:\n\n${list}`)
       }
       refreshDirectory()
     } catch {}
@@ -593,13 +593,13 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
           : [file]
         const names = filesToDelete.length === 1
           ? `"${filesToDelete[0].name}"`
-          : `${filesToDelete.length} αρχεία`
-        showConfirm(`Διαγραφή ${names};`).then((ok) => {
+          : `${filesToDelete.length} files`
+        showConfirm(`Delete ${names}?`).then((ok) => {
           if (!ok) return
           window.api.fs.trash(filesToDelete.map(f => f.path)).then((results) => {
             const failed = results.filter((r: any) => !r.ok)
             if (failed.length > 0) {
-              showAlert(`Αποτυχία διαγραφής ${failed.length} αρχείων:\n${failed.map((f: any) => f.error).join('\n')}`)
+              showAlert(`Failed to delete ${failed.length} file${failed.length === 1 ? '' : 's'}:\n${failed.map((f: any) => f.error).join('\n')}`)
             }
             clearSelection()
             setTimeout(() => refreshDirectory(), 200)
@@ -744,7 +744,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         {/* New folder inline input (list view) */}
         {newFolderPending && (
           <NewFolderInput
-            defaultName="Νέος Φάκελος"
+            defaultName="New Folder"
             onSubmit={createNewFolder}
             onCancel={clearNewFolder}
             viewMode="list"
@@ -861,7 +861,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
       {/* New folder inline input (grid view) */}
       {newFolderPending && (
         <NewFolderInput
-          defaultName="Νέος Φάκελος"
+          defaultName="New Folder"
           onSubmit={createNewFolder}
           onCancel={clearNewFolder}
           viewMode="grid"
@@ -907,7 +907,7 @@ function DragGhost({ x, y, name, count }: { x: number; y: number; name: string; 
       maxWidth: 250, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
     }}>
-      {count > 1 ? `${count} αρχεία` : name}
+      {count > 1 ? `${count} files` : name}
     </div>
   )
 }
@@ -958,7 +958,7 @@ function BackgroundContextMenu({ x, y, onClose, onPaste, onNewFolder, hasClipboa
         onClick={onNewFolder}
       >
         <FolderPlus size={13} />
-        Νέος Φάκελος
+        New Folder
       </button>
     </div>
   )
