@@ -83,6 +83,19 @@ function showError(title: string, message: string) {
 
 // Register custom protocol for deep links from PressCal
 const PROTOCOL = 'presscal-fh'
+
+// "Object has been destroyed" = a late timer/IPC callback touching a window
+// that closed in the meantime. Harmless, but Electron's default handler pops a
+// scary error dialog for it. Swallow just that; keep the dialog for real bugs.
+process.on('uncaughtException', (err) => {
+  const msg = String((err as Error)?.message || err)
+  if (msg.includes('Object has been destroyed')) {
+    console.warn('[main] late callback on destroyed window:', msg)
+    return
+  }
+  const { dialog } = require('electron')
+  dialog.showErrorBox('A JavaScript error occurred in the main process', String((err as Error)?.stack || err))
+})
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
     app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [resolve(process.argv[1])])
@@ -114,7 +127,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
     mainWindow.setAlwaysOnTop(true)
     mainWindow.moveTop()
     mainWindow.focus()
-    setTimeout(() => mainWindow?.setAlwaysOnTop(false), 300)
+    setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setAlwaysOnTop(false) }, 300)
   }
 
   try {
@@ -422,7 +435,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
         mainWindow.moveTop()
         mainWindow.focusOnWebView()
         mainWindow.focus()
-        setTimeout(() => mainWindow?.setAlwaysOnTop(false), 200)
+        setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setAlwaysOnTop(false) }, 200)
         mainWindow.webContents.send('navigate-to-folder', { path: folderPath, email, quoteId })
       }
       return
@@ -599,7 +612,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
           if (mainWindow.isMinimized()) mainWindow.restore()
           mainWindow.setAlwaysOnTop(true)
           mainWindow.focus()
-          setTimeout(() => mainWindow?.setAlwaysOnTop(false), 200)
+          setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setAlwaysOnTop(false) }, 200)
           mainWindow.webContents.send('navigate-to-folder', { path: targetDir, email: quoteEmail, quoteId })
         }
         return
@@ -623,7 +636,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
           if (mainWindow.isMinimized()) mainWindow.restore()
           mainWindow.setAlwaysOnTop(true)
           mainWindow.focus()
-          setTimeout(() => mainWindow?.setAlwaysOnTop(false), 200)
+          setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setAlwaysOnTop(false) }, 200)
           mainWindow.webContents.send('navigate-to-folder', { path: targetDir, email: quoteEmail, quoteId })
           return
         }
@@ -755,7 +768,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
         if (mainWindow.isMinimized()) mainWindow.restore()
         mainWindow.setAlwaysOnTop(true)
         mainWindow.focus()
-        setTimeout(() => mainWindow?.setAlwaysOnTop(false), 200)
+        setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setAlwaysOnTop(false) }, 200)
         mainWindow.webContents.send('navigate-to-folder', { path: targetDir, email: quoteEmail, quoteId })
       }
     }
@@ -1322,7 +1335,7 @@ function createWindow(): void {
 
   // Fallback: show window after 5s even if renderer didn't fire ready-to-show
   setTimeout(() => {
-    if (mainWindow && !mainWindow.isVisible()) {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
       mainWindow.show()
     }
   }, 5000)
