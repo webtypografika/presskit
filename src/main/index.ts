@@ -1038,9 +1038,16 @@ async function handleProtocolUrl(url: string): Promise<void> {
       if (url && apiKey) {
         if (addProfile) {
           const cleanUrl = url.replace(/\/$/, '')
-          // Upsert by URL — if a profile with this URL already exists, update it
+          // Upsert by URL + account: multiple accounts (orgs) can live on the
+          // SAME PressCal instance (e.g. a demo user and the owner, both on eu).
+          // Matching by URL alone overwrote the first profile's credentials
+          // with a different org's key — so when the deep link carries an
+          // email, only a profile with that same email is an update target;
+          // any other account on the same URL gets a NEW profile.
           const existingProfiles = listProfiles()
-          const existing = existingProfiles.find(p => p.presscalUrl === cleanUrl)
+          const existing = existingProfiles.find(p =>
+            p.presscalUrl === cleanUrl && (!email || !p.email || p.email === email)
+          )
 
           let profileId: string
           if (existing) {
