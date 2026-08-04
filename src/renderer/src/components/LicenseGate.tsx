@@ -358,10 +358,10 @@ function LockScreen({
                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
               >
                 <span style={{ width: 10, height: 10, borderRadius: '50%', background: p.color, flexShrink: 0 }} />
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--th-text-primary, #f1f5f9)' }}>{p.name}</span>
-                {p.presscalUrl && (
-                  <span style={{ fontSize: 11, color: 'var(--th-text-muted, #64748b)', marginLeft: 'auto' }}>
-                    {hostOf(p.presscalUrl)}
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--th-text-primary, #f1f5f9)', whiteSpace: 'nowrap' }}>{p.name}</span>
+                {(p.email || p.presscalUrl) && (
+                  <span style={{ fontSize: 11, color: 'var(--th-text-muted, #64748b)', marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {[p.email, hostOf(p.presscalUrl)].filter(Boolean).join(' · ')}
                   </span>
                 )}
               </button>

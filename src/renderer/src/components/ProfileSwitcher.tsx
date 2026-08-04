@@ -109,7 +109,7 @@ export function ProfileSwitcher({ onManage }: { onManage?: () => void }) {
     <div ref={wrapperRef} style={{ position: 'relative' }}>
       <button
         onClick={() => setOpen(o => !o)}
-        title={`${active.name} · ${formatHost(active.presscalUrl) || 'no server'}`}
+        title={[active.name, active.email, formatHost(active.presscalUrl) || 'no server'].filter(Boolean).join(' · ')}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -130,9 +130,11 @@ export function ProfileSwitcher({ onManage }: { onManage?: () => void }) {
           <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 500 }}>
             {active.name}
           </div>
-          {active.presscalUrl && (
+          {(active.email || active.presscalUrl) && (
             <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10, color: 'var(--th-text-muted)' }}>
-              {formatHost(active.presscalUrl)}
+              {/* The account email is what actually identifies the profile —
+                  two profiles on the same server look identical without it. */}
+              {active.email || formatHost(active.presscalUrl)}
             </div>
           )}
         </div>
@@ -187,7 +189,7 @@ export function ProfileSwitcher({ onManage }: { onManage?: () => void }) {
                     {p.name}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--th-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {formatHost(p.presscalUrl) || 'not connected'}
+                    {[p.email, formatHost(p.presscalUrl)].filter(Boolean).join(' · ') || 'not connected'}
                   </div>
                 </div>
                 {isActive && <Check size={14} style={{ color: 'var(--th-accent)', flexShrink: 0 }} />}

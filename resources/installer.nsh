@@ -1,15 +1,20 @@
 ; Finish-page checkbox: pin to taskbar (opt-out). Reuses the MUI "show readme"
 ; checkbox slot — the standard electron-builder way to add a finish checkbox.
-!define MUI_FINISHPAGE_SHOWREADME ""
-!define MUI_FINISHPAGE_SHOWREADME_TEXT "Pin PressKit to the taskbar"
-!define MUI_FINISHPAGE_SHOWREADME_FUNCTION pinToTaskbar
+; Guarded: this file is also included when building the UNINSTALLER, where the
+; same MUI_FINISHPAGE_* defines would leak into MUI_UNPAGE_FINISH and reference
+; a function that doesn't exist there.
+!ifndef BUILD_UNINSTALLER
+  !define MUI_FINISHPAGE_SHOWREADME ""
+  !define MUI_FINISHPAGE_SHOWREADME_TEXT "Pin PressKit to the taskbar"
+  !define MUI_FINISHPAGE_SHOWREADME_FUNCTION pinToTaskbar
 
-Function pinToTaskbar
-  ; Delete first to force Windows to re-read the icon — without it, Windows
-  ; keeps the cached icon from a previous install.
-  Delete "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\PressKit.lnk"
-  CreateShortCut "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\PressKit.lnk" "$INSTDIR\PressKit.exe" "" "$INSTDIR\resources\icon.ico" 0
-FunctionEnd
+  Function pinToTaskbar
+    ; Delete first to force Windows to re-read the icon — without it, Windows
+    ; keeps the cached icon from a previous install.
+    Delete "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\PressKit.lnk"
+    CreateShortCut "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\PressKit.lnk" "$INSTDIR\PressKit.exe" "" "$INSTDIR\resources\icon.ico" 0
+  FunctionEnd
+!endif
 
 !macro customInstall
   ; Register presscal-fh:// protocol handler
@@ -48,7 +53,7 @@ FunctionEnd
   gsManual:
     ; Automatic path failed (blocked download, declined elevation, ...) —
     ; fall back to the old manual flow. /SD keeps unattended runs moving.
-    MessageBox MB_OK|MB_ICONINFORMATION /SD IDOK "Automatic Ghostscript installation didn't complete.$\n$\nPressKit will open the download page - run gs10050w64.exe after this setup finishes. It takes 1-2 minutes."
+    MessageBox MB_OK|MB_ICONINFORMATION "Automatic Ghostscript installation didn't complete.$\n$\nPressKit will open the download page - run gs10050w64.exe after this setup finishes. It takes 1-2 minutes." /SD IDOK
     ExecShell "open" "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10050/gs10050w64.exe"
     Goto gsDone
 
