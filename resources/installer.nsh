@@ -26,25 +26,49 @@
   WriteRegStr HKCU "Software\Classes\presscal-fh\shell\open\command" "" '"$INSTDIR\PressKit.exe" "%1"'
 
   ; ── Ghostscript (PDF engine) ──────────────────────────────────────────
-  ; Ghostscript installs to the 64-bit Program Files; this NSIS installer is
-  ; 32-bit, so the check MUST use $PROGRAMFILES64 ($PROGRAMFILES points to
-  ; "Program Files (x86)" and always missed existing installs).
-  IfFileExists "$PROGRAMFILES64\gs\gs*\bin\gswin64c.exe" gsFound 0
-  ; Silent runs = auto-updates: never download/elevate/open pages there.
-  IfSilent gsDone gsNotFound
+  ; Detect via the registry, 64-bit view: Ghostscript writes
+  ; HKLM\SOFTWARE\GPL Ghostscript\<version> on install. IfFileExists cannot
+  ; match a wildcard mid-path (gs\gs*\bin\...), which is why every earlier
+  ; version of this check missed existing installs and re-prompted everyone.
+  SetRegView 64
+  EnumRegKey $0 HKLM "SOFTWARE\GPL Ghostscript" 0
+  SetRegView lastused
+  StrCmp $0 "" 0 gsFound
 
-  gsNotFound:
-    ; No questions and nothing auto-opens in the browser: install it for the
-    ; user. The info URL is printed in the install log for the curious.
-    DetailPrint "Ghostscript (free PDF engine by Artifex) not found - downloading..."
-    DetailPrint "About Ghostscript: https://www.ghostscript.com"
-    nsExec::ExecToLog "powershell -NoProfile -ExecutionPolicy Bypass -Command $\"$$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri 'https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10050/gs10050w64.exe' -OutFile '$TEMP\presskit-gs-setup.exe'$\""
-    Pop $0
-    IfFileExists "$TEMP\presskit-gs-setup.exe" 0 gsManual
-    DetailPrint "Installing Ghostscript (a Windows security prompt may appear)..."
-    ExecShellWait "open" "$TEMP\presskit-gs-setup.exe" "/S"
-    Delete "$TEMP\presskit-gs-setup.exe"
-    IfFileExists "$PROGRAMFILES64\gs\gs*\bin\gswin64c.exe" gsInstalled gsManual
+  ; Registry miss — scan Program Files\gs\gs*\ folders as a fallback.
+  FindFirst $1 $2 "$PROGRAMFILES64\gs\gs*"
+  gsDirLoop:
+    StrCmp $2 "" gsDirDone
+    IfFileExists "$PROGRAMFILES64\gs\$2\bin\gswin64c.exe" 0 gsDirNext
+    FindClose $1
+    Goto gsFound
+  gsDirNext:
+    FindNext $1 $2
+    Goto gsDirLoop
+  gsDirDone:
+  FindClose $1
+
+  ; Silent runs = auto-updates: never download/elevate there.
+  IfSilent gsDone
+
+  ; No questions and nothing auto-opens in the browser: install it for the
+  ; user. The info URL is printed in the install log for the curious.
+  DetailPrint "Ghostscript (free PDF engine by Artifex) not found - downloading..."
+  DetailPrint "About Ghostscript: https://www.ghostscript.com"
+  nsExec::ExecToLog "powershell -NoProfile -ExecutionPolicy Bypass -Command $\"$$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri 'https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10050/gs10050w64.exe' -OutFile '$TEMP\presskit-gs-setup.exe'$\""
+  Pop $0
+  IfFileExists "$TEMP\presskit-gs-setup.exe" 0 gsManual
+  DetailPrint "Installing Ghostscript (a Windows security prompt may appear)..."
+  ; ExecWait passes /S verbatim on the command line. ExecShellWait dropped it
+  ; (observed 04/08: full wizard appeared), so the installer ran interactively.
+  ClearErrors
+  ExecWait '"$TEMP\presskit-gs-setup.exe" /S'
+  Delete "$TEMP\presskit-gs-setup.exe"
+  ; Verify the same way we detect: registry, 64-bit view.
+  SetRegView 64
+  EnumRegKey $0 HKLM "SOFTWARE\GPL Ghostscript" 0
+  SetRegView lastused
+  StrCmp $0 "" gsManual gsInstalled
 
   gsInstalled:
     DetailPrint "Ghostscript installed."
