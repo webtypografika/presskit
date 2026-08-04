@@ -1,17 +1,32 @@
 import { useEffect, useState, type ReactNode, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import { Lock, KeyRound, WifiOff, AlertTriangle, ShoppingCart, RefreshCw, Loader2 } from 'lucide-react'
+import { Lock, KeyRound, WifiOff, AlertTriangle, ShoppingCart, RefreshCw, Loader2, Globe, Users } from 'lucide-react'
 
 const CHECKOUT_URL = 'https://presscal.com/el/checkout'
+const PRESSCAL_WEBSITE = 'https://presscal.com'
 
-// PressCal instances offered in the lock-screen picker. The first entry is the
-// default for brand-new installs. "Custom" (typed URL) is handled separately.
+// Live PressCal instances offered in the hidden "Advanced" picker. There is
+// deliberately NO default instance: a fresh install must connect through the
+// browser (PressCal → Settings → PressKit → Connect), whose deep link always
+// carries the right server — guessing a server here used to create junk trial
+// orgs on the wrong region.
 const PRESSCAL_INSTANCES = [
-  { label: 'PressCal (gr.presscal.com)', value: 'https://gr.presscal.com' },
-  { label: 'Demo (demo.gr.presscal.com)', value: 'https://demo.gr.presscal.com' },
+  { label: 'PressCal Pro (pro.presscal.com)', value: 'https://pro.presscal.com' },
+  { label: 'Greece (gr.presscal.com)', value: 'https://gr.presscal.com' },
+  { label: 'Europe (eu.presscal.com)', value: 'https://eu.presscal.com' },
+  { label: 'United States (us.presscal.com)', value: 'https://us.presscal.com' },
 ] as const
-const DEFAULT_PRESSCAL_BASE = PRESSCAL_INSTANCES[0].value
 const CUSTOM_INSTANCE = '__custom__'
+const SELECT_PLACEHOLDER = '__select__'
+
+interface ProfileMeta {
+  id: string
+  name: string
+  email?: string
+  presscalUrl?: string
+  orgName?: string
+  color: string
+}
 
 // Google "G" logo, official colors. lucide-react has no brand icons.
 function GoogleIcon({ size = 16 }: { size?: number }) {
@@ -148,6 +163,16 @@ const secondaryBtn: CSSProperties = {
   marginLeft: 12,
 }
 
+const mutedLink: CSSProperties = {
+  color: 'var(--th-text-muted, #94a3b8)',
+  textDecoration: 'underline',
+  cursor: 'pointer',
+}
+
+function hostOf(url?: string): string {
+  return (url || '').replace(/^https?:\/\//, '').replace(/\/$/, '')
+}
+
 function openCheckout(): void {
   // Logging because users have reported the click "doing nothing" — usually
   // means the URL 404s in their browser, not that openExternal failed.
@@ -157,30 +182,37 @@ function openCheckout(): void {
   })
 }
 
+function openWebsite(): void {
+  void window.api.shell.openExternal(PRESSCAL_WEBSITE)
+}
+
 function openSettings(): void {
   // SettingsDialog listens for this event with the PressCal tab open by default.
   window.dispatchEvent(new CustomEvent('open-settings', { detail: { tab: 'presscal' } }))
 }
 
 async function openGoogleSignIn(base?: string): Promise<void> {
-  // `base` is the instance the user picked on the lock screen. If it's empty
-  // (e.g. "Custom" with nothing typed), fall back to a previously configured
-  // server — so re-auth after a key revoke goes back to the same instance —
-  // then to the production default for first-time users.
+  // `base` is the effective server for this lock screen. If empty (e.g.
+  // "Custom" in Advanced with nothing typed), fall back to the previously
+  // configured server — so re-auth after a key revoke goes back to the same
+  // instance. There is no production default on purpose: without a server we
+  // simply do nothing (the UI doesn't offer this button in that case).
   let target = base?.trim()
   if (!target) {
     const stored = (await window.api.settings.get('presscal.url')) as string | undefined
-    target = stored?.trim() || DEFAULT_PRESSCAL_BASE
+    target = stored?.trim()
   }
+  if (!target) return
   void window.api.shell.openExternal(`${target.replace(/\/$/, '')}/auth/presskit-link`)
 }
 
-// Lock-screen dropdown to pick which PressCal instance the Google sign-in
-// should target. Fully controlled — `base` is the effective URL, and any value
+// Server picker inside "Advanced" — pick one of the live PressCal instances or
+// type a custom URL. Fully controlled — `base` is the effective URL; any value
 // not matching a known instance is shown as "Custom" with a free-text field.
 function InstancePicker({ base, onChange }: { base: string; onChange: (v: string) => void }) {
   const normBase = base.replace(/\/$/, '')
   const known = PRESSCAL_INSTANCES.find(i => i.value === normBase)
+  const empty = normBase === ''
   const fieldStyle: CSSProperties = {
     width: '100%',
     padding: '9px 12px',
@@ -191,21 +223,22 @@ function InstancePicker({ base, onChange }: { base: string; onChange: (v: string
     fontSize: 13,
   }
   return (
-    <div style={{ marginBottom: 20, textAlign: 'left' }}>
+    <div style={{ marginBottom: 16, textAlign: 'left' }}>
       <label style={{ display: 'block', fontSize: 12, color: 'var(--th-text-muted, #94a3b8)', marginBottom: 6 }}>
         PressCal server
       </label>
       <select
-        value={known ? known.value : CUSTOM_INSTANCE}
-        onChange={e => onChange(e.target.value === CUSTOM_INSTANCE ? '' : e.target.value)}
+        value={empty ? SELECT_PLACEHOLDER : known ? known.value : CUSTOM_INSTANCE}
+        onChange={e => onChange(e.target.value === CUSTOM_INSTANCE || e.target.value === SELECT_PLACEHOLDER ? '' : e.target.value)}
         style={fieldStyle}
       >
+        {empty && <option value={SELECT_PLACEHOLDER}>Select server…</option>}
         {PRESSCAL_INSTANCES.map(i => (
           <option key={i.value} value={i.value}>{i.label}</option>
         ))}
         <option value={CUSTOM_INSTANCE}>Other server…</option>
       </select>
-      {!known && (
+      {!known && !empty && (
         <input
           type="url"
           value={base}
@@ -223,9 +256,10 @@ function LockScreen({
   title: t,
   message,
   primary,
-  manualSetup,
-  signInPicker,
+  advanced,
   status,
+  profiles,
+  activeProfileId,
   onRefresh,
   refreshing,
 }: {
@@ -233,40 +267,31 @@ function LockScreen({
   title: string
   message: ReactNode
   primary: { label: string; onClick: () => void; icon?: ReactNode }
-  // If provided, renders a small text link beneath the buttons for users who
-  // want the old API-key flow. Only used in not_configured / unauthorized.
-  manualSetup?: boolean
-  // If provided, renders the PressCal-instance picker above the buttons.
-  // Only used in not_configured / unauthorized.
-  signInPicker?: { base: string; setBase: (v: string) => void }
+  // If provided, renders a discreet "Advanced" link that expands into the
+  // server picker + "Manual setup with API key". Normal users never need it —
+  // the primary path is the single sign-in / browser-first flow above.
+  advanced?: { base: string; setBase: (v: string) => void }
   status: LicenseStatus | null
+  profiles: ProfileMeta[]
+  activeProfileId: string | null
   onRefresh: () => void
   refreshing: boolean
 }) {
-  const [showPicker, setShowPicker] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const otherProfiles = profiles.filter(p => p.id !== activeProfileId)
+
+  const switchTo = async (p: ProfileMeta): Promise<void> => {
+    if (!confirm(`Switch to profile "${p.name}"?\n\nPressKit will restart.`)) return
+    await window.api.profiles.switch(p.id)
+    // The main process calls app.relaunch() — UI freezes momentarily.
+  }
+
   return createPortal(
     <div style={overlay}>
       <div style={card}>
         <div style={iconWrap}>{icon}</div>
         <div style={title}>{t}</div>
         <div style={body}>{message}</div>
-        {signInPicker && (
-          showPicker ? (
-            <InstancePicker base={signInPicker.base} onChange={signInPicker.setBase} />
-          ) : (
-            <div style={{ marginBottom: 20, fontSize: 12, color: 'var(--th-text-muted, #94a3b8)' }}>
-              Server: <strong>{signInPicker.base.replace(/^https?:\/\//, '').replace(/\/$/, '') || 'gr.presscal.com'}</strong>
-              {' · '}
-              <a
-                href="#"
-                onClick={(e) => { e.preventDefault(); setShowPicker(true) }}
-                style={{ color: 'var(--th-text-muted, #94a3b8)', textDecoration: 'underline' }}
-              >
-                Change
-              </a>
-            </div>
-          )
-        )}
         <div>
           <button style={primaryBtn} onClick={primary.onClick}>
             {primary.icon}
@@ -277,15 +302,70 @@ function LockScreen({
             Check again
           </button>
         </div>
-        {manualSetup && (
+        {advanced && (
           <div style={{ marginTop: 20, fontSize: 12 }}>
-            <a
-              href="#"
-              onClick={(e) => { e.preventDefault(); openSettings() }}
-              style={{ color: 'var(--th-text-muted, #94a3b8)', textDecoration: 'underline' }}
-            >
-              Manual setup with API key
-            </a>
+            {showAdvanced ? (
+              <div style={{ textAlign: 'left' }}>
+                <InstancePicker base={advanced.base} onChange={advanced.setBase} />
+                <a
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); openSettings() }}
+                  style={mutedLink}
+                >
+                  Manual setup with API key
+                </a>
+              </div>
+            ) : (
+              <span style={{ color: 'var(--th-text-muted, #94a3b8)' }}>
+                {advanced.base.trim() && (
+                  <>Server: <strong>{hostOf(advanced.base)}</strong>{' · '}</>
+                )}
+                <a
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); setShowAdvanced(true) }}
+                  style={mutedLink}
+                >
+                  Advanced
+                </a>
+              </span>
+            )}
+          </div>
+        )}
+        {otherProfiles.length > 0 && (
+          <div style={{ marginTop: 28, paddingTop: 18, borderTop: '1px solid var(--th-border, #334155)', textAlign: 'left' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--th-text-muted, #94a3b8)', marginBottom: 10 }}>
+              <Users size={13} />
+              Or switch to another profile (PressKit will restart):
+            </div>
+            {otherProfiles.map(p => (
+              <button
+                key={p.id}
+                onClick={() => void switchTo(p)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  width: '100%',
+                  padding: '8px 12px',
+                  marginBottom: 6,
+                  background: 'transparent',
+                  border: '1px solid var(--th-border, #334155)',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--th-bg-hover, rgba(148,163,184,0.08))' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+              >
+                <span style={{ width: 10, height: 10, borderRadius: '50%', background: p.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--th-text-primary, #f1f5f9)' }}>{p.name}</span>
+                {p.presscalUrl && (
+                  <span style={{ fontSize: 11, color: 'var(--th-text-muted, #64748b)', marginLeft: 'auto' }}>
+                    {hostOf(p.presscalUrl)}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
         )}
         {status?.orgName && (
@@ -352,18 +432,24 @@ function TrialBanner({ daysLeft, expiresAt }: { daysLeft: number; expiresAt: str
   )
 }
 
+type LockProps = Omit<Parameters<typeof LockScreen>[0], 'profiles' | 'activeProfileId'>
+
 function pickLockProps(
   status: LicenseStatus,
   refresh: () => void,
   refreshing: boolean,
   signIn: { base: string; setBase: (v: string) => void },
-): Parameters<typeof LockScreen>[0] | null {
+): LockProps | null {
   switch (status.state) {
-    case 'not_configured':
+    case 'not_configured': {
+      // Fresh install with no stored server: browser-first. The connect deep
+      // link from PressCal always carries the right server — never guess one
+      // here (a wrong guess used to create junk trial orgs on other regions).
+      const hasServer = signIn.base.trim() !== ''
       return {
         icon: <KeyRound size={32} color="var(--th-accent)" />,
         title: 'Connect to PressCal',
-        message: (
+        message: hasServer ? (
           <>
             Sign in with your PressCal account to activate PressKit.
             <br />
@@ -372,22 +458,35 @@ function pickLockProps(
               New users automatically get a <strong>15-day trial</strong>.
             </span>
           </>
+        ) : (
+          <>
+            Open PressCal in your browser and go to{' '}
+            <strong>Settings → PressKit → Connect</strong>.
+            <br />
+            PressKit will connect automatically.
+            <br />
+            <br />
+            <span style={{ fontSize: 12, color: 'var(--th-text-muted, #64748b)' }}>
+              No account yet? Sign up at presscal.com — new users get a <strong>15-day trial</strong>.
+            </span>
+          </>
         ),
-        primary: { label: 'Sign in with Google', onClick: () => void openGoogleSignIn(signIn.base), icon: <GoogleIcon size={16} /> },
-        manualSetup: true,
-        signInPicker: signIn,
+        primary: hasServer
+          ? { label: 'Sign in with Google', onClick: () => void openGoogleSignIn(signIn.base), icon: <GoogleIcon size={16} /> }
+          : { label: 'Open presscal.com', onClick: openWebsite, icon: <Globe size={16} /> },
+        advanced: signIn,
         status,
         onRefresh: refresh,
         refreshing,
       }
+    }
     case 'unauthorized':
       return {
         icon: <Lock size={32} color="#dc2626" />,
         title: 'Connection is no longer valid',
         message: 'Your PressCal connection has expired or been revoked. Click "Sign in with Google" to reconnect automatically.',
         primary: { label: 'Sign in with Google', onClick: () => void openGoogleSignIn(signIn.base), icon: <GoogleIcon size={16} /> },
-        manualSetup: true,
-        signInPicker: signIn,
+        advanced: signIn,
         status,
         onRefresh: refresh,
         refreshing,
@@ -430,13 +529,25 @@ export function LicenseGate({ children }: { children: ReactNode }) {
   const { status, refresh, refreshing } = useLicense()
 
   // Which PressCal instance the Google sign-in targets. Seeded from the stored
-  // PressCal URL (so re-auth on `unauthorized` returns to the same instance),
-  // falling back to the production default for fresh installs.
-  const [signInBase, setSignInBase] = useState<string>(DEFAULT_PRESSCAL_BASE)
+  // PressCal URL (so re-auth on `unauthorized` returns to the same instance).
+  // Deliberately NO fallback default for fresh installs — they go browser-first.
+  const [signInBase, setSignInBase] = useState<string>('')
   useEffect(() => {
     void window.api.settings.get('presscal.url').then((v) => {
       const stored = (v as string | undefined)?.trim()
       if (stored) setSignInBase(stored)
+    })
+  }, [])
+
+  // Profiles for the lock-screen switcher. A locked user with a second healthy
+  // profile must be able to reach it — the overlay covers the normal
+  // ProfileSwitcher in the status bar.
+  const [profiles, setProfiles] = useState<ProfileMeta[]>([])
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(null)
+  useEffect(() => {
+    void Promise.all([window.api.profiles.list(), window.api.profiles.active()]).then(([list, active]) => {
+      setProfiles((list as ProfileMeta[]) || [])
+      setActiveProfileId((active as ProfileMeta | null)?.id ?? null)
     })
   }, [])
 
@@ -455,7 +566,7 @@ export function LicenseGate({ children }: { children: ReactNode }) {
         <TrialBanner daysLeft={status.daysLeft} expiresAt={status.expiresAt} />
       )}
       {children}
-      {lockProps && <LockScreen {...lockProps} />}
+      {lockProps && <LockScreen {...lockProps} profiles={profiles} activeProfileId={activeProfileId} />}
     </>
   )
 }
