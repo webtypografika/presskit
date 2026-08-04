@@ -34,10 +34,10 @@
   IfSilent gsDone gsNotFound
 
   gsNotFound:
-    ; No questions: install it for the user. For transparency, show what
-    ; Ghostscript is while it downloads (info page only, not a download link).
+    ; No questions and nothing auto-opens in the browser: install it for the
+    ; user. The info URL is printed in the install log for the curious.
     DetailPrint "Ghostscript (free PDF engine by Artifex) not found - downloading..."
-    ExecShell "open" "https://www.ghostscript.com/"
+    DetailPrint "About Ghostscript: https://www.ghostscript.com"
     nsExec::ExecToLog "powershell -NoProfile -ExecutionPolicy Bypass -Command $\"$$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri 'https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10050/gs10050w64.exe' -OutFile '$TEMP\presskit-gs-setup.exe'$\""
     Pop $0
     IfFileExists "$TEMP\presskit-gs-setup.exe" 0 gsManual
