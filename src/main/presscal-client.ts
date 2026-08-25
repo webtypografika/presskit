@@ -152,6 +152,15 @@ export async function linkFileToQuoteItem(quoteId: string, itemId: string, fileP
   }
 }
 
+/**
+ * POST a JSON body to a /api/filehelper endpoint, using the configured URL and
+ * PressKit key. Exported so error reporting can reuse the one authenticated
+ * channel instead of rebuilding auth of its own.
+ */
+export function postToPresscal(endpoint: string, body: unknown): Promise<unknown> {
+  return presscalFetch(endpoint, { method: 'POST', body: JSON.stringify(body) })
+}
+
 export function registerPresscalHandlers(ipcMain: IpcMain): void {
   // Connection management
   ipcMain.handle('presscal:configure', async (_e, url: string, apiKey: string) => {

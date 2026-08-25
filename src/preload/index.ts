@@ -110,6 +110,13 @@ const api = {
   },
 
   // Profiles
+  // Error reports. compose() returns the exact text the user is shown; send()
+  // transmits that same string, so the preview can never drift from what goes.
+  report: {
+    compose: (ctx: unknown): Promise<string> => ipcRenderer.invoke('report:compose', ctx),
+    send: (text: string, subject?: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('report:send', text, subject),
+  },
   profiles: {
     list: () => ipcRenderer.invoke('profiles:list'),
     active: () => ipcRenderer.invoke('profiles:active'),

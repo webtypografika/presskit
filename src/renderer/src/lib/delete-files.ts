@@ -18,6 +18,45 @@ type DeleteResult = { path: string; ok: boolean; locked?: boolean; error?: strin
 type Dialogs = {
   showConfirm: (message: string, title?: string) => Promise<boolean>
   showAlert: (message: string, title?: string) => void
+  showChoice: (message: string, choices: string[], title?: string) => Promise<string>
+}
+
+/**
+ * Offers to send the failure to the developers, showing the exact text first.
+ *
+ * The preview is not a summary of what gets sent — it IS what gets sent. A
+ * report lists file paths, and those name customers, so the user reads the
+ * real lines and decides (George 2026-08-25).
+ */
+async function offerReport(
+  dialogs: Dialogs,
+  headline: string,
+  operation: string,
+  errors: string[],
+  paths: string[],
+): Promise<void> {
+  let text: string
+  try {
+    text = await window.api.report.compose({ operation, errors, paths })
+  } catch {
+    dialogs.showAlert(headline)   // reporting is a bonus; never hide the error
+    return
+  }
+
+  const SEND = 'Send report to developers'
+  const choice = await dialogs.showChoice(
+    `${headline}\n\nYou can send this to the developers. This is exactly what would be sent — nothing else:\n\n${text}`,
+    [SEND, 'Close'],
+    'Something went wrong',
+  )
+  if (choice !== SEND) return
+
+  const res = await window.api.report.send(text, `PressKit: ${operation} failed`)
+  dialogs.showAlert(
+    res.ok
+      ? 'Report sent. Thank you — we can see it now.'
+      : `Could not send the report: ${res.error}\n\nIf PressCal is not linked yet, connect it in Settings and try again.`,
+  )
 }
 
 function nameList(files: DeleteTarget[]): string {
@@ -41,7 +80,13 @@ export async function deleteFiles(files: DeleteTarget[], dialogs: Dialogs): Prom
   const failed = results.filter(r => !r.ok && !r.locked)
 
   if (failed.length > 0) {
-    dialogs.showAlert(failed.map(f => f.error).join('\n\n'))
+    await offerReport(
+      dialogs,
+      failed.map(f => f.error).join('\n\n'),
+      'Delete files',
+      failed.map(f => f.error || 'unknown error'),
+      failed.map(f => f.path),
+    )
   }
 
   if (locked.length > 0) {
@@ -56,7 +101,13 @@ export async function deleteFiles(files: DeleteTarget[], dialogs: Dialogs): Prom
       const forced: DeleteResult[] = await window.api.fs.trash(stillThere, { permanent: true })
       const stillFailed = forced.filter(r => !r.ok)
       if (stillFailed.length > 0) {
-        dialogs.showAlert(stillFailed.map(f => f.error).join('\n\n'))
+        await offerReport(
+          dialogs,
+          stillFailed.map(f => f.error).join('\n\n'),
+          'Delete files (permanent)',
+          stillFailed.map(f => f.error || 'unknown error'),
+          stillFailed.map(f => f.path),
+        )
       }
     }
   }

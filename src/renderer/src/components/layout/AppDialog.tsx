@@ -44,7 +44,12 @@ export function AppDialog() {
         {/* Message */}
         <p
           className="text-text-secondary"
-          style={{ fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap', marginBottom: 20 }}
+          // Scrolls: an error report preview is long, and the user has to be
+          // able to read all of it before deciding to send it.
+          style={{
+            fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap', marginBottom: 20,
+            maxHeight: '50vh', overflowY: 'auto', overflowWrap: 'anywhere',
+          }}
         >
           {message}
         </p>

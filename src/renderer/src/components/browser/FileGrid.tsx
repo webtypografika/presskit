@@ -191,6 +191,7 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
   })))
   const showAlert = useDialogStore(s => s.showAlert)
   const showConfirm = useDialogStore(s => s.showConfirm)
+  const showChoice = useDialogStore(s => s.showChoice)
   const [ctxMenu, setCtxMenu] = useState<{ file: FileEntry; x: number; y: number } | null>(null)
   const [bgCtxMenu, setBgCtxMenu] = useState<{ x: number; y: number } | null>(null)
   const [renamingPath, setRenamingPath] = useState<string | null>(null)
@@ -592,14 +593,14 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         const filesToDelete = selectedFiles.length > 1 && selectedFiles.some(f => f.path === file.path)
           ? selectedFiles
           : [file]
-        deleteFiles(filesToDelete, { showConfirm, showAlert }).then(() => {
+        deleteFiles(filesToDelete, { showConfirm, showAlert, showChoice }).then(() => {
           clearSelection()
           setTimeout(() => refreshDirectory(), 200)
         })
         break
       }
     }
-  }, [ctxMenu, onSelect, selectFile, requestConvert, runPreflight, setInspectorTab, refreshDirectory, copyFiles, cutFiles, pasteFiles, selectedFiles, clearSelection, togglePick, requestNewFolder, showAlert, showConfirm])
+  }, [ctxMenu, onSelect, selectFile, requestConvert, runPreflight, setInspectorTab, refreshDirectory, copyFiles, cutFiles, pasteFiles, selectedFiles, clearSelection, togglePick, requestNewFolder, showAlert, showConfirm, showChoice])
 
   // ─── Resizable column widths (list view) ─────────────────────────
   const colWidthsRef = useRef({ type: 80, date: 100, size: 80 })

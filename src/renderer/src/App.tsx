@@ -227,8 +227,8 @@ export default function App() {
           : selectedFile ? [selectedFile] : []
         if (filesToDelete.length === 0) return
         e.preventDefault()
-        const { showConfirm, showAlert } = useDialogStore.getState()
-        deleteFiles(filesToDelete, { showConfirm, showAlert }).then(() => {
+        const { showConfirm, showAlert, showChoice } = useDialogStore.getState()
+        deleteFiles(filesToDelete, { showConfirm, showAlert, showChoice }).then(() => {
           // Small delay before refresh — let filesystem settle (Dropbox, indexer, etc.)
           clearSelection()
           setTimeout(() => refreshDirectory(), 200)
