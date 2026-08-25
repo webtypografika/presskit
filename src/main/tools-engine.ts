@@ -851,6 +851,19 @@ export function registerToolHandlers(ipcMain: IpcMain): void {
     }
   })
 
+  /* Save extracted text. Goes through a save dialog rather than writing to a
+     path the renderer chose: the renderer should not be able to write anywhere
+     on disk just so one panel can offer a .txt. */
+  ipcMain.handle('tools:saveText', async (_e, text: string, defaultName: string) => {
+    const result = await dialog.showSaveDialog({
+      filters: [{ name: 'Text', extensions: ['txt'] }],
+      defaultPath: defaultName || 'extracted.txt',
+    })
+    if (result.canceled || !result.filePath) return null
+    await writeFile(result.filePath, text, 'utf-8')
+    return result.filePath
+  })
+
   ipcMain.handle('tools:saveBarcodeImage', async (_e, svgData: string, format: 'svg' | 'png') => {
     const result = await dialog.showSaveDialog({
       filters: format === 'svg'

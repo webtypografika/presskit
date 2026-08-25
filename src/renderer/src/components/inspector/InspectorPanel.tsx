@@ -11,10 +11,11 @@ import { VersionHistory } from '../tools/VersionHistory'
 import { IccProfileViewer } from '../tools/IccProfileViewer'
 import { ColorPalette } from '../tools/ColorPalette'
 import type { InspectorTab } from '@/stores/app-store'
+import { ExtractTextPanel } from './ExtractTextPanel'
 import {
   Info, Scan, Link2, Wrench,
   ClipboardCheck, Droplet, Palette, Barcode,
-  FolderPlus, History, Monitor
+  FolderPlus, History, Monitor, FileText
 } from 'lucide-react'
 
 const TABS: { id: InspectorTab; label: string; icon: React.ReactNode }[] = [
@@ -24,10 +25,11 @@ const TABS: { id: InspectorTab; label: string; icon: React.ReactNode }[] = [
   { id: 'presscal', label: 'PressCal', icon: <Link2 size={14} /> }
 ]
 
-type ToolSubTab = 'checklist' | 'spots' | 'barcode' | 'folders' | 'versions' | 'icc' | 'colors'
+type ToolSubTab = 'checklist' | 'spots' | 'barcode' | 'folders' | 'versions' | 'icc' | 'colors' | 'text'
 
 const TOOL_SUB_TABS: { id: ToolSubTab; label: string; icon: React.ReactNode; needsFile: boolean }[] = [
   { id: 'checklist', label: 'Print Ready', icon: <ClipboardCheck size={12} />, needsFile: true },
+  { id: 'text', label: 'Extract Text', icon: <FileText size={12} />, needsFile: true },
   { id: 'spots', label: 'Spot Colors', icon: <Droplet size={12} />, needsFile: true },
   { id: 'colors', label: 'Color Palette', icon: <Palette size={12} />, needsFile: true },
   { id: 'icc', label: 'ICC Profile', icon: <Monitor size={12} />, needsFile: true },
@@ -106,6 +108,7 @@ export function InspectorPanel() {
             {/* Tool content */}
             <div className="flex-1 overflow-y-auto">
               {toolSubTab === 'checklist' && <PrintChecklist />}
+              {toolSubTab === 'text' && <ExtractTextPanel />}
               {toolSubTab === 'spots' && <SpotColorPanel />}
               {toolSubTab === 'colors' && <ColorPalette />}
               {toolSubTab === 'icc' && <IccProfileViewer />}

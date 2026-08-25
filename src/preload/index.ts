@@ -267,6 +267,7 @@ const api = {
     // Barcodes
     generateBarcode: (type: string, data: string) => ipcRenderer.invoke('tools:generateBarcode', type, data),
     saveBarcodeImage: (svgData: string, format: 'svg' | 'png') => ipcRenderer.invoke('tools:saveBarcodeImage', svgData, format),
+    saveText: (text: string, defaultName: string): Promise<string | null> => ipcRenderer.invoke('tools:saveText', text, defaultName),
 
     // Job folders
     getFolderTemplates: () => ipcRenderer.invoke('tools:getFolderTemplates'),
