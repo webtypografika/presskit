@@ -89,6 +89,7 @@ const api = {
   // PressCal
   ocr: {
     languages: () => ipcRenderer.invoke('ocr:languages'),
+    engine: (core: string) => ipcRenderer.invoke('ocr:engine', core),
     read: (code: string) => ipcRenderer.invoke('ocr:read', code),
     install: (code: string) => ipcRenderer.invoke('ocr:install', code),
     uninstall: (code: string) => ipcRenderer.invoke('ocr:uninstall', code),

@@ -260,6 +260,37 @@ export function registerOcrLanguageHandlers(ipcMain: IpcMain): void {
     }
   })
 
+  /**
+   * Hand the OCR engine to the renderer as source text.
+   *
+   * The obvious way — pointing the engine at its own files with a file:// URL —
+   * does not survive packaging. A built app is served from file:// inside an
+   * asar archive, and the engine loads its worker and WebAssembly through
+   * importScripts from a Blob worker whose origin is opaque. Chromium refuses
+   * that, and refuses it *silently*: the worker never answers and OCR sits on
+   * "Reading…" for ever.
+   *
+   * Reading the files here instead sidesteps it entirely. Node's fs sees inside
+   * the asar, and the renderer turns the text into Blob URLs, which a Blob
+   * worker is allowed to import.
+   */
+  ipcMain.handle('ocr:engine', async (_e, core: string) => {
+    if (!/^tesseract-core-[a-z-]+.wasm.js$/.test(core)) return null
+    // Beside the renderer bundle, both in development and inside the archive.
+    const dir = join(__dirname, '..', 'renderer', 'tesseract')
+    try {
+      const [worker, engine] = await Promise.all([
+        readFile(join(dir, 'worker.min.js'), 'utf8'),
+        readFile(join(dir, core), 'utf8'),
+      ])
+      return { worker, engine }
+    } catch {
+      // Missing files mean the build did not include them; the renderer falls
+      // back to downloading the engine rather than failing outright.
+      return null
+    }
+  })
+
   /** Let them see the folder for themselves — see the note at the top. */
   ipcMain.handle('ocr:reveal', () => {
     shell.openPath(dataDir())

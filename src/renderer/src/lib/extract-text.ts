@@ -387,20 +387,36 @@ function ocrBlocks(
  * ------------------------------------------------------------------ */
 
 /**
- * Where the OCR engine itself is loaded from.
+ * Load the OCR engine that ships inside the app, as a Blob the worker can import.
  *
- * Left to itself, tesseract.js fetches the worker script and the WebAssembly
- * engine from a public CDN at run time, which means OCR silently requires
- * internet and dies behind a corporate firewall — neither of which is visible
- * until someone is standing in front of a file they cannot read. These are
- * copied into the app at build time (scripts/copy-tesseract-assets.mjs).
+ * Left to itself, tesseract.js fetches its worker script, its WebAssembly engine
+ * and its language data from a public CDN every time it runs. That made OCR
+ * silently dependent on a connection and dead behind the kind of locked-down
+ * network a print shop's corporate customer runs — with nothing on screen to
+ * explain why.
  *
- * Resolved against the current document rather than written as an absolute
- * path, because a packaged Electron app is served from file:// where a leading
- * slash means the root of the disk.
+ * Pointing it at our own copies with a file:// URL does not work either: a
+ * packaged app is served from file:// inside an asar archive, and the Blob
+ * worker that tesseract.js spawns has an opaque origin, so Chromium refuses to
+ * import from file:// — and refuses without an error, leaving the panel on
+ * "Reading…" for ever. That is the bug this replaces.
+ *
+ * So the engine comes over IPC as source text and becomes Blob URLs, which a
+ * Blob worker is allowed to import. The core is imported first so that it has
+ * already defined itself by the time the engine looks for it, which sidesteps
+ * the core-path handling completely.
  */
-function engineUrl(file: string): string {
-  return new URL(`tesseract/${file}`, window.location.href).toString()
+const CORE_FILE = 'tesseract-core-relaxedsimd-lstm.wasm.js'
+
+async function bundledWorkerUrl(): Promise<string | null> {
+  const parts = await window.api.ocr.engine(CORE_FILE)
+  if (!parts?.worker || !parts?.engine) return null
+  const url = (src: string) => URL.createObjectURL(new Blob([src], { type: 'application/javascript' }))
+  const core = url(parts.engine)
+  const worker = url(parts.worker)
+  // One script that pulls in both, in order: tesseract.js wraps whatever we
+  // give it in a single importScripts call.
+  return url(`importScripts(${JSON.stringify(core)});importScripts(${JSON.stringify(worker)});`)
 }
 
 async function ocrCanvases(
@@ -431,29 +447,45 @@ async function ocrCanvases(
   }
 
   /*
-   * Prefer the copy inside the app, fall back to the CDN.
+   * The engine inside the app first; the CDN only if that is not possible.
    *
-   * A packaged build is served from file://, and the engine reaches its worker
-   * and WebAssembly through importScripts. That is a classic script load rather
-   * than a fetch, so it should be permitted — but "should" is not something to
-   * ship to a customer, and a wrong guess here means OCR does not start at all.
-   *
-   * So the local engine is tried first and the CDN default catches the case
-   * where the platform refuses. Offline works where it can, and nowhere is this
-   * worse than the behaviour it replaces.
+   * Raced against a clock because the failure this replaces was not an error
+   * but a silence — a worker that never answers. A promise that never settles
+   * has to be treated as a failure like any other, or the panel waits for ever.
    */
+  const ENGINE_TIMEOUT_MS = 20_000
+
+  const withTimeout = <T,>(work: Promise<T>, label: string): Promise<T> =>
+    Promise.race([
+      work,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`${label} did not start within ${ENGINE_TIMEOUT_MS / 1000}s`)),
+          ENGINE_TIMEOUT_MS)),
+    ])
+
   let worker
+  const bundled = await bundledWorkerUrl().catch(() => null)
   try {
-    worker = await createWorker(loaded as any, undefined, {
-      workerPath: engineUrl('worker.min.js'),
-      corePath: engineUrl(''),
-      // We own the files, so the engine's own cache would only duplicate them.
-      cacheMethod: 'none',
-      logger,
-    } as any)
+    if (!bundled) throw new Error('the engine is not bundled in this build')
+    worker = await withTimeout(
+      createWorker(loaded as any, undefined, {
+        workerPath: bundled,
+        // We own the files, so the engine's own cache would only duplicate them.
+        cacheMethod: 'none',
+        logger,
+      } as any),
+      'The engine inside the app',
+    )
+    console.info('[ocr] using the engine bundled in the app — works offline')
   } catch (e) {
-    console.warn('[ocr] bundled engine did not load, falling back to CDN:', e)
-    worker = await createWorker(loaded as any, undefined, { cacheMethod: 'none', logger } as any)
+    // Worth being loud about: it is the difference between OCR working offline
+    // and OCR needing a connection, and it is invisible otherwise.
+    console.warn('[ocr] bundled engine unavailable, falling back to the CDN:', e)
+    worker = await withTimeout(
+      createWorker(loaded as any, undefined, { cacheMethod: 'none', logger } as any),
+      'The engine download',
+    )
+    console.info('[ocr] using the engine from the CDN — needs a connection')
   }
 
   try {
@@ -618,7 +650,7 @@ export async function extractWithAi(
   const image = canvasToJpegBase64(canvas)
 
   onProgress?.(60)
-  const res = (await window.api.presscal.postToApi('extract-text', {
+  const res = (await window.api.presscal.postToApi('/extract-text', {
     image,
     mediaType: 'image/jpeg',
     filename: filePath.split(/[\/]/).pop() || '',
