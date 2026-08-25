@@ -1,11 +1,11 @@
 {
   "name": "presskit",
-  "version": "2.3.19",
+  "version": "2.3.20",
   "description": "PressKit - Print & Design File Manager",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "set NODE_OPTIONS=--max-old-space-size=8192&& electron-vite dev",
-    "build": "electron-vite build",
+    "dev": "node scripts/copy-tesseract-assets.mjs && set NODE_OPTIONS=--max-old-space-size=8192&& electron-vite dev",
+    "build": "node scripts/copy-tesseract-assets.mjs && electron-vite build",
     "preview": "electron-vite preview",
     "package": "electron-vite build && electron-builder",
     "release": "electron-vite build && electron-builder --publish always",
@@ -76,6 +76,13 @@
       {
         "from": "vendor/Everything",
         "to": "Everything",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "resources/tessdata",
+        "to": "tessdata",
         "filter": [
           "**/*"
         ]

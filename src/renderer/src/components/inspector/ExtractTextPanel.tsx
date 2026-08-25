@@ -1,20 +1,15 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Copy, Check, Download, FileText, Loader2, AlertTriangle, Sparkles, Info } from 'lucide-react'
 import { useAppStore } from '@/stores/app-store'
 import { useDialogStore } from '@/stores/dialog-store'
 import {
-  extractText, extractWithAi, resultToPlainText, defaultOcrLang, OCR_LANGUAGES,
-  type ExtractResult, type OcrLang,
+  extractText, extractWithAi, resultToPlainText, listOcrLanguages, suggestedLang,
+  DEFAULT_LANG, type ExtractResult,
 } from '@/lib/extract-text'
+import { OcrLanguagePicker } from './OcrLanguagePicker'
 
 /** The operator sets this once for their shop, not once per file. */
 const LANG_KEY = 'presskit.ocrLang'
-
-function storedLang(): OcrLang {
-  const saved = localStorage.getItem(LANG_KEY)
-  if (saved && OCR_LANGUAGES.some(l => l.id === saved)) return saved as OcrLang
-  return defaultOcrLang()
-}
 
 /**
  * Pull the text out of an incoming file so it can be rebuilt — locally.
@@ -35,22 +30,32 @@ export function ExtractTextPanel() {
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState(0)
   const [copied, setCopied] = useState<number | 'all' | null>(null)
-  const [lang, setLang] = useState<OcrLang>(storedLang)
+  const [lang, setLang] = useState<string>(() => localStorage.getItem(LANG_KEY) || DEFAULT_LANG)
 
   const path = selectedFile?.path
   const supported = !!path && /\.(pdf|jpe?g|png|tiff?|bmp|webp)$/i.test(path)
   const isPdf = !!path && /[.]pdf$/i.test(path)
 
-  const pickLang = (next: OcrLang) => {
+  const pickLang = useCallback((next: string) => {
     setLang(next)
     localStorage.setItem(LANG_KEY, next)
-  }
+  }, [])
+
+  // On a machine that has never chosen, offer the language the operating system
+  // suggests — but only if its data is actually installed, since a language that
+  // is not on disk would return nothing and read as a broken feature.
+  useEffect(() => {
+    if (localStorage.getItem(LANG_KEY)) return
+    listOcrLanguages()
+      .then(all => { const s = suggestedLang(all); if (s !== DEFAULT_LANG) pickLang(s) })
+      .catch(() => {})
+  }, [pickLang])
 
   const run = async (forceOcr = false) => {
     if (!path) return
     setBusy(true); setProgress(0); setResult(null)
     try {
-      setResult(await extractText(path, setProgress, { lang, forceOcr }))
+      setResult(await extractText(path, setProgress, { langs: [lang], forceOcr }))
     } catch (e: any) {
       showAlert(e?.message || String(e))
     } finally {
@@ -105,31 +110,8 @@ export function ExtractTextPanel() {
 
   return (
     <div style={{ padding: 12, minWidth: 0 }}>
-      {/* Which language data OCR loads. Two languages together let the more
-          confident one win short words, so naming the one on the artwork is
-          the difference between the Greek word for "and" and a Latin "Kat". */}
-      <label style={{ display: 'block', marginBottom: 10 }}>
-        <span style={{ display: 'block', fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', color: '#64748b', marginBottom: 5 }}>
-          TEXT LANGUAGE
-        </span>
-        <select
-          value={lang}
-          onChange={e => pickLang(e.target.value as OcrLang)}
-          disabled={busy}
-          style={{
-            width: '100%', padding: '7px 8px', fontSize: 12,
-            background: 'var(--bg)', color: 'var(--text-primary)',
-            border: '1px solid var(--border)', borderRadius: 6, cursor: busy ? 'wait' : 'pointer',
-          }}
-        >
-          {OCR_LANGUAGES.map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
-        </select>
-        <span style={{ display: 'block', fontSize: 10.5, color: '#64748b', marginTop: 5, lineHeight: 1.45 }}>
-          {isPdf
-            ? 'Used only if this PDF turns out to be a scan.'
-            : 'Naming one language is more accurate than leaving two to compete.'}
-        </span>
-      </label>
+      <OcrLanguagePicker value={lang} onChange={pickLang} disabled={busy} />
+
       <button
         onClick={() => run()}
         disabled={busy}

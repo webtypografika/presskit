@@ -7,6 +7,7 @@ import { registerPreviewHandlers } from './preview-engine'
 import { registerPreflightHandlers } from './preflight-engine'
 import { registerDropboxHandlers } from './dropbox-client'
 import { registerPresscalHandlers, postToPresscal } from './presscal-client'
+import { registerOcrLanguageHandlers } from './ocr-languages'
 import { registerErrorReportHandlers } from './error-report'
 import { registerSettingsHandlers, store } from './settings'
 import { registerBatchHandlers } from './batch-engine'
@@ -1981,6 +1982,8 @@ function registerHandlers(): void {
   registerPreflightHandlers(ipcMain)
   registerDropboxHandlers(ipcMain)
   registerPresscalHandlers(ipcMain)
+
+  registerOcrLanguageHandlers(ipcMain)
   registerErrorReportHandlers(ipcMain, postToPresscal)
   registerSettingsHandlers(ipcMain)
   registerBatchHandlers(ipcMain)

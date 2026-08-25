@@ -87,6 +87,13 @@ const api = {
   },
 
   // PressCal
+  ocr: {
+    languages: () => ipcRenderer.invoke('ocr:languages'),
+    read: (code: string) => ipcRenderer.invoke('ocr:read', code),
+    install: (code: string) => ipcRenderer.invoke('ocr:install', code),
+    uninstall: (code: string) => ipcRenderer.invoke('ocr:uninstall', code),
+    reveal: () => ipcRenderer.invoke('ocr:reveal'),
+  },
   presscal: {
     configure: (url: string, apiKey: string) => ipcRenderer.invoke('presscal:configure', url, apiKey),
     status: () => ipcRenderer.invoke('presscal:status'),

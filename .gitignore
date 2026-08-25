@@ -18,3 +18,5 @@ app-deploy.asar.unpacked/
 app-full*.asar
 asar-build2/
 Usersinfodropboxpresscal-filehelper.asar-build/
+src/renderer/public/tesseract/
+resources/tessdata/

@@ -42,34 +42,59 @@ export type ExtractResult = {
 }
 
 /**
- * Which language data OCR loads.
+ * Which languages OCR can read on this machine.
  *
- * This is not a cosmetic preference. Running two languages together lets the
- * more confident one win short words, which is how the Greek word for "and"
- * comes back as the Latin "Kat" — the shapes are nearly identical. When the
- * operator knows the artwork is in one language, saying so removes a whole
- * class of mistake, so the choice belongs in front of them rather than buried
- * in a default.
+ * There are over a hundred to choose from, so neither shipping them all nor
+ * hard-coding a shortlist is right: whichever seven we picked would be wrong
+ * for the eighth market. English is the default and comes with the app; the
+ * operator adds whatever else their work actually needs, once, and it stays on
+ * disk. See src/main/ocr-languages.ts.
  */
-export const OCR_LANGUAGES = [
-  { id: 'ell+eng', label: 'Greek + English' },
-  { id: 'ell', label: 'Greek only' },
-  { id: 'eng', label: 'English only' },
-  { id: 'spa+eng', label: 'Spanish + English' },
-  { id: 'ita+eng', label: 'Italian + English' },
-  { id: 'deu+eng', label: 'German + English' },
-  { id: 'fra+eng', label: 'French + English' },
-] as const
+export type OcrLanguage = {
+  code: string
+  name: string
+  installed: boolean
+  size: number
+  permanent: boolean
+}
 
-export type OcrLang = (typeof OCR_LANGUAGES)[number]['id']
+export const DEFAULT_LANG = 'eng'
 
-/** What the operator's own machine suggests, before they override it. */
-export function defaultOcrLang(): OcrLang {
+export function listOcrLanguages(): Promise<OcrLanguage[]> {
+  return window.api.ocr.languages()
+}
+
+export function installOcrLanguage(code: string): Promise<{ ok: boolean; error?: string }> {
+  return window.api.ocr.install(code)
+}
+
+export function uninstallOcrLanguage(code: string): Promise<{ ok: boolean; error?: string }> {
+  return window.api.ocr.uninstall(code)
+}
+
+export function revealOcrLanguages(): Promise<boolean> {
+  return window.api.ocr.reveal()
+}
+
+/**
+ * Which language the operator's own machine suggests, before they choose.
+ *
+ * Only ever a starting point: it is offered if that language is installed, and
+ * otherwise English, because a language that is not on disk cannot read
+ * anything and an empty result would look like a broken feature.
+ */
+export function suggestedLang(installed: OcrLanguage[]): string {
   const tag = (navigator.language || 'en').slice(0, 2).toLowerCase()
-  const guess: Record<string, OcrLang> = {
-    el: 'ell+eng', es: 'spa+eng', it: 'ita+eng', de: 'deu+eng', fr: 'fra+eng',
+  const guess: Record<string, string> = {
+    el: 'ell', es: 'spa', it: 'ita', de: 'deu', fr: 'fra', pt: 'por',
+    nl: 'nld', pl: 'pol', tr: 'tur', ru: 'rus', bg: 'bul', ro: 'ron',
+    sv: 'swe', da: 'dan', fi: 'fin', no: 'nor', cs: 'ces', hu: 'hun',
+    hr: 'hrv', sr: 'srp', sk: 'slk', sl: 'slv', uk: 'ukr', ar: 'ara',
+    he: 'heb', ja: 'jpn', ko: 'kor', zh: 'chi_sim', en: 'eng',
   }
-  return guess[tag] ?? 'eng'
+  const want = guess[tag]
+  if (want && installed.some(l => l.code === want && l.installed)) return want
+  return DEFAULT_LANG
 }
 
 /* ------------------------------------------------------------------ *
@@ -361,20 +386,75 @@ function ocrBlocks(
  * OCR
  * ------------------------------------------------------------------ */
 
+/**
+ * Where the OCR engine itself is loaded from.
+ *
+ * Left to itself, tesseract.js fetches the worker script and the WebAssembly
+ * engine from a public CDN at run time, which means OCR silently requires
+ * internet and dies behind a corporate firewall — neither of which is visible
+ * until someone is standing in front of a file they cannot read. These are
+ * copied into the app at build time (scripts/copy-tesseract-assets.mjs).
+ *
+ * Resolved against the current document rather than written as an absolute
+ * path, because a packaged Electron app is served from file:// where a leading
+ * slash means the root of the disk.
+ */
+function engineUrl(file: string): string {
+  return new URL(`tesseract/${file}`, window.location.href).toString()
+}
+
 async function ocrCanvases(
   canvases: HTMLCanvasElement[],
-  lang: OcrLang,
+  langs: string[],
   onProgress?: (pct: number) => void,
 ): Promise<ExtractResult> {
-  // Loaded on demand: the OCR engine and its language data are large, and most
-  // files never need them.
+  // Loaded on demand: the OCR engine is large and most files never need it.
   const { createWorker, PSM } = await import('tesseract.js')
 
-  const worker = await createWorker(lang, undefined, {
-    logger: (m: { status: string; progress: number }) => {
-      if (m.status === 'recognizing text' && onProgress) onProgress(Math.round(m.progress * 100))
-    },
-  } as any)
+  // Language data is read from our own folder and handed over as bytes, rather
+  // than letting the engine fetch and cache it somewhere the operator cannot
+  // see. A language that is not installed is skipped instead of failing the
+  // whole run, and English is the floor.
+  const loaded: Array<{ code: string; data: Uint8Array }> = []
+  for (const code of langs.length ? langs : [DEFAULT_LANG]) {
+    const buf = await window.api.ocr.read(code)
+    if (buf) loaded.push({ code, data: new Uint8Array(buf) })
+  }
+  if (loaded.length === 0) {
+    throw new Error(
+      'No language data is installed. Add a language under "Text language" and try again.',
+    )
+  }
+
+  const logger = (m: { status: string; progress: number }) => {
+    if (m.status === 'recognizing text' && onProgress) onProgress(Math.round(m.progress * 100))
+  }
+
+  /*
+   * Prefer the copy inside the app, fall back to the CDN.
+   *
+   * A packaged build is served from file://, and the engine reaches its worker
+   * and WebAssembly through importScripts. That is a classic script load rather
+   * than a fetch, so it should be permitted — but "should" is not something to
+   * ship to a customer, and a wrong guess here means OCR does not start at all.
+   *
+   * So the local engine is tried first and the CDN default catches the case
+   * where the platform refuses. Offline works where it can, and nowhere is this
+   * worse than the behaviour it replaces.
+   */
+  let worker
+  try {
+    worker = await createWorker(loaded as any, undefined, {
+      workerPath: engineUrl('worker.min.js'),
+      corePath: engineUrl(''),
+      // We own the files, so the engine's own cache would only duplicate them.
+      cacheMethod: 'none',
+      logger,
+    } as any)
+  } catch (e) {
+    console.warn('[ocr] bundled engine did not load, falling back to CDN:', e)
+    worker = await createWorker(loaded as any, undefined, { cacheMethod: 'none', logger } as any)
+  }
 
   try {
     await worker.setParameters({
@@ -415,7 +495,8 @@ async function ocrCanvases(
 const IMAGE_EXT = /\.(jpe?g|png|tiff?|bmp|webp)$/i
 
 export type ExtractOptions = {
-  lang?: OcrLang
+  /** Installed language codes to read with. Defaults to English. */
+  langs?: string[]
   /** Skip the live-text path and read the pixels instead. */
   forceOcr?: boolean
 }
@@ -428,7 +509,7 @@ export async function extractText(
   onProgress?: (pct: number) => void,
   opts: ExtractOptions = {},
 ): Promise<ExtractResult> {
-  const lang = opts.lang ?? defaultOcrLang()
+  const langs = opts.langs?.length ? opts.langs : [DEFAULT_LANG]
 
   if (/\.pdf$/i.test(filePath)) {
     if (!opts.forceOcr) {
@@ -441,7 +522,7 @@ export async function extractText(
     const limit = Math.min(pdf.numPages, OCR_PAGE_LIMIT)
     const canvases: HTMLCanvasElement[] = []
     for (let n = 1; n <= limit; n++) canvases.push(await pdfPageToCanvas(await pdf.getPage(n)))
-    const res = await ocrCanvases(canvases, lang, onProgress)
+    const res = await ocrCanvases(canvases, langs, onProgress)
     if (pdf.numPages > limit) {
       res.warning += ` Only the first ${limit} of ${pdf.numPages} pages were read.`
     }
@@ -451,7 +532,7 @@ export async function extractText(
   if (IMAGE_EXT.test(filePath)) {
     const buffer = await window.api.fs.readFile(filePath)
     const canvas = await imageToCanvas(new Blob([new Uint8Array(buffer)]))
-    return ocrCanvases([canvas], lang, onProgress)
+    return ocrCanvases([canvas], langs, onProgress)
   }
 
   throw new Error('Text can be extracted from PDF and image files.')
