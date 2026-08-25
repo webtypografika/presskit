@@ -766,64 +766,117 @@ type AiResponse = { blocks?: Array<{ text?: string; note?: string }>; error?: st
  * org's own key. That keeps one place where keys live, and means this costs
  * the shop directly rather than being billed through us.
  */
-export async function extractWithAi(
-  filePath: string,
-  onProgress?: (pct: number, label?: string) => void,
-): Promise<ExtractResult> {
-  onProgress?.(10)
+/**
+ * Roughly what one page costs the shop, in US cents.
+ *
+ * An image capped at 1568px on its long edge is about 2,300 tokens, the
+ * instructions another 400, and the text that comes back somewhere between
+ * 1,000 and 2,000 depending on how much is printed on the page. At Sonnet's
+ * rates that lands around two to four cents.
+ *
+ * Deliberately a round over-estimate rather than a precise under-estimate. This
+ * number exists so nobody is surprised by their own bill, and a surprise only
+ * happens in one direction.
+ */
+const CENTS_PER_PAGE = 3
 
-  let canvas: HTMLCanvasElement
-  if (/.pdf$/i.test(filePath)) {
-    const buffer = await window.api.fs.readFile(filePath)
-    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise
-    // One page per call, and the shop pays per call — so this reads the first
-    // page rather than quietly spending on a long document.
-    const page = await pdf.getPage(1)
-    const viewport = page.getViewport({ scale: 1 })
-    const raster = newCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height))
-    const rctx = raster.getContext('2d')!
-    rctx.fillStyle = '#ffffff'
-    rctx.fillRect(0, 0, raster.width, raster.height)
-    await page.render({ canvasContext: rctx, viewport }).promise
-    canvas = await canvasForAi(raster)
-  } else {
-    const buffer = await window.api.fs.readFile(filePath)
-    const bitmap = await createImageBitmap(new Blob([new Uint8Array(buffer)]))
-    canvas = await canvasForAi(bitmap)
-    bitmap.close?.()
-  }
+/**
+ * How many pages a PDF has, without reading any of them.
+ *
+ * Needed before the work starts, because the operator is spending their own
+ * money and deserves to know how much before it goes rather than after.
+ */
+async function pdfPageCount(filePath: string): Promise<number> {
+  const buffer = await window.api.fs.readFile(filePath)
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise
+  return pdf.numPages
+}
 
-  onProgress?.(40)
-  const image = canvasToJpegBase64(canvas)
+async function pdfPageForAi(filePath: string, n: number): Promise<HTMLCanvasElement> {
+  const buffer = await window.api.fs.readFile(filePath)
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise
+  const page = await pdf.getPage(n)
+  const viewport = page.getViewport({ scale: 1 })
+  const raster = newCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height))
+  const ctx = raster.getContext('2d')!
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, raster.width, raster.height)
+  await page.render({ canvasContext: ctx, viewport }).promise
+  return canvasForAi(raster)
+}
 
-  onProgress?.(60)
+async function readOnePage(canvas: HTMLCanvasElement, filePath: string): Promise<TextBlock[]> {
   const res = (await window.api.presscal.postToApi('/extract-text', {
-    image,
+    image: canvasToJpegBase64(canvas),
     mediaType: 'image/jpeg',
-    filename: filePath.split(/[\/]/).pop() || '',
+    filename: filePath.split(/[\\/]/).pop() || '',
   })) as AiResponse
-
-  onProgress?.(100)
 
   // PressCal answers a missing key with guidance rather than a failure, and
   // that guidance is the whole point — surface it verbatim.
   if (res?.error) throw new Error(res.message || res.error)
 
-  const blocks = (res?.blocks ?? [])
+  return (res?.blocks ?? [])
     .filter((b): b is { text: string; note?: string } => typeof b?.text === 'string' && !!b.text.trim())
     .map(b => ({ text: b.text.trim(), ...(b.note ? { note: b.note } : {}) }))
+}
 
-  if (blocks.length === 0) {
-    return {
-      method: 'ai',
-      pages: [{ page: 1, blocks: [] }],
-      warning: 'The model found no text on this artwork.',
-    }
+/**
+ * Read the artwork with the shop's own AI key, via PressCal.
+ *
+ * The key never reaches this machine — PressKit posts the image to PressCal
+ * over the API key it already holds, and PressCal calls the model with the
+ * org's own key. That keeps one place where keys live, and means this costs
+ * the shop directly rather than being billed through us.
+ *
+ * Which is exactly why a document of more than one page asks first. Reading a
+ * forty-page catalogue is a perfectly reasonable thing to want and a rude thing
+ * to do to someone's account without telling them the number beforehand.
+ */
+export async function extractWithAi(
+  filePath: string,
+  onProgress?: (pct: number, label?: string) => void,
+  confirm?: (message: string) => Promise<boolean>,
+): Promise<ExtractResult> {
+  const isPdf = /\.pdf$/i.test(filePath)
+  const total = isPdf ? await pdfPageCount(filePath) : 1
+
+  if (total > 1) {
+    const cents = total * CENTS_PER_PAGE
+    const price = cents >= 100 ? `about $${(cents / 100).toFixed(2)}` : `about ${cents} cents`
+    const ok = confirm
+      ? await confirm(
+          `This document has ${total} pages.\n\n`
+          + `Reading all of them costs ${price} on your own AI key — roughly ${CENTS_PER_PAGE} cents a page.\n\n`
+          + 'Read the whole document?')
+      : true
+    if (!ok) throw new Error('Cancelled.')
+  }
+
+  const pages: TextPage[] = []
+  for (let n = 1; n <= total; n++) {
+    onProgress?.(Math.round(((n - 1) / total) * 100), total > 1 ? `reading page ${n} of ${total}` : 'reading')
+    const canvas = isPdf
+      ? await pdfPageForAi(filePath, n)
+      : await (async () => {
+          const buffer = await window.api.fs.readFile(filePath)
+          const bitmap = await createImageBitmap(new Blob([new Uint8Array(buffer)]))
+          const c = await canvasForAi(bitmap)
+          bitmap.close?.()
+          return c
+        })()
+    pages.push({ page: n, blocks: await readOnePage(canvas, filePath) })
+  }
+  onProgress?.(100)
+
+  const found = pages.reduce((sum, p) => sum + p.blocks.length, 0)
+  if (found === 0) {
+    return { method: 'ai', pages, warning: 'The model found no text on this artwork.' }
   }
 
   return {
     method: 'ai',
-    pages: [{ page: 1, blocks }],
+    pages,
     warning: 'Read by AI, using your own key. Still proofread it — a model can misread confidently.',
   }
 }

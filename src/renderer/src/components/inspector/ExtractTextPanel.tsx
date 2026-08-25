@@ -26,6 +26,7 @@ const LANG_KEY = 'presskit.ocrLang'
 export function ExtractTextPanel() {
   const selectedFile = useAppStore(s => s.selectedFile)
   const showAlert = useDialogStore(s => s.showAlert)
+  const showConfirm = useDialogStore(s => s.showConfirm)
   const [result, setResult] = useState<ExtractResult | null>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -91,9 +92,9 @@ export function ExtractTextPanel() {
     if (!path) return
     setBusy(true); setProgress(0); setStep(''); setResult(null)
     try {
-      setResult(await extractWithAi(path, onStep))
+      setResult(await extractWithAi(path, onStep, msg => showConfirm(msg, 'Reading with AI')))
     } catch (e: any) {
-      showAlert(e?.message || String(e))
+      if (e?.message !== 'Cancelled.') showAlert(e?.message || String(e))
     } finally {
       setBusy(false)
     }
