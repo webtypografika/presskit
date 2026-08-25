@@ -1,4 +1,6 @@
 import * as pdfjsLib from 'pdfjs-dist'
+// The same store the OCR engine reads its language data from.
+import { set } from 'idb-keyval'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -535,19 +537,34 @@ async function ocrCanvases(
   // Loaded on demand: the OCR engine is large and most files never need it.
   const { createWorker, PSM } = await step('loading the reader', 30_000, () => import('tesseract.js'))
 
-  // Language data is read from our own folder and handed over as bytes, rather
-  // than letting the engine fetch and cache it somewhere the operator cannot
-  // see. A language that is not installed is skipped instead of failing the
-  // whole run, and English is the floor.
+  /*
+   * Put our language files where the engine already looks, then ask for them
+   * by name.
+   *
+   * The engine accepts language data passed in directly, and that is what this
+   * did — and it is what made OCR hang. Its two halves disagree about the shape:
+   * the loader reads the name from `.code` and the bytes from `.data`, while
+   * initialisation reads the NAME from `.data`. Handing it an object therefore
+   * asks Tesseract to open a language called "1,2,3,4,…" — thousands of bytes
+   * rendered as a string — and it goes away and never comes back.
+   *
+   * Writing into the cache it consults anyway sidesteps the whole disagreement.
+   * The engine gets the plain string it has always handled correctly, finds the
+   * data already present, and downloads nothing. Same offline behaviour, none of
+   * the bug.
+   */
   const wanted = langs.length ? langs : [DEFAULT_LANG]
-  const loaded: Array<{ code: string; data: Uint8Array }> = []
+  const ready: string[] = []
   for (const code of wanted) {
     onProgress?.(0, `loading ${code}`)
     const buf = await step<ArrayBuffer | null>(
       `loading the ${code} language file`, 30_000, () => window.api.ocr.read(code))
-    if (buf) loaded.push({ code, data: new Uint8Array(buf) })
+    if (!buf) continue
+    // Stored gzipped exactly as it came: the engine checks for that itself.
+    await step(`preparing ${code}`, 30_000, () => set(`./${code}.traineddata`, new Uint8Array(buf)))
+    ready.push(code)
   }
-  if (loaded.length === 0) {
+  if (ready.length === 0) {
     throw new Error('No language data is installed. Add a language under "Text language" and try again.')
   }
 
@@ -561,7 +578,7 @@ async function ocrCanvases(
    * costs a second or two of WebAssembly startup and behaves the same way every
    * time, which is worth more here than the second.
    */
-  async function makeWorker(lang: { code: string; data: Uint8Array }) {
+  async function makeWorker(code: string) {
     const logger = (m: { status: string; progress: number }) => {
       if (m.status === 'recognizing text') onProgress?.(Math.round(m.progress * 100), 'reading')
     }
@@ -569,13 +586,14 @@ async function ocrCanvases(
     if (engine) {
       try {
         // Already on disk: it either starts promptly or it is not going to.
-        return await step(`starting the engine (${lang.code})`, 30_000, () =>
-          createWorker([lang] as any, undefined, {
+        return await step(`starting the engine (${code})`, 30_000, () =>
+          createWorker(code, undefined, {
             workerPath: engine,
             // The Blob IS the worker; wrapping it in another that imports it is
             // what could not cross the packaged app's opaque origin.
             workerBlobURL: false,
-            cacheMethod: 'none',
+            // Left at the default on purpose: the cache is where our own
+            // language files were just put.
             logger,
           } as any))
       } catch (e) {
@@ -585,8 +603,8 @@ async function ocrCanvases(
 
     onProgress?.(0, 'downloading the engine')
     // Several megabytes over whatever connection the shop has.
-    return step(`downloading the engine (${lang.code})`, 180_000, () =>
-      createWorker([lang] as any, undefined, { cacheMethod: 'none', logger } as any))
+    return step(`downloading the engine (${code})`, 180_000, () =>
+      createWorker(code, undefined, { logger } as any))
   }
 
   const pages: TextPage[] = []
@@ -609,10 +627,10 @@ async function ocrCanvases(
     let structure: { blocks: OcrBlock[] | null; text: string } | null = null
     let bestOverall = -1
 
-    for (const lang of loaded) {
-      const worker = await makeWorker(lang)
+    for (const code of ready) {
+      const worker = await makeWorker(code)
       try {
-        await step(`preparing the reader (${lang.code})`, 30_000, () => worker.setParameters({
+        await step(`preparing the reader (${code})`, 30_000, () => worker.setParameters({
           // The page has already been upscaled to roughly this, and saying so
           // stops the engine second-guessing the letter sizes it is looking at.
           user_defined_dpi: '300',
@@ -620,8 +638,8 @@ async function ocrCanvases(
           preserve_interword_spaces: '1',
         }))
 
-        onProgress?.(0, `reading ${lang.code}`)
-        const { data } = await step(`reading the page in ${lang.code}`, 300_000, () =>
+        onProgress?.(0, `reading ${code}`)
+        const { data } = await step(`reading the page in ${code}`, 300_000, () =>
           worker.recognize(canvas, {}, { text: true, blocks: true }))
 
         const blocks = data.blocks as unknown as OcrBlock[] | null
