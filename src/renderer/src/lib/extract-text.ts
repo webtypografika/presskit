@@ -16,16 +16,26 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
  *            Copy it into the new job with confidence.
  *   'ocr'  — the text was outlined, scanned or a photo, so it was recognised
  *            from pixels. It is a good draft and it WILL contain mistakes.
+ *   'ai'   — a model that can see the page read it, using the shop's OWN API
+ *            key. It handles designed layouts that defeat OCR (columns, type
+ *            wrapped around images) because it sees the design rather than
+ *            guessing from shapes. Still a draft: a model can misread, and
+ *            unlike OCR it can misread *plausibly*, so it is told to mark
+ *            uncertainty rather than resolve it.
  *
  * That distinction is the whole point in a print shop: a phone number read
  * wrong gets printed five thousand times. Never present OCR output as if it
  * were extracted text.
  */
 
-export type TextBlock = { text: string }
+export type TextBlock = {
+  text: string
+  /** Only from the AI path: what the model was unsure about, in its words. */
+  note?: string
+}
 export type TextPage = { page: number; blocks: TextBlock[] }
 export type ExtractResult = {
-  method: 'text' | 'ocr'
+  method: 'text' | 'ocr' | 'ai'
   pages: TextPage[]
   /** Set when the result needs a human eye before use. */
   warning?: string
@@ -445,6 +455,117 @@ export async function extractText(
   }
 
   throw new Error('Text can be extracted from PDF and image files.')
+}
+
+
+/* ------------------------------------------------------------------ *
+ * Reading with AI
+ * ------------------------------------------------------------------ */
+
+/**
+ * Long edge the image is reduced to before it is sent.
+ *
+ * Deliberately much smaller than the OCR path wants. OCR needs the pixels
+ * because it matches letter shapes; a model that reads the page understands
+ * the layout instead, and sending more than this costs the shop tokens for
+ * detail that changes nothing in the answer.
+ */
+const AI_MAX_EDGE = 1568
+
+/** Prepare the page as the model should see it — the design intact. */
+async function canvasForAi(source: HTMLCanvasElement | ImageBitmap): Promise<HTMLCanvasElement> {
+  const w0 = source.width
+  const h0 = source.height
+  const scale = Math.min(1, AI_MAX_EDGE / Math.max(w0, h0))
+  const canvas = newCanvas(Math.round(w0 * scale), Math.round(h0 * scale))
+  const ctx = canvas.getContext('2d')!
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  // Same reason as the OCR path: a transparent PNG carries dark artwork drawn
+  // for white paper, and needs the paper putting back under it.
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(source as CanvasImageSource, 0, 0, canvas.width, canvas.height)
+  return canvas
+}
+
+function canvasToJpegBase64(canvas: HTMLCanvasElement): string {
+  // JPEG at 0.85: artwork is photographic enough that PNG would roughly triple
+  // the payload, and the shop pays for those bytes.
+  const url = canvas.toDataURL('image/jpeg', 0.85)
+  return url.slice(url.indexOf(',') + 1)
+}
+
+type AiResponse = { blocks?: Array<{ text?: string; note?: string }>; error?: string; message?: string }
+
+/**
+ * Read the artwork with the shop's own AI key, via PressCal.
+ *
+ * The key never reaches this machine — PressKit posts the image to PressCal
+ * over the API key it already holds, and PressCal calls the model with the
+ * org's own key. That keeps one place where keys live, and means this costs
+ * the shop directly rather than being billed through us.
+ */
+export async function extractWithAi(
+  filePath: string,
+  onProgress?: (pct: number) => void,
+): Promise<ExtractResult> {
+  onProgress?.(10)
+
+  let canvas: HTMLCanvasElement
+  if (/.pdf$/i.test(filePath)) {
+    const buffer = await window.api.fs.readFile(filePath)
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise
+    // One page per call, and the shop pays per call — so this reads the first
+    // page rather than quietly spending on a long document.
+    const page = await pdf.getPage(1)
+    const viewport = page.getViewport({ scale: 1 })
+    const raster = newCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height))
+    const rctx = raster.getContext('2d')!
+    rctx.fillStyle = '#ffffff'
+    rctx.fillRect(0, 0, raster.width, raster.height)
+    await page.render({ canvasContext: rctx, viewport }).promise
+    canvas = await canvasForAi(raster)
+  } else {
+    const buffer = await window.api.fs.readFile(filePath)
+    const bitmap = await createImageBitmap(new Blob([new Uint8Array(buffer)]))
+    canvas = await canvasForAi(bitmap)
+    bitmap.close?.()
+  }
+
+  onProgress?.(40)
+  const image = canvasToJpegBase64(canvas)
+
+  onProgress?.(60)
+  const res = (await window.api.presscal.postToApi('extract-text', {
+    image,
+    mediaType: 'image/jpeg',
+    filename: filePath.split(/[\/]/).pop() || '',
+  })) as AiResponse
+
+  onProgress?.(100)
+
+  // PressCal answers a missing key with guidance rather than a failure, and
+  // that guidance is the whole point — surface it verbatim.
+  if (res?.error) throw new Error(res.message || res.error)
+
+  const blocks = (res?.blocks ?? [])
+    .filter((b): b is { text: string; note?: string } => typeof b?.text === 'string' && !!b.text.trim())
+    .map(b => ({ text: b.text.trim(), ...(b.note ? { note: b.note } : {}) }))
+
+  if (blocks.length === 0) {
+    return {
+      method: 'ai',
+      pages: [{ page: 1, blocks: [] }],
+      warning: 'The model found no text on this artwork.',
+    }
+  }
+
+  return {
+    method: 'ai',
+    pages: [{ page: 1, blocks }],
+    warning: 'Read by AI, using your own key. Still proofread it — a model can misread confidently.',
+  }
 }
 
 /** Everything as one plain-text document, for copying or saving. */

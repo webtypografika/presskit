@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { Copy, Check, Download, FileText, Loader2, AlertTriangle } from 'lucide-react'
+import { Copy, Check, Download, FileText, Loader2, AlertTriangle, Sparkles, Info } from 'lucide-react'
 import { useAppStore } from '@/stores/app-store'
 import { useDialogStore } from '@/stores/dialog-store'
 import {
-  extractText, resultToPlainText, defaultOcrLang, OCR_LANGUAGES,
+  extractText, extractWithAi, resultToPlainText, defaultOcrLang, OCR_LANGUAGES,
   type ExtractResult, type OcrLang,
 } from '@/lib/extract-text'
 
@@ -51,6 +51,18 @@ export function ExtractTextPanel() {
     setBusy(true); setProgress(0); setResult(null)
     try {
       setResult(await extractText(path, setProgress, { lang, forceOcr }))
+    } catch (e: any) {
+      showAlert(e?.message || String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const runAi = async () => {
+    if (!path) return
+    setBusy(true); setProgress(0); setResult(null)
+    try {
+      setResult(await extractWithAi(path, setProgress))
     } catch (e: any) {
       showAlert(e?.message || String(e))
     } finally {
@@ -134,6 +146,26 @@ export function ExtractTextPanel() {
           : <><FileText size={14} />{result ? 'Read again' : 'Read the text'}</>}
       </button>
 
+      {/* The second reading. OCR matches letter shapes and cannot tell that six
+          captions side by side are six columns; a model that sees the page can.
+          It costs the shop directly — their own key, never our plan — so it is a
+          deliberate second press, not the default. */}
+      <button
+        onClick={runAi}
+        disabled={busy}
+        className="w-full flex items-center justify-center gap-2 rounded-md transition-colors"
+        style={{
+          marginTop: 8, padding: '9px 12px', fontSize: 12.5, fontWeight: 600,
+          background: 'transparent', color: busy ? '#64748b' : 'var(--text-secondary)',
+          border: '1px solid var(--border)', cursor: busy ? 'wait' : 'pointer',
+        }}
+      >
+        <Sparkles size={13} /> Read with AI
+      </button>
+      <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 5, lineHeight: 1.45 }}>
+        Handles columns and designed layouts. Uses your own AI key — not your PressCal plan.
+      </div>
+
       {busy && progress > 0 && (
         <div style={{ fontSize: 11, color: '#64748b', marginTop: 8, lineHeight: 1.5 }}>
           Recognising text from the image. The first run also downloads the language data, so it takes longer.
@@ -147,11 +179,16 @@ export function ExtractTextPanel() {
           <div style={{
             marginTop: 12, padding: '8px 10px', borderRadius: 6, fontSize: 11.5, lineHeight: 1.5,
             display: 'flex', gap: 8, alignItems: 'flex-start',
-            background: result.method === 'text' ? 'rgba(34,197,94,0.10)' : 'rgba(234,179,8,0.10)',
-            color: result.method === 'text' ? '#4ade80' : '#facc15',
+            background: result.method === 'text' ? 'rgba(34,197,94,0.10)'
+                      : result.method === 'ai' ? 'rgba(99,102,241,0.12)'
+                      : 'rgba(234,179,8,0.10)',
+            color: result.method === 'text' ? '#4ade80'
+                 : result.method === 'ai' ? '#a5b4fc'
+                 : '#facc15',
           }}>
             {result.method === 'text' ? <Check size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                                      : <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />}
+             : result.method === 'ai' ? <Sparkles size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+             : <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />}
             <span>
               {result.method === 'text'
                 ? <>Exact text, read from the file itself. Safe to copy as-is.</>
@@ -215,6 +252,16 @@ export function ExtractTextPanel() {
                     }}
                   >
                     {b.text}
+                    {b.note && (
+                      <div style={{
+                        display: 'flex', gap: 5, alignItems: 'flex-start',
+                        marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)',
+                        fontSize: 11, color: '#94a3b8', lineHeight: 1.45,
+                      }}>
+                        <Info size={11} style={{ flexShrink: 0, marginTop: 2 }} />
+                        <span>{b.note}</span>
+                      </div>
+                    )}
                     <button
                       onClick={() => copy(b.text, key)}
                       title="Copy this block"
