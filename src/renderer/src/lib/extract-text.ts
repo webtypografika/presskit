@@ -497,121 +497,133 @@ async function bundledWorkerUrl(): Promise<string | null> {
   return URL.createObjectURL(new Blob([combined], { type: 'application/javascript' }))
 }
 
+/**
+ * Anything in here can fail by never answering, so nothing runs unguarded.
+ *
+ * This feature has now hung on "Reading…" three separate times, each for a
+ * different reason, and every one of them was a promise that quietly never
+ * settled rather than an error anyone could see. A timeout on the one call I
+ * happened to suspect was not enough; the next hang simply moved to the call
+ * next door.
+ *
+ * So every await gets a clock and a name. When something does not answer, the
+ * operator is told which step gave up instead of watching a spinner, and the
+ * name is enough for us to fix it without another round of guessing.
+ */
+async function step<T>(label: string, ms: number, work: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      work(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Stopped at: ${label} (no answer after ${Math.round(ms / 1000)}s)`)),
+          ms,
+        )
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 async function ocrCanvases(
   canvases: HTMLCanvasElement[],
   langs: string[],
-  onProgress?: (pct: number) => void,
+  onProgress?: (pct: number, label?: string) => void,
 ): Promise<ExtractResult> {
   // Loaded on demand: the OCR engine is large and most files never need it.
-  const { createWorker, PSM } = await import('tesseract.js')
+  const { createWorker, PSM } = await step('loading the reader', 30_000, () => import('tesseract.js'))
 
   // Language data is read from our own folder and handed over as bytes, rather
   // than letting the engine fetch and cache it somewhere the operator cannot
   // see. A language that is not installed is skipped instead of failing the
   // whole run, and English is the floor.
+  const wanted = langs.length ? langs : [DEFAULT_LANG]
   const loaded: Array<{ code: string; data: Uint8Array }> = []
-  for (const code of langs.length ? langs : [DEFAULT_LANG]) {
-    const buf = await window.api.ocr.read(code)
+  for (const code of wanted) {
+    onProgress?.(0, `loading ${code}`)
+    const buf = await step<ArrayBuffer | null>(
+      `loading the ${code} language file`, 30_000, () => window.api.ocr.read(code))
     if (buf) loaded.push({ code, data: new Uint8Array(buf) })
   }
   if (loaded.length === 0) {
-    throw new Error(
-      'No language data is installed. Add a language under "Text language" and try again.',
-    )
+    throw new Error('No language data is installed. Add a language under "Text language" and try again.')
   }
 
-  const logger = (m: { status: string; progress: number }) => {
-    if (m.status === 'recognizing text' && onProgress) onProgress(Math.round(m.progress * 100))
-  }
+  const engine = await step('finding the engine', 30_000, () => bundledWorkerUrl().catch(() => null))
 
   /*
-   * The engine inside the app first; the CDN only if that is not possible.
+   * One worker per language, each built from scratch.
    *
-   * Raced against a clock because the failure this replaces was not an error
-   * but a silence — a worker that never answers. A promise that never settles
-   * has to be treated as a failure like any other, or the panel waits for ever.
+   * Switching a live worker's language with reinitialize would be cheaper and
+   * is one more thing that can fail without saying so. Building a fresh one
+   * costs a second or two of WebAssembly startup and behaves the same way every
+   * time, which is worth more here than the second.
    */
-  // The bundled engine is already on disk, so it either starts quickly or it
-  // is not going to. The download is a different matter: several megabytes over
-  // whatever connection the shop has, and 20s was cutting it off mid-download
-  // and calling it a failure.
-  const LOCAL_TIMEOUT_MS = 20_000
-  const DOWNLOAD_TIMEOUT_MS = 120_000
+  async function makeWorker(lang: { code: string; data: Uint8Array }) {
+    const logger = (m: { status: string; progress: number }) => {
+      if (m.status === 'recognizing text') onProgress?.(Math.round(m.progress * 100), 'reading')
+    }
 
-  const withTimeout = <T,>(work: Promise<T>, label: string, ms: number): Promise<T> =>
-    Promise.race([
-      work,
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`${label} did not start within ${Math.round(ms / 1000)}s`)), ms)),
-    ])
+    if (engine) {
+      try {
+        // Already on disk: it either starts promptly or it is not going to.
+        return await step(`starting the engine (${lang.code})`, 30_000, () =>
+          createWorker([lang] as any, undefined, {
+            workerPath: engine,
+            // The Blob IS the worker; wrapping it in another that imports it is
+            // what could not cross the packaged app's opaque origin.
+            workerBlobURL: false,
+            cacheMethod: 'none',
+            logger,
+          } as any))
+      } catch (e) {
+        console.warn('[ocr] the bundled engine did not start, downloading instead:', e)
+      }
+    }
 
-  let worker
-  const bundled = await bundledWorkerUrl().catch(() => null)
-  try {
-    if (!bundled) throw new Error('the engine is not bundled in this build')
-    worker = await withTimeout(
-      createWorker(loaded as any, undefined, {
-        workerPath: bundled,
-        // The Blob IS the worker; wrapping it in another one that imports it is
-        // what could not reach across the opaque file:// origin.
-        workerBlobURL: false,
-        // We own the files, so the engine's own cache would only duplicate them.
-        cacheMethod: 'none',
-        logger,
-      } as any),
-      'The engine inside the app',
-      LOCAL_TIMEOUT_MS,
-    )
-    console.info('[ocr] using the engine bundled in the app — works offline')
-  } catch (e) {
-    // Worth being loud about: it is the difference between OCR working offline
-    // and OCR needing a connection, and it is invisible otherwise.
-    console.warn('[ocr] bundled engine unavailable, falling back to the CDN:', e)
-    worker = await withTimeout(
-      createWorker(loaded as any, undefined, { cacheMethod: 'none', logger } as any),
-      'The engine download',
-      DOWNLOAD_TIMEOUT_MS,
-    )
-    console.info('[ocr] using the engine from the CDN — needs a connection')
+    onProgress?.(0, 'downloading the engine')
+    // Several megabytes over whatever connection the shop has.
+    return step(`downloading the engine (${lang.code})`, 180_000, () =>
+      createWorker([lang] as any, undefined, { cacheMethod: 'none', logger } as any))
   }
 
-  // Re-applied after every reinitialize: switching language resets these.
-  const applyParams = async () => worker.setParameters({
-    // The page has already been upscaled to roughly this, and saying so stops
-    // the engine second-guessing the letter sizes it is looking at.
-    user_defined_dpi: '300',
-    tessedit_pageseg_mode: PSM.AUTO,
-    preserve_interword_spaces: '1',
-  })
+  const pages: TextPage[] = []
 
-  try {
-    await applyParams()
+  for (let i = 0; i < canvases.length; i++) {
+    const canvas = canvases[i]
 
-    const pages: TextPage[] = []
-    for (let i = 0; i < canvases.length; i++) {
-      const canvas = canvases[i]
+    /*
+     * Read the page once per language, then keep the best reading of each line.
+     *
+     * Handing the engine several languages at once is the obvious thing and it
+     * is not enough: the models compete word by word, and the more confident one
+     * wins even when it is wrong for that line. On a real flyer that turned a
+     * telephone number into "(οθ99007" — Greek shapes imposed on Latin digits —
+     * while an English-only pass read the same digits at a confidence of 94.
+     * Neither language alone could read the whole page and both together read it
+     * worse than either.
+     */
+    const best: LineIndex = new Map()
+    let structure: { blocks: OcrBlock[] | null; text: string } | null = null
+    let bestOverall = -1
 
-      /*
-       * Read the page once per language, then keep the best reading of each line.
-       *
-       * Handing the engine several languages at once is the obvious thing and
-       * it is not enough: the models compete word by word, and the more
-       * confident one wins even when it is wrong for that line. On a real flyer
-       * that turned a telephone number into "(οθ99007" — Greek shapes imposed
-       * on Latin digits — while an English-only pass read the same digits at a
-       * confidence of 94. Neither language alone could read the whole page and
-       * both together read it worse than either.
-       *
-       * So each language gets its own pass and each line goes to whichever pass
-       * was surer of it. One language costs one pass, exactly as before.
-       */
-      const best: LineIndex = new Map()
-      let structure: { blocks: OcrBlock[] | null; text: string } | null = null
-      let bestOverall = -1
+    for (const lang of loaded) {
+      const worker = await makeWorker(lang)
+      try {
+        await step(`preparing the reader (${lang.code})`, 30_000, () => worker.setParameters({
+          // The page has already been upscaled to roughly this, and saying so
+          // stops the engine second-guessing the letter sizes it is looking at.
+          user_defined_dpi: '300',
+          tessedit_pageseg_mode: PSM.AUTO,
+          preserve_interword_spaces: '1',
+        }))
 
-      for (const one of loaded) {
-        if (loaded.length > 1) { await worker.reinitialize([one] as any); await applyParams() }
-        const { data } = await worker.recognize(canvas, {}, { text: true, blocks: true })
+        onProgress?.(0, `reading ${lang.code}`)
+        const { data } = await step(`reading the page in ${lang.code}`, 300_000, () =>
+          worker.recognize(canvas, {}, { text: true, blocks: true }))
+
         const blocks = data.blocks as unknown as OcrBlock[] | null
         indexLines(blocks, best)
         // The pass that read the page best supplies the layout everything else
@@ -620,19 +632,20 @@ async function ocrCanvases(
           bestOverall = data.confidence
           structure = { blocks, text: data.text || '' }
         }
+      } finally {
+        // A worker left running holds on to its WebAssembly heap.
+        await worker.terminate().catch(() => {})
       }
-
-      const found = ocrBlocks(structure?.blocks, structure?.text || '', 0, 0, best)
-      pages.push({ page: i + 1, blocks: inReadingOrder(found, canvas.height) })
     }
 
-    return {
-      method: 'ocr',
-      pages,
-      warning: 'Read from the image by OCR — proofread it before printing. Numbers and Greek accents are the usual mistakes.',
-    }
-  } finally {
-    await worker.terminate()
+    const found = ocrBlocks(structure?.blocks, structure?.text || '', 0, 0, best)
+    pages.push({ page: i + 1, blocks: inReadingOrder(found, canvas.height) })
+  }
+
+  return {
+    method: 'ocr',
+    pages,
+    warning: 'Read from the image by OCR — proofread it before printing. Numbers and Greek accents are the usual mistakes.',
   }
 }
 
@@ -737,7 +750,7 @@ type AiResponse = { blocks?: Array<{ text?: string; note?: string }>; error?: st
  */
 export async function extractWithAi(
   filePath: string,
-  onProgress?: (pct: number) => void,
+  onProgress?: (pct: number, label?: string) => void,
 ): Promise<ExtractResult> {
   onProgress?.(10)
 

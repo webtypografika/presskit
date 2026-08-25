@@ -29,6 +29,9 @@ export function ExtractTextPanel() {
   const [result, setResult] = useState<ExtractResult | null>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState(0)
+  // What the reader is doing right now. A spinner that says nothing is how
+  // three separate hangs went unexplained.
+  const [step, setStep] = useState<string>('')
   const [copied, setCopied] = useState<number | 'all' | null>(null)
   const [langs, setLangs] = useState<string[]>(() => {
     const saved = localStorage.getItem(LANG_KEY)
@@ -69,9 +72,9 @@ export function ExtractTextPanel() {
 
   const run = async (forceOcr = false) => {
     if (!path) return
-    setBusy(true); setProgress(0); setResult(null)
+    setBusy(true); setProgress(0); setStep(''); setResult(null)
     try {
-      setResult(await extractText(path, setProgress, { langs, forceOcr }))
+      setResult(await extractText(path, onStep, { langs, forceOcr }))
     } catch (e: any) {
       showAlert(e?.message || String(e))
     } finally {
@@ -79,11 +82,16 @@ export function ExtractTextPanel() {
     }
   }
 
+  const onStep = useCallback((pct: number, label?: string) => {
+    setProgress(pct)
+    if (label) setStep(label)
+  }, [])
+
   const runAi = async () => {
     if (!path) return
-    setBusy(true); setProgress(0); setResult(null)
+    setBusy(true); setProgress(0); setStep(''); setResult(null)
     try {
-      setResult(await extractWithAi(path, setProgress))
+      setResult(await extractWithAi(path, onStep))
     } catch (e: any) {
       showAlert(e?.message || String(e))
     } finally {
@@ -164,9 +172,9 @@ export function ExtractTextPanel() {
         Handles columns and designed layouts. Uses your own AI key — not your PressCal plan.
       </div>
 
-      {busy && progress > 0 && (
+      {busy && step && (
         <div style={{ fontSize: 11, color: '#64748b', marginTop: 8, lineHeight: 1.5 }}>
-          Recognising text from the image. The first run also downloads the language data, so it takes longer.
+          {step.charAt(0).toUpperCase() + step.slice(1)}…
         </div>
       )}
 
