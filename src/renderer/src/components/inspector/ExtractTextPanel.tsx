@@ -2,7 +2,19 @@ import { useState } from 'react'
 import { Copy, Check, Download, FileText, Loader2, AlertTriangle } from 'lucide-react'
 import { useAppStore } from '@/stores/app-store'
 import { useDialogStore } from '@/stores/dialog-store'
-import { extractText, resultToPlainText, type ExtractResult } from '@/lib/extract-text'
+import {
+  extractText, resultToPlainText, defaultOcrLang, OCR_LANGUAGES,
+  type ExtractResult, type OcrLang,
+} from '@/lib/extract-text'
+
+/** The operator sets this once for their shop, not once per file. */
+const LANG_KEY = 'presskit.ocrLang'
+
+function storedLang(): OcrLang {
+  const saved = localStorage.getItem(LANG_KEY)
+  if (saved && OCR_LANGUAGES.some(l => l.id === saved)) return saved as OcrLang
+  return defaultOcrLang()
+}
 
 /**
  * Pull the text out of an incoming file so it can be rebuilt — locally.
@@ -23,15 +35,22 @@ export function ExtractTextPanel() {
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState(0)
   const [copied, setCopied] = useState<number | 'all' | null>(null)
+  const [lang, setLang] = useState<OcrLang>(storedLang)
 
   const path = selectedFile?.path
   const supported = !!path && /\.(pdf|jpe?g|png|tiff?|bmp|webp)$/i.test(path)
+  const isPdf = !!path && /[.]pdf$/i.test(path)
 
-  const run = async () => {
+  const pickLang = (next: OcrLang) => {
+    setLang(next)
+    localStorage.setItem(LANG_KEY, next)
+  }
+
+  const run = async (forceOcr = false) => {
     if (!path) return
     setBusy(true); setProgress(0); setResult(null)
     try {
-      setResult(await extractText(path, setProgress))
+      setResult(await extractText(path, setProgress, { lang, forceOcr }))
     } catch (e: any) {
       showAlert(e?.message || String(e))
     } finally {
@@ -74,8 +93,33 @@ export function ExtractTextPanel() {
 
   return (
     <div style={{ padding: 12, minWidth: 0 }}>
+      {/* Which language data OCR loads. Two languages together let the more
+          confident one win short words, so naming the one on the artwork is
+          the difference between the Greek word for "and" and a Latin "Kat". */}
+      <label style={{ display: 'block', marginBottom: 10 }}>
+        <span style={{ display: 'block', fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', color: '#64748b', marginBottom: 5 }}>
+          TEXT LANGUAGE
+        </span>
+        <select
+          value={lang}
+          onChange={e => pickLang(e.target.value as OcrLang)}
+          disabled={busy}
+          style={{
+            width: '100%', padding: '7px 8px', fontSize: 12,
+            background: 'var(--bg)', color: 'var(--text-primary)',
+            border: '1px solid var(--border)', borderRadius: 6, cursor: busy ? 'wait' : 'pointer',
+          }}
+        >
+          {OCR_LANGUAGES.map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
+        </select>
+        <span style={{ display: 'block', fontSize: 10.5, color: '#64748b', marginTop: 5, lineHeight: 1.45 }}>
+          {isPdf
+            ? 'Used only if this PDF turns out to be a scan.'
+            : 'Naming one language is more accurate than leaving two to compete.'}
+        </span>
+      </label>
       <button
-        onClick={run}
+        onClick={() => run()}
         disabled={busy}
         className="w-full flex items-center justify-center gap-2 rounded-md transition-colors"
         style={{
@@ -115,6 +159,22 @@ export function ExtractTextPanel() {
             </span>
           </div>
 
+          {/* A PDF whose fonts were subset without a ToUnicode map hands back
+              text that is technically exact and completely unreadable. There is
+              no way to detect that reliably, so give the operator the way out. */}
+          {result.method === 'text' && isPdf && (
+            <button
+              onClick={() => run(true)}
+              disabled={busy}
+              style={{
+                marginTop: 8, padding: 0, background: 'none', border: 'none',
+                fontSize: 11, color: '#64748b', textDecoration: 'underline',
+                cursor: busy ? 'wait' : 'pointer',
+              }}
+            >
+              Text looks wrong? Read it from the image instead
+            </button>
+          )}
           {blockCount > 0 && (
             <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
               <button
