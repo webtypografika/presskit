@@ -77,13 +77,22 @@ export function revealOcrLanguages(): Promise<boolean> {
 }
 
 /**
- * Which language the operator's own machine suggests, before they choose.
+ * Which languages to start from, before the operator chooses.
  *
- * Only ever a starting point: it is offered if that language is installed, and
- * otherwise English, because a language that is not on disk cannot read
- * anything and an empty result would look like a broken feature.
+ * Their own language AND English, and the second one is not a nicety. Greek
+ * data alone reads Greek beautifully and cannot read the Latin alphabet at all:
+ * on a real flyer it returned the telephone number as "(οθ99007" with a
+ * confidence of zero, and the Instagram handle as gibberish, while English data
+ * read the same digits at 94. Artwork is bilingual even when the copy is not —
+ * phone numbers, e-mail addresses, web addresses and brand names are Latin on
+ * almost every job that comes through a Greek print shop.
+ *
+ * The cost is real and worth naming: two languages together let the more
+ * confident one win short words, which is how "και" comes back as "Kat". A
+ * mangled word is visible and gets retyped. A telephone number that never
+ * appears at all is not, and gets printed missing.
  */
-export function suggestedLang(installed: OcrLanguage[]): string {
+export function suggestedLangs(installed: OcrLanguage[]): string[] {
   const tag = (navigator.language || 'en').slice(0, 2).toLowerCase()
   const guess: Record<string, string> = {
     el: 'ell', es: 'spa', it: 'ita', de: 'deu', fr: 'fra', pt: 'por',
@@ -92,9 +101,10 @@ export function suggestedLang(installed: OcrLanguage[]): string {
     hr: 'hrv', sr: 'srp', sk: 'slk', sl: 'slv', uk: 'ukr', ar: 'ara',
     he: 'heb', ja: 'jpn', ko: 'kor', zh: 'chi_sim', en: 'eng',
   }
+  const has = (c: string) => installed.some(l => l.code === c && l.installed)
   const want = guess[tag]
-  if (want && installed.some(l => l.code === want && l.installed)) return want
-  return DEFAULT_LANG
+  const out = want && want !== DEFAULT_LANG && has(want) ? [want, DEFAULT_LANG] : [DEFAULT_LANG]
+  return out.filter(has).length ? out.filter(has) : [DEFAULT_LANG]
 }
 
 /* ------------------------------------------------------------------ *
@@ -292,15 +302,18 @@ async function pdfPageToCanvas(page: pdfjsLib.PDFPageProxy): Promise<HTMLCanvasE
 /**
  * Anything below these is more likely to be artwork than type.
  *
- * Deliberately low. The cost of dropping a real word is that the operator
- * retypes it from the artwork already in front of them; the cost of keeping a
- * misread one is that it gets copied into a job and printed. But set too high
- * they would also eat the small caption type this feature exists to recover, so
- * they sit just under where genuine text lands and leave the rest to the shape
- * test below.
+ * Lowered on evidence (25/08). The first values dropped real words out of
+ * otherwise perfect sentences — "Αρχαία" from a list of subjects, "μικρά" from
+ * "σε πολύ μικρά τμήματα" — and a sentence missing one word is more dangerous
+ * than an obviously mangled one, because it still reads as finished.
+ *
+ * The reasoning behind keeping them at all is unchanged: a misread word copied
+ * into a job gets printed. But confidence turned out to be a blunt instrument
+ * for that and the shape test below is the sharper one, so these now sit low
+ * enough to keep real text and leave the judgement to shape.
  */
-const MIN_WORD_CONFIDENCE = 40
-const MIN_LINE_CONFIDENCE = 35
+const MIN_WORD_CONFIDENCE = 28
+const MIN_LINE_CONFIDENCE = 22
 
 /**
  * Does this look like language, or like an icon the engine tried to read?
@@ -320,7 +333,7 @@ function looksLikeLanguage(s: string): boolean {
 }
 
 type OcrWord = { text: string; confidence: number }
-type OcrLine = { words?: OcrWord[]; text: string; confidence: number }
+type OcrLine = { words?: OcrWord[]; text: string; confidence: number; bbox: { x0: number; y0: number } }
 type OcrParagraph = { lines?: OcrLine[] }
 type OcrBlock = {
   paragraphs?: OcrParagraph[]
@@ -329,56 +342,109 @@ type OcrBlock = {
   bbox: { x0: number; y0: number; x1: number; y1: number }
 }
 
-function blockToText(block: OcrBlock): string {
+/**
+ * The best reading of a single line, wherever it came from.
+ *
+ * Keyed by where the line sits on the page, coarsely, so the same line found by
+ * two different passes lands on the same key.
+ */
+export type LineIndex = Map<string, { text: string; confidence: number }>
+
+function lineKey(bbox: { x0: number; y0: number }): string {
+  return `${Math.round(bbox.x0 / 12)}:${Math.round(bbox.y0 / 12)}`
+}
+
+/** One line, filtered — or empty if nothing in it survived. */
+function lineText(l: OcrLine): string {
+  if (l.confidence < MIN_LINE_CONFIDENCE) return ''
+  const words = (l.words ?? [])
+    .filter(w => w.confidence >= MIN_WORD_CONFIDENCE)
+    .map(w => w.text.trim())
+    // A lone symbol that survived on confidence is still a symbol.
+    .filter(t => t.length > 1 || /[\p{L}\p{N}]/u.test(t))
+  const line = words.join(' ').replace(/\s+/g, ' ').trim()
+  return line && looksLikeLanguage(line) ? line : ''
+}
+
+/**
+ * Record how well each pass read each line, so the best reading can win.
+ *
+ * This exists because of one stubborn failure. Greek data alone read a flyer's
+ * telephone number as "(οθ99007" with a confidence of zero; English data read
+ * the same digits at 94. Running both together did not fix it — the two models
+ * compete per word, and on that line Greek won and destroyed it. The only way
+ * to have both is to read the page once per language and keep whichever pass
+ * was more sure of each line.
+ */
+export function indexLines(blocks: OcrBlock[] | null | undefined, into: LineIndex): void {
+  for (const b of blocks ?? []) {
+    for (const p of b.paragraphs ?? []) {
+      for (const l of p.lines ?? []) {
+        const text = lineText(l)
+        if (!text) continue
+        const key = lineKey(l.bbox)
+        const seen = into.get(key)
+        if (!seen || l.confidence > seen.confidence) {
+          into.set(key, { text, confidence: l.confidence })
+        }
+      }
+    }
+  }
+}
+
+function blockToText(block: OcrBlock, best?: LineIndex): string {
   const paragraphs: string[] = []
   for (const p of block.paragraphs ?? []) {
     const lines: string[] = []
     for (const l of p.lines ?? []) {
-      if (l.confidence < MIN_LINE_CONFIDENCE) continue
-      const words = (l.words ?? [])
-        .filter(w => w.confidence >= MIN_WORD_CONFIDENCE)
-        .map(w => w.text.trim())
-        // A lone symbol that survived on confidence is still a symbol.
-        .filter(t => t.length > 1 || /[\p{L}\p{N}]/u.test(t))
-      const line = words.join(' ').replace(/\s+/g, ' ').trim()
-      if (line && looksLikeLanguage(line)) lines.push(line)
+      // A better reading of this same line, from another language's pass.
+      const other = best?.get(lineKey(l.bbox))
+      const mine = lineText(l)
+      const text = other && other.confidence > l.confidence ? other.text : mine
+      if (text) lines.push(text)
     }
     if (lines.length) paragraphs.push(lines.join('\n'))
   }
   return paragraphs.join('\n\n').trim()
 }
 
-/**
- * Keep each region of the page as its own block, in reading order.
- *
- * This is the fix for the six-column flyer. The engine reports where every
- * region sits; the previous version threw that away and split the flat text
- * dump on blank lines, so six captions sharing a row of the page came back
- * welded into a single line. Reading a column at a time is the only order a
- * person can use.
- */
+type PlacedBlock = { text: string; x: number; y: number }
+
 function ocrBlocks(
   blocks: OcrBlock[] | null | undefined,
   flatText: string,
-  pageHeight: number,
-): TextBlock[] {
+  offsetX: number,
+  offsetY: number,
+  best?: LineIndex,
+): PlacedBlock[] {
   if (!blocks || blocks.length === 0) {
-    // Older engine builds, or a page the layout analyser gave up on.
+    // Older engine builds, or a page the layout analyser gave up on. There is
+    // nothing to place these by, so they keep the order the engine gave them.
     return flatText
       .split(/\n\s*\n/)
-      .map(t => t.replace(/[ \t]+/g, ' ').trim())
+      .map(t => t.replace(/[ 	]+/g, ' ').trim())
       .filter(t => t && looksLikeLanguage(t))
-      .map(text => ({ text }))
+      .map((text, i) => ({ text, x: offsetX, y: offsetY + i }))
   }
 
-  const band = Math.max(20, pageHeight * 0.02)
   return blocks
-    .map(b => ({ bbox: b.bbox, text: blockToText(b) }))
+    .map(b => ({ text: blockToText(b, best), x: b.bbox.x0 + offsetX, y: b.bbox.y0 + offsetY }))
     .filter(b => b.text.length > 0)
+}
+
+/**
+ * Put everything found on one page into the order a person reads it.
+ *
+ * Blocks now arrive from more than one pass over the same page — the page
+ * itself, then each dark panel read separately — so they have to be ordered by
+ * where they sit rather than by the order they were found.
+ */
+function inReadingOrder(blocks: PlacedBlock[], pageHeight: number): TextBlock[] {
+  const band = Math.max(20, pageHeight * 0.02)
+  return [...blocks]
     // Down the page first, then across — so side-by-side columns come out in
     // the order they are read, not the order the engine happened to find them.
-    .sort((a, b) =>
-      (Math.round(a.bbox.y0 / band) - Math.round(b.bbox.y0 / band)) || (a.bbox.x0 - b.bbox.x0))
+    .sort((a, b) => (Math.round(a.y / band) - Math.round(b.y / band)) || (a.x - b.x))
     .map(b => ({ text: b.text }))
 }
 
@@ -488,26 +554,55 @@ async function ocrCanvases(
     console.info('[ocr] using the engine from the CDN — needs a connection')
   }
 
+  // Re-applied after every reinitialize: switching language resets these.
+  const applyParams = async () => worker.setParameters({
+    // The page has already been upscaled to roughly this, and saying so stops
+    // the engine second-guessing the letter sizes it is looking at.
+    user_defined_dpi: '300',
+    tessedit_pageseg_mode: PSM.AUTO,
+    preserve_interword_spaces: '1',
+  })
+
   try {
-    await worker.setParameters({
-      // The page has already been upscaled to roughly this, and saying so stops
-      // the engine second-guessing the letter sizes it is looking at.
-      user_defined_dpi: '300',
-      tessedit_pageseg_mode: PSM.AUTO,
-      preserve_interword_spaces: '1',
-    })
+    await applyParams()
 
     const pages: TextPage[] = []
     for (let i = 0; i < canvases.length; i++) {
-      const { data } = await worker.recognize(canvases[i], {}, { text: true, blocks: true })
-      pages.push({
-        page: i + 1,
-        blocks: ocrBlocks(
-          data.blocks as unknown as OcrBlock[] | null,
-          data.text || '',
-          canvases[i].height,
-        ),
-      })
+      const canvas = canvases[i]
+
+      /*
+       * Read the page once per language, then keep the best reading of each line.
+       *
+       * Handing the engine several languages at once is the obvious thing and
+       * it is not enough: the models compete word by word, and the more
+       * confident one wins even when it is wrong for that line. On a real flyer
+       * that turned a telephone number into "(οθ99007" — Greek shapes imposed
+       * on Latin digits — while an English-only pass read the same digits at a
+       * confidence of 94. Neither language alone could read the whole page and
+       * both together read it worse than either.
+       *
+       * So each language gets its own pass and each line goes to whichever pass
+       * was surer of it. One language costs one pass, exactly as before.
+       */
+      const best: LineIndex = new Map()
+      let structure: { blocks: OcrBlock[] | null; text: string } | null = null
+      let bestOverall = -1
+
+      for (const one of loaded) {
+        if (loaded.length > 1) { await worker.reinitialize([one] as any); await applyParams() }
+        const { data } = await worker.recognize(canvas, {}, { text: true, blocks: true })
+        const blocks = data.blocks as unknown as OcrBlock[] | null
+        indexLines(blocks, best)
+        // The pass that read the page best supplies the layout everything else
+        // is placed into, so blocks and reading order stay coherent.
+        if (data.confidence > bestOverall) {
+          bestOverall = data.confidence
+          structure = { blocks, text: data.text || '' }
+        }
+      }
+
+      const found = ocrBlocks(structure?.blocks, structure?.text || '', 0, 0, best)
+      pages.push({ page: i + 1, blocks: inReadingOrder(found, canvas.height) })
     }
 
     return {

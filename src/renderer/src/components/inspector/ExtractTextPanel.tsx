@@ -3,7 +3,7 @@ import { Copy, Check, Download, FileText, Loader2, AlertTriangle, Sparkles, Info
 import { useAppStore } from '@/stores/app-store'
 import { useDialogStore } from '@/stores/dialog-store'
 import {
-  extractText, extractWithAi, resultToPlainText, listOcrLanguages, suggestedLang,
+  extractText, extractWithAi, resultToPlainText, listOcrLanguages, suggestedLangs,
   DEFAULT_LANG, type ExtractResult,
 } from '@/lib/extract-text'
 import { OcrLanguagePicker } from './OcrLanguagePicker'
@@ -30,15 +30,25 @@ export function ExtractTextPanel() {
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState(0)
   const [copied, setCopied] = useState<number | 'all' | null>(null)
-  const [lang, setLang] = useState<string>(() => localStorage.getItem(LANG_KEY) || DEFAULT_LANG)
+  const [langs, setLangs] = useState<string[]>(() => {
+    const saved = localStorage.getItem(LANG_KEY)
+    // Stored as a list since 2.3.22; a bare code is what older versions wrote.
+    if (!saved) return [DEFAULT_LANG]
+    try {
+      const parsed = JSON.parse(saved)
+      return Array.isArray(parsed) && parsed.length ? parsed : [DEFAULT_LANG]
+    } catch {
+      return [saved]
+    }
+  })
 
   const path = selectedFile?.path
   const supported = !!path && /\.(pdf|jpe?g|png|tiff?|bmp|webp)$/i.test(path)
   const isPdf = !!path && /[.]pdf$/i.test(path)
 
-  const pickLang = useCallback((next: string) => {
-    setLang(next)
-    localStorage.setItem(LANG_KEY, next)
+  const pickLangs = useCallback((next: string[]) => {
+    setLangs(next)
+    localStorage.setItem(LANG_KEY, JSON.stringify(next))
   }, [])
 
   // On a machine that has never chosen, offer the language the operating system
@@ -47,15 +57,18 @@ export function ExtractTextPanel() {
   useEffect(() => {
     if (localStorage.getItem(LANG_KEY)) return
     listOcrLanguages()
-      .then(all => { const s = suggestedLang(all); if (s !== DEFAULT_LANG) pickLang(s) })
+      .then(all => {
+        const s = suggestedLangs(all)
+        if (s.length > 1 || s[0] !== DEFAULT_LANG) pickLangs(s)
+      })
       .catch(() => {})
-  }, [pickLang])
+  }, [pickLangs])
 
   const run = async (forceOcr = false) => {
     if (!path) return
     setBusy(true); setProgress(0); setResult(null)
     try {
-      setResult(await extractText(path, setProgress, { langs: [lang], forceOcr }))
+      setResult(await extractText(path, setProgress, { langs, forceOcr }))
     } catch (e: any) {
       showAlert(e?.message || String(e))
     } finally {
@@ -110,7 +123,7 @@ export function ExtractTextPanel() {
 
   return (
     <div style={{ padding: 12, minWidth: 0 }}>
-      <OcrLanguagePicker value={lang} onChange={pickLang} disabled={busy} />
+      <OcrLanguagePicker value={langs} onChange={pickLangs} disabled={busy} />
 
       <button
         onClick={() => run()}

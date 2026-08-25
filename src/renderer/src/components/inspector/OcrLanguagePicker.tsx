@@ -17,6 +17,11 @@ import {
  * result that looks like a broken feature — and adding one is a separate,
  * deliberate step behind "Manage".
  *
+ * More than one can be on at once, and usually should be. Greek data alone
+ * cannot read the Latin alphabet: on a real flyer it turned the telephone
+ * number into "(οθ99007" while English data read the same digits perfectly.
+ * Artwork is bilingual even when the copy is not.
+ *
  * Sizes are shown because these are real files on the operator's own disk.
  * Software that quietly accumulates hundreds of megabytes somewhere hidden is
  * software a print shop stops trusting.
@@ -26,8 +31,8 @@ export function OcrLanguagePicker({
   onChange,
   disabled,
 }: {
-  value: string
-  onChange: (code: string) => void
+  value: string[]
+  onChange: (codes: string[]) => void
   disabled?: boolean
 }) {
   const [langs, setLangs] = useState<OcrLanguage[]>([])
@@ -48,11 +53,19 @@ export function OcrLanguagePicker({
 
   const installed = useMemo(() => langs.filter(l => l.installed), [langs])
 
-  // If the chosen language gets removed, fall back rather than reading with
-  // data that is no longer there.
+  // If a chosen language gets removed, drop it rather than reading with data
+  // that is no longer there — and never end up with nothing selected.
   useEffect(() => {
-    if (installed.length && !installed.some(l => l.code === value)) onChange(DEFAULT_LANG)
+    if (!installed.length) return
+    const alive = value.filter(c => installed.some(l => l.code === c))
+    if (alive.length !== value.length) onChange(alive.length ? alive : [DEFAULT_LANG])
   }, [installed, value, onChange])
+
+  const toggle = (code: string) => {
+    const next = value.includes(code) ? value.filter(c => c !== code) : [...value, code]
+    // Reading with no language is not a state worth allowing.
+    onChange(next.length ? next : [code])
+  }
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -71,7 +84,8 @@ export function OcrLanguagePicker({
       if (!res.ok) setError(res.error || 'Failed.')
       else {
         await refresh()
-        if (install) onChange(code)
+        // A language you just went and fetched is one you meant to read with.
+        if (install && !value.includes(code)) onChange([...value, code])
       }
     } finally {
       setWorking(null)
@@ -103,25 +117,41 @@ export function OcrLanguagePicker({
         </button>
       </div>
 
-      <select
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        disabled={disabled || installed.length === 0}
-        style={{
-          width: '100%', padding: '7px 8px', fontSize: 12,
-          background: 'var(--bg)', color: 'var(--text-primary)',
-          border: '1px solid var(--border)', borderRadius: 6,
-          cursor: disabled ? 'wait' : 'pointer',
-        }}
-      >
-        {installed.length === 0 && <option value="">No language installed</option>}
-        {installed.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}
-      </select>
+      {installed.length === 0 ? (
+        <div style={{ fontSize: 11.5, color: '#64748b', padding: '6px 0' }}>
+          No language installed — press Manage.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+          {installed.map(l => {
+            const on = value.includes(l.code)
+            return (
+              <button
+                key={l.code}
+                onClick={() => toggle(l.code)}
+                disabled={disabled}
+                title={on ? `Stop reading ${l.name}` : `Also read ${l.name}`}
+                style={{
+                  padding: '4px 9px', fontSize: 11.5, borderRadius: 999,
+                  border: '1px solid ' + (on ? 'var(--accent)' : 'var(--border)'),
+                  background: on ? 'var(--accent)' : 'transparent',
+                  color: on ? '#04252b' : '#94a3b8',
+                  fontWeight: on ? 600 : 400,
+                  cursor: disabled ? 'wait' : 'pointer',
+                }}
+              >
+                {l.name}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {!managing && (
         <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 5, lineHeight: 1.45 }}>
-          Naming the language on the artwork is more accurate than guessing.
-          {installed.length === 1 && ' Press Manage to add another.'}
+          Keep English on alongside your own language: telephone numbers, e-mail
+          and web addresses are Latin even on artwork that is not.
+          {installed.length === 1 && ' Press Manage to add your language.'}
         </div>
       )}
 
