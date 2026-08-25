@@ -1,6 +1,6 @@
 {
   "name": "presskit",
-  "version": "2.3.22",
+  "version": "2.3.23",
   "description": "PressKit - Print & Design File Manager",
   "main": "./out/main/index.js",
   "scripts": {

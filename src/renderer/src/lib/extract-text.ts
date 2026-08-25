@@ -477,12 +477,24 @@ const CORE_FILE = 'tesseract-core-relaxedsimd-lstm.wasm.js'
 async function bundledWorkerUrl(): Promise<string | null> {
   const parts = await window.api.ocr.engine(CORE_FILE)
   if (!parts?.worker || !parts?.engine) return null
-  const url = (src: string) => URL.createObjectURL(new Blob([src], { type: 'application/javascript' }))
-  const core = url(parts.engine)
-  const worker = url(parts.worker)
-  // One script that pulls in both, in order: tesseract.js wraps whatever we
-  // give it in a single importScripts call.
-  return url(`importScripts(${JSON.stringify(core)});importScripts(${JSON.stringify(worker)});`)
+
+  /*
+   * One Blob holding the engine and the worker together, run as the worker
+   * itself — not a Blob that imports other Blobs.
+   *
+   * The first attempt did exactly that, and it failed on a packaged build. A
+   * Blob URL belongs to the origin that made it, and a page served from
+   * file:// has an opaque origin, so the worker could not reach the URLs the
+   * document had created. It failed silently, which is how OCR ended up
+   * waiting on an engine that was never going to arrive.
+   *
+   * Inlined, there is nothing left to fetch. The engine's source runs first
+   * and defines TesseractCore on the worker's global scope, so by the time the
+   * worker script looks for it, it is already there and no core path is
+   * consulted at all.
+   */
+  const combined = `${parts.engine}\n;\n${parts.worker}`
+  return URL.createObjectURL(new Blob([combined], { type: 'application/javascript' }))
 }
 
 async function ocrCanvases(
@@ -519,14 +531,18 @@ async function ocrCanvases(
    * but a silence — a worker that never answers. A promise that never settles
    * has to be treated as a failure like any other, or the panel waits for ever.
    */
-  const ENGINE_TIMEOUT_MS = 20_000
+  // The bundled engine is already on disk, so it either starts quickly or it
+  // is not going to. The download is a different matter: several megabytes over
+  // whatever connection the shop has, and 20s was cutting it off mid-download
+  // and calling it a failure.
+  const LOCAL_TIMEOUT_MS = 20_000
+  const DOWNLOAD_TIMEOUT_MS = 120_000
 
-  const withTimeout = <T,>(work: Promise<T>, label: string): Promise<T> =>
+  const withTimeout = <T,>(work: Promise<T>, label: string, ms: number): Promise<T> =>
     Promise.race([
       work,
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`${label} did not start within ${ENGINE_TIMEOUT_MS / 1000}s`)),
-          ENGINE_TIMEOUT_MS)),
+        setTimeout(() => reject(new Error(`${label} did not start within ${Math.round(ms / 1000)}s`)), ms)),
     ])
 
   let worker
@@ -536,11 +552,15 @@ async function ocrCanvases(
     worker = await withTimeout(
       createWorker(loaded as any, undefined, {
         workerPath: bundled,
+        // The Blob IS the worker; wrapping it in another one that imports it is
+        // what could not reach across the opaque file:// origin.
+        workerBlobURL: false,
         // We own the files, so the engine's own cache would only duplicate them.
         cacheMethod: 'none',
         logger,
       } as any),
       'The engine inside the app',
+      LOCAL_TIMEOUT_MS,
     )
     console.info('[ocr] using the engine bundled in the app — works offline')
   } catch (e) {
@@ -550,6 +570,7 @@ async function ocrCanvases(
     worker = await withTimeout(
       createWorker(loaded as any, undefined, { cacheMethod: 'none', logger } as any),
       'The engine download',
+      DOWNLOAD_TIMEOUT_MS,
     )
     console.info('[ocr] using the engine from the CDN — needs a connection')
   }

@@ -38,7 +38,10 @@ export function ExtractTextPanel() {
       const parsed = JSON.parse(saved)
       return Array.isArray(parsed) && parsed.length ? parsed : [DEFAULT_LANG]
     } catch {
-      return [saved]
+      // An older version stored one bare code. Carry it forward WITH English:
+      // Greek data alone cannot read a telephone number, and someone upgrading
+      // should not have to work that out from a missing line.
+      return saved === DEFAULT_LANG ? [saved] : [saved, DEFAULT_LANG]
     }
   })
 
