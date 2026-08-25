@@ -540,9 +540,28 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
   })
 
   // Delete files (move to trash)
-  ipcMain.handle('fs:trash', async (_e, paths: string[]) => {
+  /**
+   * Delete to the Recycle Bin.
+   *
+   * `permanent` is opt-in and the renderer only sets it after asking. Until
+   * 2026-08-25 a failed trashItem fell straight through to `fs.rm force`, which
+   * is a permanent, unrecoverable delete — so a file that happened to be locked
+   * for a second was destroyed instead of binned, silently. Worse, `rm` deletes
+   * depth-first: on a folder it wiped the contents and then failed on the empty
+   * directory, reporting "failed" while the files were already gone.
+   *
+   * Locks here are usually transient — Dropbox finishing a sync, an editor
+   * still holding a handle. George hit one on 2026-08-25 and the same folder
+   * deleted fine minutes later, so the retry budget went from ~0.9s to ~10s,
+   * which costs nothing and fixes the common case on its own.
+   */
+  ipcMain.handle('fs:trash', async (_e, paths: string[], opts?: { permanent?: boolean }) => {
     const { shell } = await import('electron')
-    const results: { path: string; ok: boolean; error?: string }[] = []
+    const permanent = opts?.permanent === true
+    const results: { path: string; ok: boolean; locked?: boolean; error?: string }[] = []
+    // Backoff, not a flat sleep: a Dropbox upload can hold a folder for several
+    // seconds, and three tries at 300ms only ever caught the luckiest cases.
+    const TRASH_BACKOFF_MS = [250, 500, 1000, 2000, 3000, 3000]
 
     // Stop watcher temporarily to avoid file locks on Windows
     if (watcher) {
@@ -567,22 +586,23 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
       }
 
       // Method 1: shell.trashItem (moves to Recycle Bin)
-      for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+      let locked = false
+      for (let attempt = 0; attempt < TRASH_BACKOFF_MS.length && !ok; attempt++) {
         try {
           await shell.trashItem(p)
           ok = true
         } catch (err: any) {
           lastError = err.message || String(err)
           console.error(`[DELETE] trashItem attempt ${attempt + 1} failed for "${p}":`, lastError)
-          if (attempt < 2) {
-            await new Promise(r => setTimeout(r, 300 * (attempt + 1)))
+          if (attempt < TRASH_BACKOFF_MS.length - 1) {
+            await new Promise(r => setTimeout(r, TRASH_BACKOFF_MS[attempt]))
           }
         }
       }
 
-      // Method 2: fallback to fs.rm with retries (permanent delete)
-      if (!ok) {
-        console.log(`[DELETE] Falling back to fs.rm for "${p}"`)
+      // Method 2: permanent delete — ONLY when the user has been asked and said so.
+      if (!ok && permanent) {
+        console.log(`[DELETE] Permanent delete requested for "${p}"`)
         for (let attempt = 0; attempt < 3 && !ok; attempt++) {
           try {
             if (attempt > 0) await new Promise(r => setTimeout(r, 500 * attempt))
@@ -591,13 +611,28 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
             ok = true
             lastError = ''
           } catch (err: any) {
-            lastError = `trashItem failed, rm also failed: ${err.message || String(err)}`
-            console.error(`[DELETE] fs.rm attempt ${attempt + 1} failed for "${p}":`, lastError)
+            console.error(`[DELETE] fs.rm attempt ${attempt + 1} failed for "${p}":`, err.message || String(err))
+            // Say what actually happened. `rm` works depth-first, so a failure
+            // here usually means the contents ARE gone and only the directory
+            // survived — reporting a bare "failed" would leave the user believing
+            // their files are still there.
+            let partial = ''
+            try {
+              const survivors = await readdir(p)
+              partial = survivors.length === 0
+                ? ' The contents were deleted; only the empty folder is left.'
+                : ` ${survivors.length} item(s) could not be deleted.`
+            } catch { /* path is gone or unreadable — leave it unqualified */ }
+            lastError = `Could not delete "${basename(p)}".${partial} Something is still using it.`
           }
         }
+      } else if (!ok) {
+        locked = true
+        lastError = `"${basename(p)}" could not be moved to the Recycle Bin — something is still using it. `
+          + 'This is usually Dropbox finishing a sync, or a file still open in another app.'
       }
 
-      results.push({ path: p, ok, error: ok ? undefined : lastError })
+      results.push({ path: p, ok, locked: ok ? undefined : locked || undefined, error: ok ? undefined : lastError })
     }
 
     console.log(`[DELETE] Results:`, results.map(r => `${basename(r.path)}: ${r.ok ? 'OK' : r.error}`).join(', '))

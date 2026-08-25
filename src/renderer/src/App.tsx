@@ -5,6 +5,7 @@ import { useAppStore } from './stores/app-store'
 import { useDialogStore } from './stores/dialog-store'
 import { Loader2 } from 'lucide-react'
 import type { PresscalCustomer } from './lib/ipc'
+import { deleteFiles } from './lib/delete-files'
 
 interface DeepLinkProgress {
   step: string
@@ -226,20 +227,11 @@ export default function App() {
           : selectedFile ? [selectedFile] : []
         if (filesToDelete.length === 0) return
         e.preventDefault()
-        const names = filesToDelete.length === 1
-          ? `"${filesToDelete[0].name}"`
-          : `${filesToDelete.length} files`
-        useDialogStore.getState().showConfirm(`Delete ${names}?`).then((ok) => {
-          if (!ok) return
-          window.api.fs.trash(filesToDelete.map(f => f.path)).then((results: any[]) => {
-            const failed = results.filter((r: any) => !r.ok)
-            if (failed.length > 0) {
-              useDialogStore.getState().showAlert(`Failed to delete ${failed.length} file(s):\n${failed.map((f: any) => f.error).join('\n')}`)
-            }
-            // Small delay before refresh — let filesystem settle (Dropbox, indexer, etc.)
-            clearSelection()
-            setTimeout(() => refreshDirectory(), 200)
-          })
+        const { showConfirm, showAlert } = useDialogStore.getState()
+        deleteFiles(filesToDelete, { showConfirm, showAlert }).then(() => {
+          // Small delay before refresh — let filesystem settle (Dropbox, indexer, etc.)
+          clearSelection()
+          setTimeout(() => refreshDirectory(), 200)
         })
       }
     }

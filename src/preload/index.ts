@@ -39,7 +39,9 @@ const api = {
     search: (rootPath: string, query: string, maxResults?: number) => ipcRenderer.invoke('fs:search', rootPath, query, maxResults),
     move: (sourcePaths: string[], targetDir: string) => ipcRenderer.invoke('fs:move', sourcePaths, targetDir),
     copy: (sourcePaths: string[], targetDir: string) => ipcRenderer.invoke('fs:copy', sourcePaths, targetDir),
-    trash: (paths: string[]) => ipcRenderer.invoke('fs:trash', paths),
+    // opts.permanent skips the Recycle Bin. Only ever set it after asking the
+    // user — it cannot be undone. See fs:trash in main/file-system.ts.
+    trash: (paths: string[], opts?: { permanent?: boolean }) => ipcRenderer.invoke('fs:trash', paths, opts),
     rename: (oldPath: string, newName: string) => ipcRenderer.invoke('fs:rename', oldPath, newName) as Promise<{ ok: boolean; newPath?: string; error?: string }>,
     createDirectory: (dirPath: string) => ipcRenderer.invoke('fs:createDirectory', dirPath),
     getNotes: (filePath: string) => ipcRenderer.invoke('notes:get', filePath) as Promise<string>,

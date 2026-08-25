@@ -65,6 +65,7 @@ import { useAppStore } from '@/stores/app-store'
 import { useShallow } from 'zustand/react/shallow'
 import { ContextMenu } from './ContextMenu'
 import { dragState } from '@/lib/drag-state'
+import { deleteFiles } from '../../lib/delete-files'
 
 // Adobe-style badge icon: rounded square with 2-letter abbreviation
 function AdobeBadge({ label, bg, size }: { label: string; bg: string; size: number }) {
@@ -591,19 +592,9 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
         const filesToDelete = selectedFiles.length > 1 && selectedFiles.some(f => f.path === file.path)
           ? selectedFiles
           : [file]
-        const names = filesToDelete.length === 1
-          ? `"${filesToDelete[0].name}"`
-          : `${filesToDelete.length} files`
-        showConfirm(`Delete ${names}?`).then((ok) => {
-          if (!ok) return
-          window.api.fs.trash(filesToDelete.map(f => f.path)).then((results) => {
-            const failed = results.filter((r: any) => !r.ok)
-            if (failed.length > 0) {
-              showAlert(`Failed to delete ${failed.length} file${failed.length === 1 ? '' : 's'}:\n${failed.map((f: any) => f.error).join('\n')}`)
-            }
-            clearSelection()
-            setTimeout(() => refreshDirectory(), 200)
-          })
+        deleteFiles(filesToDelete, { showConfirm, showAlert }).then(() => {
+          clearSelection()
+          setTimeout(() => refreshDirectory(), 200)
         })
         break
       }
