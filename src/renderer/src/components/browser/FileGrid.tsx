@@ -438,6 +438,21 @@ export function FileGrid({ files, viewMode, selectedFile, onSelect, onOpen }: {
             `Possible cause: open in another app or locked by Dropbox/antivirus.`
           )
         }
+
+        /* Moved, but the old folder would not go away.
+           This used to be reported as a failed move, which is the opposite of
+           what happened and sent George hunting for files that were already at
+           the destination. The distinction matters: one means do it again, the
+           other means tidy up when you get a chance. */
+        const leftBehind = (results || []).filter((r: any) => r.ok && r.sourceLeft)
+        if (leftBehind.length > 0) {
+          const list = leftBehind.map((f: any) => `• ${f.source}`).join('\n')
+          showAlert(
+            `Moved — but the original folder could not be deleted:\n\n${list}\n\n`
+            + `The files are in the new place. The old folder is still held open by `
+            + `Dropbox or another program; delete it yourself once it lets go.`
+          )
+        }
       } catch (err) {
         showAlert(`Drop failed: ${(err as any)?.message || err}`)
       }

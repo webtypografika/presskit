@@ -432,11 +432,43 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('fs:move', async (_e, sourcePaths: string[], targetDir: string) => {
     const { rename, copyFile, mkdir, readdir, stat: fsStat } = await import('fs/promises')
     const { join, basename } = await import('path')
-    const results: { source: string; dest: string; ok: boolean; error?: string }[] = []
+    const results: { source: string; dest: string; ok: boolean; sourceLeft?: boolean; error?: string }[] = []
+
+    /* Let go of the folder before touching it.
+       Our own watcher holds handles on the directory being displayed, which
+       on Windows is enough to make removing it fail — so the app was
+       competing with itself for the lock it then blamed on "another app".
+       The delete path already did this; the move path never did. */
+    if (watcher) {
+      try { await watcher.close() } catch {}
+      watcher = null
+    }
+    await new Promise(r => setTimeout(r, 100))
+
+    /* Dropbox can hold a folder for several seconds while it uploads, so the
+       source is removed with the same patience as the trash path rather than
+       once, hopefully. */
+    const REMOVE_BACKOFF_MS = [250, 500, 1000, 2000, 3000]
+    const removeWithRetry = async (target: string, recursive: boolean) => {
+      const { rm } = await import('fs/promises')
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await rm(target, { recursive, force: true })
+          return true
+        } catch (err) {
+          if (attempt >= REMOVE_BACKOFF_MS.length) {
+            console.warn('[fs:move] could not remove source after copy:', target, err)
+            return false
+          }
+          await new Promise(r => setTimeout(r, REMOVE_BACKOFF_MS[attempt]))
+        }
+      }
+    }
 
     for (const src of sourcePaths) {
       const name = basename(src)
       const dest = join(targetDir, name)
+      let movedButSourceLeft = false
       try {
         // Avoid moving to same location
         if (src === dest) continue
@@ -459,15 +491,17 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
               }
             }
             await copyDir(src, dest)
-            const { rm } = await import('fs/promises')
-            await rm(src, { recursive: true })
+            /* Everything is at the destination by now. If the old folder
+               refuses to go, that is worth telling the operator about — but it
+               is NOT a failed move, and saying so sent George looking for files
+               that were already where he had put them. */
+            movedButSourceLeft = !(await removeWithRetry(src, true))
           } else {
             await copyFile(src, dest)
-            const { unlink } = await import('fs/promises')
-            await unlink(src)
+            movedButSourceLeft = !(await removeWithRetry(src, false))
           }
         }
-        results.push({ source: src, dest, ok: true })
+        results.push({ source: src, dest, ok: true, sourceLeft: movedButSourceLeft || undefined })
 
         // Move note to new location
         try {
