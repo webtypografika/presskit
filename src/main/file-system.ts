@@ -693,16 +693,43 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
 
     watcher.on('error', () => {}) // silently ignore permission errors
 
+    /*
+     * Tell the window at once, then hold the line for a moment.
+     *
+     * This used to wait 500ms before saying anything, and the window waited
+     * another 800 on top — so saving a file took the better part of two
+     * seconds to appear, which reads as "nothing happened, I will press
+     * refresh". Explorer answers in about fifty milliseconds and that is the
+     * bar we are being measured against.
+     *
+     * The delay was not pointless: a Dropbox sync or a bulk operation fires
+     * hundreds of events and re-rendering on each one is its own kind of
+     * broken. But a plain debounce pays that cost on every change, including
+     * the single save that is all most people ever do.
+     *
+     * So the first event goes straight through and anything arriving just
+     * after it is collapsed into one follow-up. Immediate when it is quiet,
+     * still calm under a storm.
+     */
+    const COALESCE_MS = 400
+    let lastEmit = 0
+
+    const emit = () => {
+      lastEmit = Date.now()
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send('fs:changed', dirPath)
+      }
+    }
+
     const notify = () => {
-      if (debounceTimer) clearTimeout(debounceTimer)
+      const since = Date.now() - lastEmit
+      if (since >= COALESCE_MS) { emit(); return }
+      // Something is already queued; it will cover this change too.
+      if (debounceTimer) return
       debounceTimer = setTimeout(() => {
-        const wins = BrowserWindow.getAllWindows()
-        for (const win of wins) {
-          if (!win.isDestroyed()) {
-            win.webContents.send('fs:changed', dirPath)
-          }
-        }
-      }, 500)
+        debounceTimer = null
+        emit()
+      }, COALESCE_MS - since)
     }
 
     watcher.on('add', notify)

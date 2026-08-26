@@ -301,15 +301,18 @@ export default function App() {
     return cleanup
   }, [])
 
-  // File system watcher — auto refresh when files change (debounced to avoid
-  // re-render storms during Dropbox sync or bulk file operations)
+  // File system watcher — auto refresh when files change.
+  // The main process already collapses bursts and lets the first change
+  // through at once, so this only needs to be long enough to batch the two
+  // or three events one save produces. It was 800ms, which sat on top of a
+  // 500ms wait upstream and made a save take nearly two seconds to show.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
     const cleanup = window.api.fs.onChanged((dirPath: string) => {
       const { currentPath } = useAppStore.getState()
       if (currentPath !== dirPath) return
       clearTimeout(timer)
-      timer = setTimeout(() => useAppStore.getState().refreshDirectory(), 800)
+      timer = setTimeout(() => useAppStore.getState().refreshDirectory(), 120)
     })
     return () => { clearTimeout(timer); cleanup() }
   }, [])
