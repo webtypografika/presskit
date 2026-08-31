@@ -93,7 +93,12 @@
         "nsis"
       ],
       "icon": "resources/icon.ico",
-      "artifactName": "PressKit-Setup-${version}.${ext}"
+      "artifactName": "PressKit-Setup-${version}.${ext}",
+      "certificateSubjectName": "GEORGIOS GEORGIADIS",
+      "signingHashAlgorithms": [
+        "sha256"
+      ],
+      "rfc3161TimeStampServer": "http://time.certum.pl"
     },
     "nsis": {
       "oneClick": false,
