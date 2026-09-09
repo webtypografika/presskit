@@ -277,7 +277,10 @@ function LockScreen({
   onRefresh: () => void
   refreshing: boolean
 }) {
-  const [showAdvanced, setShowAdvanced] = useState(false)
+  // Open on the picker when there is no server yet: without one this screen
+  // has no action on it at all. "Advanced" is the right place for it once a
+  // server is known — it is the wrong place for the only way to get started.
+  const [showAdvanced, setShowAdvanced] = useState(!advanced?.base.trim())
   const otherProfiles = profiles.filter(p => p.id !== activeProfileId)
 
   const switchTo = async (p: ProfileMeta): Promise<void> => {
@@ -460,20 +463,21 @@ function pickLockProps(
           </>
         ) : (
           <>
-            Open PressCal in your browser and go to{' '}
-            <strong>Settings → PressKit → Connect</strong>.
-            <br />
-            PressKit will connect automatically.
+            Choose the PressCal address you sign in to, then sign in below.
             <br />
             <br />
             <span style={{ fontSize: 12, color: 'var(--th-text-muted, #64748b)' }}>
+              It is the address in your browser when you use PressCal. Already
+              signed in there? <strong>Settings → PressKit → Connect</strong> links
+              PressKit on its own.
+              <br />
               No account yet? Sign up at presscal.com — new users get a <strong>15-day trial</strong>.
             </span>
           </>
         ),
         primary: hasServer
           ? { label: 'Sign in with Google', onClick: () => void openGoogleSignIn(signIn.base), icon: <GoogleIcon size={16} /> }
-          : { label: 'Open presscal.com', onClick: openWebsite, icon: <Globe size={16} /> },
+          : { label: 'Sign up at presscal.com', onClick: openWebsite, icon: <Globe size={16} /> },
         advanced: signIn,
         status,
         onRefresh: refresh,
