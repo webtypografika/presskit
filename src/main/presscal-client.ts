@@ -1,3 +1,4 @@
+import { hostname } from 'os'
 import { IpcMain, app } from 'electron'
 import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
@@ -21,6 +22,17 @@ function getConfig(): PresscalConfig | null {
   return { url: url.replace(/\/$/, ''), apiKey }
 }
 
+/**
+ * The machine name PressCal shows in Settings -> Connected devices.
+ *
+ * Without it every row read as the email of whoever paired it, so two PCs
+ * belonging to the same person were indistinguishable — and the whole point
+ * of the list is telling them apart.
+ */
+const deviceName = (() => {
+  try { return hostname().slice(0, 80) } catch { return '' }
+})()
+
 async function presscalFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const config = getConfig()
   if (!config) throw new Error('PressCal not configured')
@@ -30,6 +42,7 @@ async function presscalFetch<T>(endpoint: string, options?: RequestInit): Promis
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${config.apiKey}`,
+      ...(deviceName ? { 'x-presskit-device': deviceName } : {}),
       ...(options?.headers || {})
     }
   })

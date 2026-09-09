@@ -1,12 +1,13 @@
 import { useDialogStore } from '@/stores/dialog-store'
-import { AlertTriangle, HelpCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, HelpCircle } from 'lucide-react'
 
 export function AppDialog() {
-  const { open, title, message, type, choices, close } = useDialogStore()
+  const { open, title, message, type, tone, choices, close } = useDialogStore()
 
   if (!open) return null
 
   const isChoice = type === 'choice'
+  const isGood = type === 'alert' && tone === 'success'
   const isConfirm = type === 'confirm'
 
   return (
@@ -26,12 +27,16 @@ export function AppDialog() {
             className="flex items-center justify-center rounded-lg"
             style={{
               width: 36, height: 36,
-              background: isChoice ? 'rgba(110,200,200,0.12)' : 'rgba(239,68,68,0.12)',
+              background: isChoice
+                ? 'rgba(110,200,200,0.12)'
+                : isGood ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
             }}
           >
             {isChoice
               ? <HelpCircle size={20} style={{ color: 'var(--th-accent)' }} />
-              : <AlertTriangle size={20} style={{ color: '#ef4444' }} />
+              : isGood
+                ? <CheckCircle2 size={20} style={{ color: '#22c55e' }} />
+                : <AlertTriangle size={20} style={{ color: '#ef4444' }} />
             }
           </div>
           {title && (

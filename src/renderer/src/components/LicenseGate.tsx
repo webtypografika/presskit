@@ -266,7 +266,7 @@ function LockScreen({
   icon: ReactNode
   title: string
   message: ReactNode
-  primary: { label: string; onClick: () => void; icon?: ReactNode }
+  primary: { label: string; onClick: () => void; icon?: ReactNode; disabled?: boolean }
   // If provided, renders a discreet "Advanced" link that expands into the
   // server picker + "Manual setup with API key". Normal users never need it —
   // the primary path is the single sign-in / browser-first flow above.
@@ -296,7 +296,11 @@ function LockScreen({
         <div style={title}>{t}</div>
         <div style={body}>{message}</div>
         <div>
-          <button style={primaryBtn} onClick={primary.onClick}>
+          <button
+            style={primary.disabled ? { ...primaryBtn, opacity: 0.4, cursor: 'default' } : primaryBtn}
+            onClick={primary.onClick}
+            disabled={primary.disabled}
+          >
             {primary.icon}
             {primary.label}
           </button>
@@ -477,7 +481,9 @@ function pickLockProps(
         ),
         primary: hasServer
           ? { label: 'Sign in with Google', onClick: () => void openGoogleSignIn(signIn.base), icon: <GoogleIcon size={16} /> }
-          : { label: 'Sign up at presscal.com', onClick: openWebsite, icon: <Globe size={16} /> },
+          // Nothing to sign into until a server is chosen. Offering a sign-up here
+          // sent the one person who already has an account to the marketing site.
+          : { label: 'Choose your server below', onClick: () => {}, disabled: true, icon: <KeyRound size={16} /> },
         advanced: signIn,
         status,
         onRefresh: refresh,

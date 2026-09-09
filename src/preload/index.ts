@@ -223,7 +223,7 @@ const api = {
       ipcRenderer.on('deeplink-progress', (_e, data) => callback(data))
       return () => ipcRenderer.removeAllListeners('deeplink-progress')
     },
-    onShowAlert: (callback: (data: { title: string; message: string }) => void) => {
+    onShowAlert: (callback: (data: { title: string; message: string; tone?: 'error' | 'success' }) => void) => {
       ipcRenderer.on('show-alert', (_e, data) => callback(data))
       return () => ipcRenderer.removeAllListeners('show-alert')
     },

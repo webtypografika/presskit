@@ -1169,7 +1169,11 @@ async function handleProtocolUrl(url: string): Promise<void> {
               ? `Connected! Your ${status.daysLeft}-day trial has started.`
               : 'Connected to PressCal!')
           : `Connected, but the license is not active.\n(${status.state})`
-        mainWindow?.webContents.send('show-alert', { title: 'PressCal', message: successMsg })
+        mainWindow?.webContents.send('show-alert', {
+          title: 'PressCal',
+          message: successMsg,
+          tone: status.active ? 'success' : 'error',
+        })
       }
     }
   } catch (e) {

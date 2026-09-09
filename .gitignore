@@ -20,3 +20,6 @@ asar-build2/
 Usersinfodropboxpresscal-filehelper.asar-build/
 src/renderer/public/tesseract/
 resources/tessdata/
+
+# Build output moved aside to escape a Dropbox lock (see build protocol)
+out-old-*/
