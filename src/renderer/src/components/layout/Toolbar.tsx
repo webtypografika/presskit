@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
+import { FileTypeIcon } from '../browser/FileTypeIcon'
 import { useAppStore } from '@/stores/app-store'
 import { useShallow } from 'zustand/react/shallow'
 import type { PresscalCustomer } from '@/lib/ipc'
@@ -693,6 +694,20 @@ function formatSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+/** A search hit, in the shape the file list speaks. */
+const mapHit = (item: any) => ({
+  name: item.name,
+  path: item.path,
+  isDirectory: item.is_dir === 1,
+  size: item.size || 0,
+  modified: item.modified ? new Date(item.modified).toISOString() : '',
+  extension: item.ext || '',
+  // The engine says what kind of file this is now, so the dropdown draws the
+  // same icon as the file list instead of guessing with emoji.
+  type: item.type || (item.is_dir === 1 ? 'folder' : 'unknown'),
+  _dir: item.dir,
+})
+
 function SearchBox() {
   const selectFile = useAppStore(s => s.selectFile)
   const navigateTo = useAppStore(s => s.navigateTo)
@@ -700,6 +715,8 @@ function SearchBox() {
   const [query, setQuery] = useState('')
   const queryRef = useRef('')
   const [results, setResults] = useState<any[]>([])
+  // Hits from outside the current folder — shown apart, under their own heading.
+  const [elsewhere, setElsewhere] = useState<any[]>([])
   const [open, setOpen] = useState(false)
   const [searching, setSearching] = useState(false)
   const [searchHistory, setSearchHistory] = useState<{ query: string; time: string }[]>([])
@@ -715,27 +732,21 @@ function SearchBox() {
   const doSearch = useCallback(async (q: string) => {
     if (!q.trim()) {
       setResults([])
+      setElsewhere([])
       return
     }
     setSearching(true)
     try {
       const trimmed = q.trim()
 
-      // 1. Try indexed search first (fast)
-      const indexResults = await window.api.search.query(trimmed, 50)
-      const mapped = (indexResults || []).map((item: any) => ({
-        name: item.name,
-        path: item.path,
-        isDirectory: item.is_dir === 1,
-        size: item.size || 0,
-        modified: item.modified ? new Date(item.modified).toISOString() : '',
-        extension: item.ext || '',
-        type: item.is_dir === 1 ? 'folder' : 'unknown',
-        _dir: item.dir,
-      }))
+      // 1. This folder — the one you are looking at, and the one you meant. The
+      //    whole disk used to answer, so a search inside a customer's folder came
+      //    back with every other customer (George, 29/09).
+      const indexResults = await window.api.search.query(trimmed, 50, currentPath || undefined)
+      const mapped = (indexResults || []).map(mapHit)
 
-      // 2. If indexed search returned few results, also do live filesystem search
-      //    from the current directory tree as fallback
+      // 2. Thin result? The live walk of this same folder catches what the index
+      //    has not seen yet — a file saved a minute ago.
       if (mapped.length < 10 && currentPath) {
         try {
           const liveResults = await window.api.fs.search(currentPath, trimmed, 50)
@@ -749,7 +760,19 @@ function SearchBox() {
         } catch {}
       }
 
+      // 3. The rest of the disk, in its own group and never mixed in. Asked only
+      //    when this folder had little to say.
+      let outside: any[] = []
+      if (mapped.length < 10) {
+        try {
+          const here = new Set(mapped.map((m: any) => m.path))
+          outside = ((await window.api.search.query(trimmed, 50)) || [])
+            .map(mapHit).filter((f: any) => !here.has(f.path))
+        } catch {}
+      }
+
       setResults(mapped)
+      setElsewhere(outside)
       setOpen(true)
       setShowHistory(false)
       // Save to search history
@@ -757,6 +780,7 @@ function SearchBox() {
     } catch (e) {
       console.error('[SEARCH] error:', e)
       setResults([])
+      setElsewhere([])
     } finally {
       setSearching(false)
     }
@@ -769,6 +793,7 @@ function SearchBox() {
       setShowHistory(searchHistory.length > 0)
       setOpen(false)
       setResults([])
+      setElsewhere([])
       if (timerRef.current) clearTimeout(timerRef.current)
       return
     }
@@ -852,7 +877,7 @@ function SearchBox() {
           />
         </div>
       </div>
-      {open && results.length > 0 && rect && createPortal(
+      {open && (results.length > 0 || elsewhere.length > 0) && rect && createPortal(
         <div ref={dropdownRef} style={{
           position: 'fixed',
           top: rect.bottom + 4,
@@ -864,6 +889,11 @@ function SearchBox() {
         }}>
           {searching && (
             <div style={{ padding: '8px 14px', fontSize: 12, color: 'var(--th-text-muted)' }}>Searching...</div>
+          )}
+          {results.length === 0 && elsewhere.length > 0 && (
+            <div style={{ padding: '8px 14px', fontSize: 11, color: 'var(--th-text-muted)' }}>
+              Τίποτα σε αυτόν τον φάκελο
+            </div>
           )}
           {results.map(f => {
             // Short parent path for context
@@ -880,8 +910,8 @@ function SearchBox() {
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 14, flexShrink: 0 }}>
-                    {f.isDirectory ? '📁' : f.extension === '.pdf' ? '📕' : f.extension?.match(/\.(jpg|png|tif|psd|ai|svg)/) ? '🖼️' : '📄'}
+                  <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                    <FileTypeIcon type={f.type} size={16} />
                   </span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, color: 'var(--th-text-primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -900,8 +930,45 @@ function SearchBox() {
               </div>
             )
           })}
+          {elsewhere.length > 0 && (
+            <>
+              <div style={{
+                padding: '6px 14px', fontSize: 11, fontWeight: 600, color: 'var(--th-text-muted)',
+                background: 'rgba(255,255,255,0.03)', borderTop: '1px solid var(--th-border)',
+                borderBottom: '1px solid var(--th-border)',
+              }}>
+                Αλλού στον δίσκο
+              </div>
+              {elsewhere.map(f => {
+                const parentPath = (f._dir || f.path.replace(/[/\\][^/\\]+$/, '')).replace(/^C:\\Users\\[^\\]+\\/, '~\\')
+                return (
+                  <div
+                    key={f.path}
+                    onMouseDown={() => handleSelect(f)}
+                    style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.03)', opacity: 0.75 }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                        <FileTypeIcon type={f.type} size={16} />
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: 'var(--th-text-primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {f.name}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--th-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {parentPath}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </>
+          )}
           <div style={{ padding: '6px 14px', fontSize: 11, color: 'var(--th-text-muted)', borderTop: '1px solid var(--th-border)', textAlign: 'right' }}>
-            {results.length} result{results.length === 1 ? '' : 's'}
+            {results.length} σε αυτόν τον φάκελο{elsewhere.length > 0 ? ` · ${elsewhere.length} αλλού` : ''}
           </div>
         </div>,
         document.body

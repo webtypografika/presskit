@@ -90,7 +90,10 @@ const EXTENSION_MAP: Record<string, FileType> = {
   '.7z': 'archive'
 }
 
-function getFileType(ext: string): FileType {
+/** The one place an extension becomes a file type. The search results used to
+ *  answer 'unknown' for everything and the dropdown drew emoji instead of the
+ *  app's own icons — one map, read by both. */
+export function getFileType(ext: string): FileType {
   return EXTENSION_MAP[ext.toLowerCase()] || 'unknown'
 }
 

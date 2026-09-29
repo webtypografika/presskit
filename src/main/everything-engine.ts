@@ -213,7 +213,7 @@ export interface EverythingResult {
  * Uses -export-csv with -utf8-bom for correct Greek/Unicode output
  * (es.exe stdout uses OEM codepage which garbles non-ASCII characters).
  */
-export async function search(query: string, limit = 50): Promise<EverythingResult[]> {
+export async function search(query: string, limit = 50, scopePath?: string): Promise<EverythingResult[]> {
   if (!available) return []
 
   const q = query.trim()
@@ -231,8 +231,11 @@ export async function search(query: string, limit = 50): Promise<EverythingResul
     '-sort-descending',
     '-utf8-bom',
     '-export-csv', tmpFile,
-    q
   ]
+  // The folder you are standing in is the search you meant. es.exe -path is
+  // recursive, so subfolders still count — only the rest of the disk drops out.
+  if (scopePath) args.push('-path', scopePath)
+  args.push(q)
 
   try {
     await execFileP(esExe, args, {

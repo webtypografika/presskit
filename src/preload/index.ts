@@ -56,7 +56,7 @@ const api = {
 
   // Indexed search
   search: {
-    query: (q: string, limit?: number) => ipcRenderer.invoke('search:query', q, limit),
+    query: (q: string, limit?: number, scopePath?: string) => ipcRenderer.invoke('search:query', q, limit, scopePath),
     buildIndex: () => ipcRenderer.invoke('search:buildIndex'),
     stats: () => ipcRenderer.invoke('search:stats'),
     addPath: (path: string) => ipcRenderer.invoke('search:addPath', path)

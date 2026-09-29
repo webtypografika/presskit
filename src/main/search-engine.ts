@@ -4,7 +4,16 @@ import { readdir, stat } from 'fs/promises'
 import { join, extname } from 'path'
 import { existsSync } from 'fs'
 import * as everything from './everything-engine'
+import { getFileType } from './file-system'
 import { store } from './settings'
+
+/** A search hit knows its file type, like every other file the app hands out. */
+function withType(rows: any[]): any[] {
+  return (rows || []).map(r => ({
+    ...r,
+    type: r.is_dir === 1 ? 'folder' : getFileType(r.ext || ''),
+  }))
+}
 
 let db: Database.Database | null = null
 let indexing = false
@@ -269,10 +278,16 @@ async function buildIndex(): Promise<{ count: number; ms: number }> {
 }
 
 
-function search(query: string, limit = 50): any[] {
+function search(query: string, limit = 50, scopePath?: string): any[] {
   const d = getDb()
   const q = query.trim().toLowerCase()
   if (!q) return []
+  // Same scope rule as Everything: this folder and everything under it.
+  // Prefix match, not LIKE: '_' and '%' are LIKE wildcards and both turn up in
+  // real folder names, which would quietly widen the scope you asked for.
+  const scope = scopePath ? scopePath.toLowerCase().replace(/[/\\]+$/, '') + '\\' : ''
+  const scopeSql = scope ? ' AND substr(path_lower, 1, ?) = ?' : ''
+  const scopeArgs = scope ? [scope.length, scope] : []
 
   const words = q.split(/\s+/).filter(Boolean)
   if (words.length === 0) return []
@@ -289,11 +304,11 @@ function search(query: string, limit = 50): any[] {
   // --- Primary: LIKE on name_lower (reliable, handles Greek/Unicode) ---
   try {
     const conditions = words.map(() => 'name_lower LIKE ?').join(' AND ')
-    const params = words.map(w => `%${w}%`)
+    const params = [...words.map(w => `%${w}%`), ...scopeArgs]
     add(d.prepare(`
       SELECT path, name, dir, ext, size, modified, is_dir
       FROM files
-      WHERE ${conditions}
+      WHERE ${conditions}${scopeSql}
       ORDER BY
         CASE
           WHEN name_lower = ? THEN 0
@@ -316,10 +331,10 @@ function search(query: string, limit = 50): any[] {
         SELECT f.path, f.name, f.dir, f.ext, f.size, f.modified, f.is_dir
         FROM files_fts ft
         JOIN files f ON f.rowid = ft.rowid
-        WHERE files_fts MATCH ?
+        WHERE files_fts MATCH ?${scopeSql ? scopeSql.replace(/path_lower/g, 'f.path_lower') : ''}
         ORDER BY rank
         LIMIT ?
-      `).all(ftsQuery, limit - results.length) as any[])
+      `).all(ftsQuery, ...scopeArgs, limit - results.length) as any[])
     } catch {}
   }
 
@@ -363,23 +378,23 @@ export function registerSearchHandlers(ipcMain: IpcMain): void {
     return buildIndex()
   })
 
-  ipcMain.handle('search:query', async (_e, query: string, limit?: number) => {
+  ipcMain.handle('search:query', async (_e, query: string, limit?: number, scopePath?: string) => {
     const n = limit || 50
 
     // Primary: Everything (instant, always fresh, searches full paths)
     if (everything.isAvailable()) {
-      const results = await everything.search(query, n)
-      console.log(`[SEARCH] query="${query}" → ${results.length} results (Everything)`)
-      return results
+      const results = await everything.search(query, n, scopePath)
+      console.log(`[SEARCH] query="${query}"${scopePath ? ' in ' + scopePath : ''} → ${results.length} results (Everything)`)
+      return withType(results)
     }
 
     // Fallback: SQLite index
     if (!indexed && !indexing) {
       buildIndex().catch(() => {})
     }
-    const results = search(query, n)
-    console.log(`[SEARCH] query="${query}" → ${results.length} results (SQLite, indexed=${indexed})`)
-    return results
+    const results = search(query, n, scopePath)
+    console.log(`[SEARCH] query="${query}"${scopePath ? ' in ' + scopePath : ''} → ${results.length} results (SQLite, indexed=${indexed})`)
+    return withType(results)
   })
 
   ipcMain.handle('search:stats', async () => {
