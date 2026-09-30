@@ -694,6 +694,9 @@ function formatSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+/** The folder a hit sits in, for the second line of the row. */
+const dirOf = (p: string) => p.replace(/[/\\][^/\\]+$/, '')
+
 /** A search hit, in the shape the file list speaks. */
 const mapHit = (item: any) => ({
   name: item.name,
@@ -712,11 +715,10 @@ function SearchBox() {
   const selectFile = useAppStore(s => s.selectFile)
   const navigateTo = useAppStore(s => s.navigateTo)
   const currentPath = useAppStore(s => s.currentPath)
+  const source = useAppStore(s => s.source)
   const [query, setQuery] = useState('')
   const queryRef = useRef('')
   const [results, setResults] = useState<any[]>([])
-  // Hits from outside the current folder — shown apart, under their own heading.
-  const [elsewhere, setElsewhere] = useState<any[]>([])
   const [open, setOpen] = useState(false)
   const [searching, setSearching] = useState(false)
   const [searchHistory, setSearchHistory] = useState<{ query: string; time: string }[]>([])
@@ -732,12 +734,25 @@ function SearchBox() {
   const doSearch = useCallback(async (q: string) => {
     if (!q.trim()) {
       setResults([])
-      setElsewhere([])
       return
     }
     setSearching(true)
     try {
       const trimmed = q.trim()
+
+      // A Dropbox tab is not the local disk. Its paths are Dropbox paths, which
+      // the local index and Everything cannot see at all — this box was searching
+      // C:\ while you stood in /typografika/graphics/…, which is why hits kept
+      // coming from outside the folder (George, 30/09). Dropbox searches its own
+      // side, scoped to the same folder.
+      if (source === 'dropbox') {
+        const hits = await window.api.dropbox.search(trimmed, currentPath || undefined)
+        setResults((hits || []).map((f: any) => ({ ...f, _dir: dirOf(f.path) })))
+        setOpen(true)
+        setShowHistory(false)
+        window.api.settings.addSearchHistory(trimmed).then((h: any) => setSearchHistory(h || [])).catch(() => {})
+        return
+      }
 
       // 1. This folder — the one you are looking at, and the one you meant. The
       //    whole disk used to answer, so a search inside a customer's folder came
@@ -760,19 +775,13 @@ function SearchBox() {
         } catch {}
       }
 
-      // 3. The rest of the disk, in its own group and never mixed in. Asked only
-      //    when this folder had little to say.
-      let outside: any[] = []
-      if (mapped.length < 10) {
-        try {
-          const here = new Set(mapped.map((m: any) => m.path))
-          outside = ((await window.api.search.query(trimmed, 50)) || [])
-            .map(mapHit).filter((f: any) => !here.has(f.path))
-        } catch {}
-      }
+      // And that is the whole search. Nothing outside this folder is looked at,
+      // ever: to search wider you go wider — stand on dropbox/typografika and the
+      // search covers typografika (George, 30/09). An earlier version showed the
+      // rest of the disk in a second group, which is the same leak with a heading
+      // on it.
 
       setResults(mapped)
-      setElsewhere(outside)
       setOpen(true)
       setShowHistory(false)
       // Save to search history
@@ -780,11 +789,10 @@ function SearchBox() {
     } catch (e) {
       console.error('[SEARCH] error:', e)
       setResults([])
-      setElsewhere([])
     } finally {
       setSearching(false)
     }
-  }, [currentPath])
+  }, [currentPath, source])
 
   const handleChange = useCallback((val: string) => {
     setQuery(val)
@@ -793,7 +801,6 @@ function SearchBox() {
       setShowHistory(searchHistory.length > 0)
       setOpen(false)
       setResults([])
-      setElsewhere([])
       if (timerRef.current) clearTimeout(timerRef.current)
       return
     }
@@ -877,7 +884,7 @@ function SearchBox() {
           />
         </div>
       </div>
-      {open && (results.length > 0 || elsewhere.length > 0) && rect && createPortal(
+      {open && results.length > 0 && rect && createPortal(
         <div ref={dropdownRef} style={{
           position: 'fixed',
           top: rect.bottom + 4,
@@ -889,11 +896,6 @@ function SearchBox() {
         }}>
           {searching && (
             <div style={{ padding: '8px 14px', fontSize: 12, color: 'var(--th-text-muted)' }}>Searching...</div>
-          )}
-          {results.length === 0 && elsewhere.length > 0 && (
-            <div style={{ padding: '8px 14px', fontSize: 11, color: 'var(--th-text-muted)' }}>
-              Τίποτα σε αυτόν τον φάκελο
-            </div>
           )}
           {results.map(f => {
             // Short parent path for context
@@ -930,45 +932,8 @@ function SearchBox() {
               </div>
             )
           })}
-          {elsewhere.length > 0 && (
-            <>
-              <div style={{
-                padding: '6px 14px', fontSize: 11, fontWeight: 600, color: 'var(--th-text-muted)',
-                background: 'rgba(255,255,255,0.03)', borderTop: '1px solid var(--th-border)',
-                borderBottom: '1px solid var(--th-border)',
-              }}>
-                Αλλού στον δίσκο
-              </div>
-              {elsewhere.map(f => {
-                const parentPath = (f._dir || f.path.replace(/[/\\][^/\\]+$/, '')).replace(/^C:\\Users\\[^\\]+\\/, '~\\')
-                return (
-                  <div
-                    key={f.path}
-                    onMouseDown={() => handleSelect(f)}
-                    style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.03)', opacity: 0.75 }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
-                        <FileTypeIcon type={f.type} size={16} />
-                      </span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, color: 'var(--th-text-primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {f.name}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--th-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {parentPath}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </>
-          )}
           <div style={{ padding: '6px 14px', fontSize: 11, color: 'var(--th-text-muted)', borderTop: '1px solid var(--th-border)', textAlign: 'right' }}>
-            {results.length} σε αυτόν τον φάκελο{elsewhere.length > 0 ? ` · ${elsewhere.length} αλλού` : ''}
+            {results.length} σε αυτόν τον φάκελο
           </div>
         </div>,
         document.body

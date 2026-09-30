@@ -1,6 +1,7 @@
 import { IpcMain, BrowserWindow, shell } from 'electron'
 import { Dropbox, DropboxAuth } from 'dropbox'
 import Store from 'electron-store'
+import { getFileType } from './file-system'
 
 const store = new Store()
 
@@ -231,12 +232,18 @@ export function registerDropboxHandlers(ipcMain: IpcMain): void {
 
     return result.result.matches.map(match => {
       const meta = (match.metadata as any).metadata
+      const isDir = meta['.tag'] === 'folder'
+      // Same extension→type map the file list uses, so a Dropbox hit gets the
+      // app's own icon instead of a generic page.
+      const ext = isDir ? '' : (String(meta.name).match(/.[^.]+$/)?.[0] || '').toLowerCase()
       return {
         name: meta.name,
         path: meta.path_display || meta.path_lower,
-        isDirectory: meta['.tag'] === 'folder',
+        isDirectory: isDir,
         size: meta.size || 0,
-        modified: meta.server_modified || null
+        modified: meta.server_modified || null,
+        extension: ext,
+        type: isDir ? 'folder' : getFileType(ext)
       }
     })
   })
