@@ -220,16 +220,14 @@ export function registerFileSystemHandlers(ipcMain: IpcMain): void {
       } catch {}
     }
 
-    // Search current directory first
+    // rootPath and below. Nothing above it, ever.
+    //
+    // This used to climb to the PARENT folder whenever it found fewer than ten
+    // hits, which is how a search inside .../retail-9/Festas answered with three
+    // PDFs from .../retail-9/Alevrakis — a sibling folder, listed as if it were
+    // in this one (George, 30/09). Few results in a folder is an answer, not a
+    // reason to look somewhere else.
     await walk(rootPath, 0)
-
-    // If few results, also search parent directory
-    if (results.length < 10 && Date.now() < deadline) {
-      const parent = dirname(rootPath)
-      if (parent && parent !== rootPath && existsSync(parent)) {
-        await walk(parent, 0)
-      }
-    }
 
     // Sort: folders first, then by name
     results.sort((a, b) => {

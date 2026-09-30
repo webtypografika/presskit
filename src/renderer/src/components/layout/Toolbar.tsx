@@ -9,6 +9,8 @@ import {
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { FileTypeIcon } from '../browser/FileTypeIcon'
+import type { FileType } from '@/lib/file-types'
+import { fileTypeRank, typesInOrder, typeWordQuery, getFileTypeLabel } from '@/lib/file-types'
 import { useAppStore } from '@/stores/app-store'
 import { useShallow } from 'zustand/react/shallow'
 import type { PresscalCustomer } from '@/lib/ipc'
@@ -697,6 +699,23 @@ function formatSize(bytes: number): string {
 /** The folder a hit sits in, for the second line of the row. */
 const dirOf = (p: string) => p.replace(/[/\\][^/\\]+$/, '')
 
+/** Only what lives under `root`. Case-insensitive, separator-agnostic, and it
+ *  compares whole segments so "retail-9" never matches "retail-90". With no
+ *  folder open there is nothing to be outside of, so everything passes. */
+const withinScope = (rows: any[], root: string) => {
+  if (!root) return rows
+  const base = root.replace(/[/\\]+$/, '').toLowerCase().replace(/\//g, '\\') + '\\'
+  return rows.filter(f => String(f.path || '').toLowerCase().replace(/\//g, '\\').startsWith(base))
+}
+
+/** Folders first, then PDFs, then Illustrator… — never the same type twice in
+ *  the list with something else in between. Ties keep the engine's own order,
+ *  which is relevance. */
+const sortByType = (rows: any[]) => rows
+  .map((f, i) => ({ f, i }))
+  .sort((a, b) => (fileTypeRank(a.f.type) - fileTypeRank(b.f.type)) || (a.i - b.i))
+  .map(x => x.f)
+
 /** A search hit, in the shape the file list speaks. */
 const mapHit = (item: any) => ({
   name: item.name,
@@ -719,6 +738,8 @@ function SearchBox() {
   const [query, setQuery] = useState('')
   const queryRef = useRef('')
   const [results, setResults] = useState<any[]>([])
+  // null = every type. Set by the chips, or by searching for a bare "pdf".
+  const [typeFilter, setTypeFilter] = useState<FileType | null>(null)
   const [open, setOpen] = useState(false)
   const [searching, setSearching] = useState(false)
   const [searchHistory, setSearchHistory] = useState<{ query: string; time: string }[]>([])
@@ -739,6 +760,12 @@ function SearchBox() {
     setSearching(true)
     try {
       const trimmed = q.trim()
+      // "pdf" means the PDFs here, not the files called pdf. Both engines match
+      // on the name, and every PDF's name ends in .pdf — so the word becomes the
+      // extension and the matching chip lights up (George, 30/09).
+      const asType = typeWordQuery(trimmed)
+      const needle = asType ? asType.ext : trimmed
+      setTypeFilter(asType ? asType.type : null)
 
       // A Dropbox tab is not the local disk. Its paths are Dropbox paths, which
       // the local index and Everything cannot see at all — this box was searching
@@ -746,8 +773,8 @@ function SearchBox() {
       // coming from outside the folder (George, 30/09). Dropbox searches its own
       // side, scoped to the same folder.
       if (source === 'dropbox') {
-        const hits = await window.api.dropbox.search(trimmed, currentPath || undefined)
-        setResults((hits || []).map((f: any) => ({ ...f, _dir: dirOf(f.path) })))
+        const hits = await window.api.dropbox.search(needle, currentPath || undefined)
+        setResults(sortByType((hits || []).map((f: any) => ({ ...f, _dir: dirOf(f.path) }))))
         setOpen(true)
         setShowHistory(false)
         window.api.settings.addSearchHistory(trimmed).then((h: any) => setSearchHistory(h || [])).catch(() => {})
@@ -757,14 +784,14 @@ function SearchBox() {
       // 1. This folder — the one you are looking at, and the one you meant. The
       //    whole disk used to answer, so a search inside a customer's folder came
       //    back with every other customer (George, 29/09).
-      const indexResults = await window.api.search.query(trimmed, 50, currentPath || undefined)
+      const indexResults = await window.api.search.query(needle, 200, currentPath || undefined)
       const mapped = (indexResults || []).map(mapHit)
 
       // 2. Thin result? The live walk of this same folder catches what the index
       //    has not seen yet — a file saved a minute ago.
       if (mapped.length < 10 && currentPath) {
         try {
-          const liveResults = await window.api.fs.search(currentPath, trimmed, 50)
+          const liveResults = await window.api.fs.search(currentPath, needle, 200)
           const seen = new Set(mapped.map((m: any) => m.path))
           for (const f of (liveResults || [])) {
             if (!seen.has(f.path)) {
@@ -775,13 +802,16 @@ function SearchBox() {
         } catch {}
       }
 
-      // And that is the whole search. Nothing outside this folder is looked at,
-      // ever: to search wider you go wider — stand on dropbox/typografika and the
-      // search covers typografika (George, 30/09). An earlier version showed the
-      // rest of the disk in a second group, which is the same leak with a heading
-      // on it.
-
-      setResults(mapped)
+      // And that is the whole search: this folder and below. To search wider you
+      // go wider — stand on dropbox/typografika and the search covers typografika
+      // (George, 30/09).
+      //
+      // The last word is this filter, not the engines. Three separate things have
+      // now reached outside the folder — a second results group, a live walk that
+      // climbed to the parent, and before them the unscoped index — so the rule is
+      // enforced where it cannot be argued with rather than trusted to each of
+      // them. Anything outside is dropped, whoever returned it.
+      setResults(sortByType(withinScope(mapped, currentPath)))
       setOpen(true)
       setShowHistory(false)
       // Save to search history
@@ -857,6 +887,20 @@ function SearchBox() {
   // Get position for portal dropdown
   const rect = inputRef.current?.getBoundingClientRect()
 
+  // What the chips offer, and what the list shows once one is chosen. Counting
+  // happens on the whole result set, so a chip's number does not change as you
+  // click between them.
+  const counts = useMemo(() => {
+    const m = new Map<FileType, number>()
+    for (const f of results) m.set(f.type, (m.get(f.type) || 0) + 1)
+    return m
+  }, [results])
+  const presentTypes = useMemo(() => typesInOrder(counts.keys()), [counts])
+  const shown = useMemo(
+    () => (typeFilter ? results.filter(f => f.type === typeFilter) : results),
+    [results, typeFilter],
+  )
+
   return (
     <>
       <div ref={inputRef}>
@@ -897,7 +941,39 @@ function SearchBox() {
           {searching && (
             <div style={{ padding: '8px 14px', fontSize: 12, color: 'var(--th-text-muted)' }}>Searching...</div>
           )}
-          {results.map(f => {
+          {/* One chip per type present, in the same order the list is grouped in.
+              Nothing to choose between when there is only one type. */}
+          {presentTypes.length > 1 && (
+            <div style={{
+              display: 'flex', flexWrap: 'wrap', gap: 5, padding: '8px 12px',
+              borderBottom: '1px solid var(--th-border)', position: 'sticky', top: 0,
+              background: 'var(--th-bg-secondary)', zIndex: 1,
+            }}>
+              {([null, ...presentTypes] as (FileType | null)[]).map(t => {
+                const on = typeFilter === t
+                const n = t === null ? results.length : counts.get(t) || 0
+                return (
+                  <button
+                    key={t ?? 'all'}
+                    onMouseDown={e => { e.preventDefault(); setTypeFilter(t) }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      padding: '3px 8px', borderRadius: 999, cursor: 'pointer',
+                      fontSize: 11, fontWeight: on ? 600 : 500,
+                      border: `1px solid ${on ? 'var(--th-accent)' : 'var(--th-border)'}`,
+                      background: on ? 'var(--th-accent-subtle)' : 'transparent',
+                      color: on ? 'var(--th-accent)' : 'var(--th-text-secondary)',
+                    }}
+                  >
+                    {t && <FileTypeIcon type={t} size={11} />}
+                    {t === null ? 'Όλα' : getFileTypeLabel(t)}
+                    <span style={{ opacity: 0.6 }}>{n}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          {shown.map(f => {
             // Short parent path for context
             const parentPath = (f._dir || f.path.replace(/[/\\][^/\\]+$/, '')).replace(/^C:\\Users\\[^\\]+\\/, '~\\')
             return (
@@ -933,7 +1009,7 @@ function SearchBox() {
             )
           })}
           <div style={{ padding: '6px 14px', fontSize: 11, color: 'var(--th-text-muted)', borderTop: '1px solid var(--th-border)', textAlign: 'right' }}>
-            {results.length} σε αυτόν τον φάκελο
+            {typeFilter ? `${shown.length} από ${results.length}` : results.length} σε αυτόν τον φάκελο
           </div>
         </div>,
         document.body

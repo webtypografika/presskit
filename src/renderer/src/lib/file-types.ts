@@ -155,3 +155,55 @@ export function isImageType(type: FileType): boolean {
 export function isPrintFile(type: FileType): boolean {
   return ['pdf', 'ai', 'psd', 'eps', 'indd', 'tiff'].includes(type)
 }
+
+/**
+ * The order files are shown in: folders, then the print formats in the order a
+ * press operator reaches for them, then everything else. A search result list
+ * that alternates pdf, folder, pdf reads as noise — same types belong together
+ * (George, 30/09).
+ */
+const TYPE_ORDER: FileType[] = [
+  'folder',
+  'pdf', 'ai', 'indd', 'eps', 'psd',
+  'tiff', 'png', 'jpg', 'svg', 'raw',
+  'font', 'document', 'spreadsheet', 'archive', 'unknown',
+]
+
+export function fileTypeRank(type: FileType): number {
+  const i = TYPE_ORDER.indexOf(type)
+  return i === -1 ? TYPE_ORDER.length : i
+}
+
+/** TYPE_ORDER, limited to the types actually present, for the filter row. */
+export function typesInOrder(types: Iterable<FileType>): FileType[] {
+  const present = new Set(types)
+  return TYPE_ORDER.filter(t => present.has(t))
+}
+
+/**
+ * A search for "pdf" means the PDFs, not the files with "pdf" in their name.
+ * The word becomes the extension, which is what both search engines match on:
+ * every PDF's name ends in ".pdf".
+ */
+const TYPE_WORDS: Record<string, { ext: string; type: FileType }> = {
+  pdf: { ext: '.pdf', type: 'pdf' },
+  ai: { ext: '.ai', type: 'ai' },
+  illustrator: { ext: '.ai', type: 'ai' },
+  psd: { ext: '.psd', type: 'psd' },
+  photoshop: { ext: '.psd', type: 'psd' },
+  eps: { ext: '.eps', type: 'eps' },
+  indd: { ext: '.indd', type: 'indd' },
+  indesign: { ext: '.indd', type: 'indd' },
+  jpg: { ext: '.jpg', type: 'jpg' },
+  jpeg: { ext: '.jpg', type: 'jpg' },
+  png: { ext: '.png', type: 'png' },
+  tif: { ext: '.tif', type: 'tiff' },
+  tiff: { ext: '.tif', type: 'tiff' },
+  svg: { ext: '.svg', type: 'svg' },
+  zip: { ext: '.zip', type: 'archive' },
+}
+
+export function typeWordQuery(query: string): { ext: string; type: FileType } | null {
+  const q = query.trim().toLowerCase().replace(/^[*.]+/, '')
+  return TYPE_WORDS[q] || null
+}
