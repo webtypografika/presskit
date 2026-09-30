@@ -746,6 +746,8 @@ function SearchBox() {
   const [showHistory, setShowHistory] = useState(false)
   const inputRef = useRef<HTMLDivElement>(null)
   const timerRef = useRef<any>(null)
+  // Which search is the current one. See doSearch.
+  const seqRef = useRef(0)
 
   // Load search history on mount
   useEffect(() => {
@@ -757,6 +759,18 @@ function SearchBox() {
       setResults([])
       return
     }
+    // Only the newest search may touch the screen.
+    //
+    // The 150ms debounce delays the START of a search, not its finish: typing
+    // p-d-f at normal speed starts three, and each one runs an index query plus
+    // a live folder walk that is allowed five seconds. The broad early query is
+    // the slow one, so it lands LAST and repaints the list with the results for
+    // "p" — more rows than before, filter off. From the chair it looks like the
+    // filter adds instead of narrowing (George, 30/09, γραφείο). Worst exactly
+    // where it matters: folders full of Dropbox online-only files, where every
+    // stat() is a network call.
+    const seq = ++seqRef.current
+    const stale = () => seqRef.current !== seq
     setSearching(true)
     try {
       const trimmed = q.trim()
@@ -774,6 +788,7 @@ function SearchBox() {
       // side, scoped to the same folder.
       if (source === 'dropbox') {
         const hits = await window.api.dropbox.search(needle, currentPath || undefined)
+        if (stale()) return
         setResults(sortByType((hits || []).map((f: any) => ({ ...f, _dir: dirOf(f.path) }))))
         setOpen(true)
         setShowHistory(false)
@@ -785,6 +800,7 @@ function SearchBox() {
       //    whole disk used to answer, so a search inside a customer's folder came
       //    back with every other customer (George, 29/09).
       const indexResults = await window.api.search.query(needle, 200, currentPath || undefined)
+      if (stale()) return
       const mapped = (indexResults || []).map(mapHit)
 
       // 2. Thin result? The live walk of this same folder catches what the index
@@ -792,6 +808,7 @@ function SearchBox() {
       if (mapped.length < 10 && currentPath) {
         try {
           const liveResults = await window.api.fs.search(currentPath, needle, 200)
+          if (stale()) return
           const seen = new Set(mapped.map((m: any) => m.path))
           for (const f of (liveResults || [])) {
             if (!seen.has(f.path)) {
@@ -811,6 +828,7 @@ function SearchBox() {
       // climbed to the parent, and before them the unscoped index — so the rule is
       // enforced where it cannot be argued with rather than trusted to each of
       // them. Anything outside is dropped, whoever returned it.
+      if (stale()) return
       setResults(sortByType(withinScope(mapped, currentPath)))
       setOpen(true)
       setShowHistory(false)
@@ -818,9 +836,9 @@ function SearchBox() {
       window.api.settings.addSearchHistory(trimmed).then((h: any) => setSearchHistory(h || [])).catch(() => {})
     } catch (e) {
       console.error('[SEARCH] error:', e)
-      setResults([])
+      if (!stale()) setResults([])
     } finally {
-      setSearching(false)
+      if (!stale()) setSearching(false)
     }
   }, [currentPath, source])
 
