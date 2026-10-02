@@ -297,7 +297,13 @@ function search(query: string, limit = 50, scopePath?: string): any[] {
 
   function add(rows: any[]) {
     for (const r of rows) {
-      if (!seen.has(r.path)) { results.push(r); seen.add(r.path) }
+      // Compare paths the way Windows does. The index can hold the same file
+      // under two spellings — a different drive-letter case, forward slashes,
+      // a trailing separator from whichever root it was scanned under — and an
+      // exact-string check lets both through. The search box then showed one
+      // file three times (George, office PC, 30/09).
+      const k = String(r.path || '').toLowerCase().replace(/\//g, '\\')
+      if (!seen.has(k)) { results.push(r); seen.add(k) }
     }
   }
 

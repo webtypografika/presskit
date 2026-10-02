@@ -699,13 +699,38 @@ function formatSize(bytes: number): string {
 /** The folder a hit sits in, for the second line of the row. */
 const dirOf = (p: string) => p.replace(/[/\\][^/\\]+$/, '')
 
+/** Paths the way Windows compares them: case-insensitive, one separator. */
+const samePath = (p: string) => String(p || '').toLowerCase().replace(/\//g, '\\')
+
+/** One row per file.
+ *
+ *  The index can hold the same file under two spellings — a different
+ *  drive-letter case, forward slashes, whichever root it was scanned under —
+ *  and an exact-string check lets every spelling through. The list then carried
+ *  the same file several times, and because a row is keyed by its path, two
+ *  rows with the same key leave React unable to match old to new: it keeps the
+ *  stale nodes and draws the new ones under them. On screen that is a list that
+ *  grows every time you touch it instead of narrowing — "δεν φιλτράρει αλλά
+ *  προσθέτει" (George, office PC, 30/09). Only the office machine fell into it,
+ *  because only there does the SQLite index answer; the laptop has Everything,
+ *  which returns each file once. */
+const dedupe = (rows: any[]) => {
+  const seen = new Set<string>()
+  return rows.filter(f => {
+    const k = samePath(f.path)
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
+}
+
 /** Only what lives under `root`. Case-insensitive, separator-agnostic, and it
  *  compares whole segments so "retail-9" never matches "retail-90". With no
  *  folder open there is nothing to be outside of, so everything passes. */
 const withinScope = (rows: any[], root: string) => {
   if (!root) return rows
-  const base = root.replace(/[/\\]+$/, '').toLowerCase().replace(/\//g, '\\') + '\\'
-  return rows.filter(f => String(f.path || '').toLowerCase().replace(/\//g, '\\').startsWith(base))
+  const base = samePath(root.replace(/[/\\]+$/, '')) + '\\'
+  return rows.filter(f => samePath(f.path).startsWith(base))
 }
 
 /** Folders first, then PDFs, then Illustrator… — never the same type twice in
@@ -795,7 +820,7 @@ function SearchBox() {
       if (source === 'dropbox') {
         const hits = await window.api.dropbox.search(needle, currentPath || undefined)
         if (stale()) return
-        setResults(sortByType((hits || []).map((f: any) => ({ ...f, _dir: dirOf(f.path) }))))
+        setResults(dedupe(sortByType((hits || []).map((f: any) => ({ ...f, _dir: dirOf(f.path) })))))
         setOpen(true)
         setShowHistory(false)
         window.api.settings.addSearchHistory(trimmed).then((h: any) => setSearchHistory(h || [])).catch(() => {})
@@ -817,11 +842,11 @@ function SearchBox() {
         try {
           const liveResults = await window.api.fs.search(currentPath, needle, 200)
           if (stale()) return
-          const seen = new Set(mapped.map((m: any) => m.path))
+          const seen = new Set(mapped.map((m: any) => samePath(m.path)))
           for (const f of (liveResults || [])) {
-            if (!seen.has(f.path)) {
+            if (!seen.has(samePath(f.path))) {
               mapped.push({ ...f, _dir: f.path.replace(/[/\\][^/\\]+$/, '') })
-              seen.add(f.path)
+              seen.add(samePath(f.path))
               fromWalk++
             }
           }
@@ -839,7 +864,7 @@ function SearchBox() {
       // them. Anything outside is dropped, whoever returned it.
       if (stale()) return
       setSources({ idx: fromIndex, walk: fromWalk })
-      setResults(sortByType(withinScope(mapped, currentPath)))
+      setResults(dedupe(sortByType(withinScope(mapped, currentPath))))
       setOpen(true)
       setShowHistory(false)
       // Save to search history
@@ -1001,12 +1026,14 @@ function SearchBox() {
               })}
             </div>
           )}
-          {shown.map(f => {
+          {shown.map((f, i) => {
             // Short parent path for context
             const parentPath = (f._dir || f.path.replace(/[/\\][^/\\]+$/, '')).replace(/^C:\\Users\\[^\\]+\\/, '~\\')
             return (
               <div
-                key={f.path}
+                // Position in the key as well as the path: a duplicate that slips
+                // through must never again leave a stale row on screen.
+                key={samePath(f.path) + '#' + i}
                 onMouseDown={() => handleSelect(f)}
                 style={{
                   padding: '10px 14px', cursor: 'pointer',
