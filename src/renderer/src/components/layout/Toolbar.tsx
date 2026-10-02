@@ -748,10 +748,16 @@ function SearchBox() {
   const timerRef = useRef<any>(null)
   // Which search is the current one. See doSearch.
   const seqRef = useRef(0)
+  // Where the rows came from. On screen because the same build behaved
+  // differently on two machines and nothing in the window said why
+  // (George, 30/09: «στο laptop δουλεύει, στο pc γραφείου όχι»).
+  const [engine, setEngine] = useState('')
+  const [sources, setSources] = useState<{ idx: number; walk: number }>({ idx: 0, walk: 0 })
 
   // Load search history on mount
   useEffect(() => {
     window.api.settings.get('search.history').then((h: any) => setSearchHistory(h || [])).catch(() => {})
+    window.api.search.stats().then((s: any) => setEngine(s?.engine || '?')).catch(() => setEngine('?'))
   }, [])
 
   const doSearch = useCallback(async (q: string) => {
@@ -802,6 +808,8 @@ function SearchBox() {
       const indexResults = await window.api.search.query(needle, 200, currentPath || undefined)
       if (stale()) return
       const mapped = (indexResults || []).map(mapHit)
+      const fromIndex = mapped.length
+      let fromWalk = 0
 
       // 2. Thin result? The live walk of this same folder catches what the index
       //    has not seen yet — a file saved a minute ago.
@@ -814,6 +822,7 @@ function SearchBox() {
             if (!seen.has(f.path)) {
               mapped.push({ ...f, _dir: f.path.replace(/[/\\][^/\\]+$/, '') })
               seen.add(f.path)
+              fromWalk++
             }
           }
         } catch {}
@@ -829,6 +838,7 @@ function SearchBox() {
       // enforced where it cannot be argued with rather than trusted to each of
       // them. Anything outside is dropped, whoever returned it.
       if (stale()) return
+      setSources({ idx: fromIndex, walk: fromWalk })
       setResults(sortByType(withinScope(mapped, currentPath)))
       setOpen(true)
       setShowHistory(false)
@@ -1028,6 +1038,9 @@ function SearchBox() {
           })}
           <div style={{ padding: '6px 14px', fontSize: 11, color: 'var(--th-text-muted)', borderTop: '1px solid var(--th-border)', textAlign: 'right' }}>
             {typeFilter ? `${shown.length} από ${results.length}` : results.length} σε αυτόν τον φάκελο
+            <span style={{ opacity: 0.55, marginLeft: 8 }}>
+              · {typeFilter || 'όλα'} · idx {sources.idx} + walk {sources.walk} · {engine || '…'}
+            </span>
           </div>
         </div>,
         document.body
