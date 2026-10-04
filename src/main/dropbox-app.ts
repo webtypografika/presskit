@@ -24,7 +24,7 @@
  * That is ample while PressKit is used in one shop; before it ships widely the
  * app has to be submitted for Production approval, which Dropbox reviews.
  */
-export const DROPBOX_APP_KEY = ''
+export const DROPBOX_APP_KEY = 'xzb4xn4y7n4mz8a'
 
 /** Has the build been given an app key? */
 export const hasBundledDropboxApp = (): boolean => DROPBOX_APP_KEY.trim().length > 0
