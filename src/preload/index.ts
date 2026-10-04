@@ -76,7 +76,7 @@ const api = {
   // Dropbox
   dropbox: {
     status: () => ipcRenderer.invoke('dropbox:status'),
-    connect: (clientId: string) => ipcRenderer.invoke('dropbox:connect', clientId),
+    connect: () => ipcRenderer.invoke('dropbox:connect'),
     disconnect: () => ipcRenderer.invoke('dropbox:disconnect'),
     listFolder: (path: string) => ipcRenderer.invoke('dropbox:listFolder', path),
     download: (path: string) => ipcRenderer.invoke('dropbox:download', path),

@@ -2,6 +2,7 @@ import { IpcMain, BrowserWindow, shell } from 'electron'
 import { Dropbox, DropboxAuth } from 'dropbox'
 import Store from 'electron-store'
 import { getFileType } from './file-system'
+import { DROPBOX_APP_KEY, hasBundledDropboxApp } from './dropbox-app'
 
 const store = new Store()
 
@@ -33,24 +34,35 @@ function getClient(): Dropbox | null {
 export function registerDropboxHandlers(ipcMain: IpcMain): void {
   // Check connection status
   ipcMain.handle('dropbox:status', async () => {
+    /* 'configured' tells the screen whether connecting is even possible, so a
+       build shipped without an app key says so instead of offering a button
+       that fails silently. */
+    const configured = hasBundledDropboxApp() || !!store.get(STORE_KEYS.clientId)
     const client = getClient()
-    if (!client) return { connected: false }
+    if (!client) return { connected: false, configured }
 
     try {
       const account = await client.usersGetCurrentAccount()
       return {
         connected: true,
+        configured,
         name: account.result.name.display_name,
         email: account.result.email
       }
     } catch {
-      return { connected: false }
+      return { connected: false, configured }
     }
   })
 
   // Start OAuth flow
-  ipcMain.handle('dropbox:connect', async (_e, clientId: string) => {
-    store.set(STORE_KEYS.clientId, clientId)
+  ipcMain.handle('dropbox:connect', async () => {
+    /* Our app key, not the customer's. A key stored by an older build still
+       wins, so a machine that is already connected through its own Dropbox app
+       keeps working and is never forced to reconnect — its refresh token was
+       issued to that app and would not survive the swap. */
+    const stored = store.get(STORE_KEYS.clientId) as string | undefined
+    const clientId = (stored && stored.trim()) || DROPBOX_APP_KEY
+    if (!clientId) return false
 
     dbxAuth = new DropboxAuth({ clientId })
     const authUrl = await dbxAuth.getAuthenticationUrl(

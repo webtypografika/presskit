@@ -230,18 +230,23 @@ function PresscalSettings() {
 
 function DropboxSettings() {
   const { dropboxConnected, dropboxName } = useAppStore()
-  const [clientId, setClientId] = useState('')
   const [connecting, setConnecting] = useState(false)
+  /* null while unknown. false means this build carries no Dropbox app key, so
+     connecting cannot work — the screen says that rather than offering a button
+     that silently does nothing. */
+  const [configured, setConfigured] = useState<boolean | null>(null)
 
   useEffect(() => {
-    window.api.settings.get('dropbox.clientId').then((v: any) => setClientId(v || ''))
+    window.api.dropbox.status().then((s: any) => setConfigured(s?.configured !== false))
   }, [])
 
   const connect = async () => {
-    if (!clientId) return
     setConnecting(true)
     try {
-      const ok = await window.api.dropbox.connect(clientId)
+      /* No client id from the user. PressKit carries PressCal's own Dropbox app
+         (src/main/dropbox-app.ts) — asking a printer for a developer app key was
+         a question with no answer available to them. */
+      const ok = await window.api.dropbox.connect()
       if (ok) {
         const status = await window.api.dropbox.status()
         useAppStore.setState({ dropboxConnected: true, dropboxName: (status as any).name || '' })
@@ -265,17 +270,13 @@ function DropboxSettings() {
         </div>
       </Field>
 
-      <Field label="Dropbox App Client ID" description="Create an app at dropbox.com/developers/apps to get a client ID">
-        <input type="text" value={clientId} onChange={e => setClientId(e.target.value)} placeholder="Your Dropbox App client ID" style={{ ...inputStyle, fontFamily: 'monospace' }} />
-      </Field>
-
       <div style={{ paddingTop: 16, display: 'flex', alignItems: 'center', gap: 16 }}>
         {!dropboxConnected ? (
-          <button onClick={connect} disabled={connecting || !clientId}
+          <button onClick={connect} disabled={connecting || configured === false}
             style={{
               padding: '12px 32px', borderRadius: 8, border: 'none', cursor: 'pointer',
               background: 'var(--th-accent)', color: '#fff', fontSize: 14, fontWeight: 600,
-              opacity: (connecting || !clientId) ? 0.5 : 1,
+              opacity: (connecting || configured === false) ? 0.5 : 1,
             }}>
             {connecting ? 'Connecting...' : 'Connect Dropbox'}
           </button>
@@ -287,6 +288,13 @@ function DropboxSettings() {
             }}>
             Disconnect
           </button>
+        )}
+        {/* A disabled button with no reason is the thing this whole change is
+            about, so say why it is disabled. */}
+        {!dropboxConnected && configured === false && (
+          <span style={{ fontSize: 13, color: '#f59e0b' }}>
+            This build has no Dropbox app key — connecting is not available.
+          </span>
         )}
       </div>
     </div>
