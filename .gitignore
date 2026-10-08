@@ -23,3 +23,11 @@ resources/tessdata/
 
 # Build output moved aside to escape a Dropbox lock (see build protocol)
 out-old-*/
+
+# Compiled copies of the electron-vite config.
+# 🔴 electron-vite resolves electron.vite.config.JS BEFORE .TS, so a stale compiled copy sitting
+# here silently wins over the real config and the build uses settings nobody edited. A pair of
+# these appeared on 08/10/2026 from a `tsc` run without --noEmit; they happened to be a faithful
+# compile of the .ts, so nothing broke — which is exactly why it would not have been noticed.
+electron.vite.config.js
+electron.vite.config.d.ts

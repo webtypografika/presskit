@@ -1814,8 +1814,25 @@ function startFileServer(): void {
           const dir = pathMod.dirname(savePath)
           await fsp.mkdir(dir, { recursive: true })
           // Auto-increment filename if file exists: file.pdf → file_2.pdf → file_3.pdf
+          //
+          // 🔴 A COMPOUND SUFFIX IS ONE SUFFIX. `path.extname('job.cut.json')` is '.json', so the
+          // plain rule would increment it to 'job.cut_2.json' — and that name is INVISIBLE to the
+          // cutting plotter, which lists and accepts only names ending in '.cut.json'
+          // (skycut-engine.ts: CUT_FILE_SUFFIX). The consequence is not a missing file on screen,
+          // it is the WRONG CUT: the Skycut tab would still be showing the FIRST handover file
+          // while the operator believes he has just sent a new one, so a re-sent job cuts
+          // yesterday's montage with nothing anywhere saying so.
+          //
+          // Found 08/10/2026, the day PressCal started writing these files — the first path in
+          // this app with two dots in its name. Keep this list and the suffix in skycut-protocol
+          // in step; anything not listed falls back to the ordinary single-extension rule.
+          const COMPOUND_EXTS = ['.cut.json']
           let finalPath = savePath
-          const ext = pathMod.extname(savePath)
+          const lower = savePath.toLowerCase()
+          const compound = COMPOUND_EXTS.find((c) => lower.endsWith(c))
+          // Sliced off the ORIGINAL, not substituted from the constant, so the caller's own casing
+          // survives: 'JOB.CUT.JSON' must not come back as 'JOB_2.cut.json'.
+          const ext = compound ? savePath.slice(savePath.length - compound.length) : pathMod.extname(savePath)
           const base = savePath.slice(0, -ext.length)
           let n = 1
           while (true) {
