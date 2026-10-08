@@ -193,6 +193,52 @@ export interface CutTotalsJson {
   contours?: number
 }
 
+/* WHICH MACHINE THE JOB IS FOR, AND WHERE IT IS — written by PressCal, where the
+   owner set the machine up.
+
+   🔴 THIS BLOCK IS WHY THERE IS NO MACHINE CARD IN THIS APP ANY MORE. He was
+   asked to fill one in here after filling one in there, and said: «η μηχανή
+   στήνεται στο presscal και πάει στο presskit αθόρυβα… όλες οι ρυθμίσεις να
+   γίνονται από το presscal». So the identity and the address arrive with the
+   job and nothing is typed on this side.
+
+   🔴 WHAT IS DELIBERATELY ABSENT, AND MUST STAY ABSENT: every machine-language
+   fact. No units per millimetre, no axis convention, no scan opcode, no chunk
+   size, no pause, no speed — and above all NO FORCE, which has no field
+   anywhere in this app by design (safety rule 1). All of those are resolved
+   HERE, from `model`, out of `SKYCUT_MACHINE_PRESETS`. A file may say WHICH
+   machine; it may never say how to speak to one. Keeping that line is what lets
+   a second plotter arrive without changing this format — and it is also what
+   stops a file on a synced folder from re-programming a machine. */
+export interface CutJobMachineJson {
+  /* PressCal's own preset id — 'd60' | 'd48' | 'd24' at the time of writing, and
+     NOT the ids used in `SKYCUT_MACHINE_PRESETS`. Resolved here, and REFUSED BY
+     NAME when it cannot be: a D24 told to scan with the D60's opcode finds
+     nothing, and this family never answers back, so a near-miss is silence. */
+  model?: string
+  /* The model as written on the machine, for a human reading the file. */
+  label?: string
+  /* An IP or a hostname, exactly as typed on PressCal's card.
+
+     ⚠️ AN ADDRESS IS A MUTABLE FACT AND A JOB FILE IS A SNAPSHOT. On the
+     ordinary path this is fresh by construction — PressCal writes the file and
+     triggers it in the same breath — but a file re-sent from last year names
+     wherever that address pointed then, and `probeMachine` cannot tell a cutter
+     from anything else answering on that port. That is why the folder list is a
+     fallback and not the main road. */
+  host?: string
+  port?: number
+  /* The four limits the owner measured with a tape, in millimetres. 0 means he
+     left that box empty: do not check that one. Material LENGTH is absent on
+     purpose — a roll can be fifty metres. */
+  limitsMm?: {
+    opening: number
+    material: number
+    bladeTravel: number
+    cameraTravel: number
+  }
+}
+
 export interface CutJobFile {
   format: typeof CUT_FILE_FORMAT
   formatVersion: typeof CUT_FILE_VERSION
@@ -201,6 +247,9 @@ export interface CutJobFile {
   job: CutJobJson
   sheet: { w: number; h: number }
   loading: CutLoadingJson
+  /* Absent on a job with no cutter on it, and absent in every file written
+     before 08/10/2026. Absent is a NOTE, never a refusal. */
+  machine?: CutJobMachineJson
   marks?: CutMarksJson
   groups: CutGroupJson[]
   totals?: CutTotalsJson
@@ -274,8 +323,16 @@ export interface SkycutMachine {
   chunkPauseMs: number
   /* The widest and longest material this machine takes, millimetres. `null`
      means nobody has measured it, and the plan SAYS so rather than quietly
-     skipping the check — see `materialLimitUnknown`. */
-  maxMaterialMm: { w: number; h: number } | null
+     skipping the check — see `materialLimitUnknown`.
+
+     🔴 `h` IS ITSELF NULLABLE, AND THAT IS NOT THE SAME AS 0. The length of the
+     material is a quantity nobody in this system measures, deliberately: on a
+     roll-fed machine «ένα υλικό μπορεί να είναι 50 μέτρα», so a length limit
+     could only refuse a job for a reason the machine does not have. When the
+     limits arrive from the handover file they are width-wise only, and writing
+     0 into `h` would refuse every job on earth while looking like a measurement.
+     `null` here means "this one is not checked"; the width still is. */
+  maxMaterialMm: { w: number; h: number | null } | null
   /* `VS<n>;`. Emitted only when set. Nothing speed-related ever comes from the
      handover file: the file describes paper, the machine card describes the
      machine. */
@@ -355,6 +412,16 @@ export type SkycutRefusalCode =
   | 'noContours'
   | 'contourMalformed'
   | 'marksMalformed'
+  /* The machine block is PRESENT and cannot be read. Refused rather than
+     ignored, because the alternative is falling back to asking — and a file
+     that MEANT to name a machine, and failed, must not look like a file that
+     never named one. The detail says which part. */
+  | 'machineBlockMalformed'
+  /* The file names a model this build has no machine profile for. REFUSED BY
+     NAME and never resolved to the nearest one: the camera-scan command differs
+     between models in this family (TB25 / TB26), nothing here ever answers
+     back, and a wrong opcode is therefore total silence rather than an error. */
+  | 'machineModelUnknown'
   /* ── The loading, which has no defaults by design ── */
   | 'loadingMissing'
   | 'feedEdgeMissing'
@@ -424,6 +491,10 @@ export type SkycutNoteCode =
      checked against the machine. Safety rule 3 still holds — the footprint is
      stated — but nothing verified it fits. */
   | 'materialLimitUnknown'
+  /* The file names no machine at all — every file written before 08/10/2026,
+     and any job with no cutter on it. A NOTE and never a refusal: the tab asks
+     which machine instead, exactly as it always did. */
+  | 'noMachineInFile'
   /* Our flattened length and PressCal's exact length differ by more than the
      tolerance below. Expected to be tiny; a large gap means the two sides
      disagree about the geometry and somebody should look. */
@@ -542,6 +613,68 @@ export function parseCutFile(raw: unknown): ParseCutFileResult {
     }
   }
 
+  /* The machine block. ABSENT IS FINE and is the normal case for every file
+     written before 08/10/2026 — the tab falls back to asking. PRESENT AND
+     MALFORMED IS REFUSED, same discipline as the marks: a half-read address is
+     a socket opened to the wrong place, and nothing on this family of machines
+     reports back.
+
+     ⚠️ NO COERCION AND NO DEFAULTS FOR THE ADDRESS. A blank host is not
+     "probably the last one"; a port of 0 is not 8080. What is missing stays
+     missing and the caller decides, because this function's whole contract is
+     that it never guesses (see the header of `parseCutFile`). */
+  let machine: CutJobMachineJson | undefined
+  if (raw.machine !== undefined && raw.machine !== null) {
+    const m = raw.machine
+    if (!isObj(m)) {
+      refusals.push({ code: 'machineBlockMalformed', detail: 'not an object' })
+    } else {
+      const strOrUndef = (v: unknown, name: string): string | undefined => {
+        if (v === undefined || v === null || v === '') return undefined
+        if (typeof v !== 'string') {
+          refusals.push({ code: 'machineBlockMalformed', detail: `${name} is not text` })
+          return undefined
+        }
+        return v
+      }
+      const host = strOrUndef(m.host, 'host')
+      /* A port that is present must be a usable one. Out of range is refused
+         rather than clamped: 70000 silently becoming 65535 is a connection to a
+         machine nobody named. */
+      let port: number | undefined
+      if (m.port !== undefined && m.port !== null) {
+        if (!isNum(m.port) || !Number.isInteger(m.port) || m.port < 1 || m.port > 65535) {
+          refusals.push({ code: 'machineBlockMalformed', detail: `port ${String(m.port)}` })
+        } else {
+          port = m.port
+        }
+      }
+      /* The limits are all-or-nothing: four numbers or none. Three good ones and
+         a missing fourth would leave one obstruction unchecked while the screen
+         showed the machine as fully described. */
+      let limitsMm: CutJobMachineJson['limitsMm']
+      if (m.limitsMm !== undefined && m.limitsMm !== null) {
+        const l = m.limitsMm
+        if (!isObj(l) || !isNum(l.opening) || !isNum(l.material)
+          || !isNum(l.bladeTravel) || !isNum(l.cameraTravel)) {
+          refusals.push({ code: 'machineBlockMalformed', detail: 'limitsMm' })
+        } else if (l.opening < 0 || l.material < 0 || l.bladeTravel < 0 || l.cameraTravel < 0) {
+          refusals.push({ code: 'machineBlockMalformed', detail: 'a limit is negative' })
+        } else {
+          limitsMm = {
+            opening: l.opening, material: l.material,
+            bladeTravel: l.bladeTravel, cameraTravel: l.cameraTravel,
+          }
+        }
+      }
+      machine = {
+        model: strOrUndef(m.model, 'model'),
+        label: strOrUndef(m.label, 'label'),
+        host, port, limitsMm,
+      }
+    }
+  }
+
   /* Marks are optional — a job can be cut from the machine's own origin — but a
      marks block that is PRESENT and malformed is refused. `TB25` with a wrong
      rectangle scans the wrong part of the sheet and says nothing. */
@@ -634,6 +767,7 @@ export function parseCutFile(raw: unknown): ParseCutFileResult {
       },
       sheet,
       loading,
+      machine,
       marks,
       groups,
       totals: {
@@ -1178,14 +1312,20 @@ export function planSkycutJob(
      checked that it fits. */
   if (machine.maxMaterialMm === null) {
     notes.push({ code: 'materialLimitUnknown', detail: machine.model })
-  } else if (
-    footprintMm.w > machine.maxMaterialMm.w + 1e-6 ||
-    footprintMm.h > machine.maxMaterialMm.h + 1e-6
-  ) {
-    refusals.push({
-      code: 'footprintExceedsMachine',
-      detail: `${footprintMm.w} x ${footprintMm.h} mm into ${machine.maxMaterialMm.w} x ${machine.maxMaterialMm.h} mm`,
-    })
+  } else {
+    /* Each dimension on its own, because the length may be unmeasured while the
+       width is known — see the field. An unmeasured length checks nothing rather
+       than comparing against a zero that would refuse everything. */
+    const lim = machine.maxMaterialMm
+    const tooWide = footprintMm.w > lim.w + 1e-6
+    const tooLong = lim.h !== null && footprintMm.h > lim.h + 1e-6
+    if (tooWide || tooLong) {
+      const limH = lim.h === null ? 'any' : String(lim.h)
+      refusals.push({
+        code: 'footprintExceedsMachine',
+        detail: `${footprintMm.w} x ${footprintMm.h} mm into ${lim.w} x ${limH} mm`,
+      })
+    }
   }
 
   if (refusals.length > 0) return { ok: false, refusals, notes }

@@ -1259,14 +1259,27 @@ async function processPendingArchives() {
         folderPath = resolved
       }
 
+      // 🔴 DECLARED HERE, NOT INSIDE THE `else`, AND THAT IS A FIX.
+      //
+      // It used to be a `const` inside the else branch below while TWO log lines
+      // further down referenced it — so on every archive the success log threw a
+      // ReferenceError, the catch's own log threw a second one, and the outer
+      // catch (which is deliberately silent) swallowed both. The visible effect:
+      // the folder moved but `confirm-archive` was never called on that pass, so
+      // PressCal only learned about it on the NEXT poll, through the
+      // "folder not found (already archived?)" branch. It worked by accident.
+      //
+      // Found 08/10/2026 the moment this project started type-checking at all —
+      // `tsc` had been aborting on a config error and reporting nothing (see
+      // tsconfig.node.json).
+      const folderName = basename(folderPath)
+
       // Compute target path from API destPath or derive from source
       let targetPath = entry.destPath
       if (targetPath) {
         targetPath = targetPath.replace(/\//g, '\\').split('\\').map(s => s.trim()).join('\\')
       } else {
-        const parentDir = dirname(folderPath)
-        const folderName = basename(folderPath)
-        targetPath = pJoin(parentDir, '_01 Archive', folderName)
+        targetPath = pJoin(dirname(folderPath), '_01 Archive', folderName)
       }
       const archiveDir = dirname(targetPath)
 
@@ -2239,10 +2252,17 @@ function registerHandlers(): void {
       )
     }
 
+    // 🔴 `file` IS REQUIRED EVEN WHEN DRAGGING SEVERAL. Electron's `Item` takes a
+    // mandatory `file` plus an optional `files`; the multi-file branch used to
+    // pass `files` ALONE, so dragging two or more files out of PressKit handed
+    // Electron an item with no `file` at all. Found 08/10/2026, the day this
+    // project started type-checking (see tsconfig.node.json) — nothing had ever
+    // reported it, because a failed drag just does nothing and looks like the
+    // user let go too early.
     if (filePaths.length === 1) {
       event.sender.startDrag({ file: filePaths[0], icon })
     } else {
-      event.sender.startDrag({ files: filePaths, icon })
+      event.sender.startDrag({ file: filePaths[0], files: filePaths, icon })
     }
   })
 

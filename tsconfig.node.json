@@ -1,4 +1,25 @@
 {
+  "//": [
+    "🔴 `electron.vite.config.ts` IS DELIBERATELY NOT IN `include`, AND REMOVING IT IS WHAT MADE",
+    "THIS PROJECT TYPE-CHECK AT ALL. It sits at the repo root, outside `rootDir: ./src`, which made",
+    "tsc report TS6059 — a CONFIGURATION error that aborts the program before any semantic analysis.",
+    "Measured on 08/10/2026: a deliberate `const x: number = 'a string'` inside src/main produced",
+    "ZERO errors. So every line of main and preload went unchecked, and `npm run build` cannot catch",
+    "it either — electron-vite strips types with esbuild and never checks them. The whole cutter",
+    "(skycut-protocol.ts, skycut-engine.ts, CuttingPlotter.tsx — about 4,700 lines) shipped in 2.3.39",
+    "that way.",
+    "",
+    "The same misconfiguration also emitted `electron.vite.config.js` and `.d.ts` into the repo root",
+    "on any `tsc -p` run without --noEmit, and electron-vite resolves the .js BEFORE the .ts — so a",
+    "stale compiled copy silently outranked the real config. Both are gitignored now.",
+    "",
+    "⚠️ The vite config itself is therefore unchecked by tsc. That is the lesser loss by a wide",
+    "margin, and vite validates its own config at build time. If it ever needs checking, give it its",
+    "own tsconfig with `rootDir: \".\"` rather than putting it back here.",
+    "",
+    "CHECK IT WITH:  npx tsc --noEmit -p tsconfig.node.json",
+    "and if it ever reports nothing at all, break something on purpose and make sure it complains."
+  ],
   "compilerOptions": {
     "composite": true,
     "module": "ESNext",
@@ -16,7 +37,6 @@
   },
   "include": [
     "src/main/**/*",
-    "src/preload/**/*",
-    "electron.vite.config.ts"
+    "src/preload/**/*"
   ]
 }

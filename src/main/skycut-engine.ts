@@ -109,6 +109,7 @@ import {
   type SkycutNote,
   type SkycutChunk,
   type CutJobJson,
+  type CutJobMachineJson,
 } from './skycut-protocol'
 
 // ─── The machine record: the protocol's facts, plus how to reach it ─────────
@@ -379,6 +380,84 @@ function findMachine(machineId: string): { ok: true; machine: SkycutMachineRecor
   return { ok: true, machine: m }
 }
 
+/* ─── THE MACHINE OUT OF THE HANDOVER FILE ───────────────────────────────────
+ *
+ * 🔴 THIS IS WHY THIS APP HAS NO MACHINE CARD ANY MORE. The owner set the
+ * machine up once, in PressCal, and said so: «η μηχανή στήνεται στο presscal και
+ * πάει στο presskit αθόρυβα… όλες οι ρυθμίσεις να γίνονται από το presscal». The
+ * file names WHICH machine and WHERE it is; everything about HOW TO SPEAK to it
+ * is resolved here, from the preset table, and never travels.
+ *
+ * 🔴 A TABLE, NOT A BRANCH, and the file's header rule is the reason: «PRESETS
+ * ARE DATA, NOT BRANCHES… There is no `if (model === 'D60')` anywhere in this
+ * file». This map is the same kind of data — two spellings of one machine — so a
+ * third model is a row, not a release.
+ *
+ * ⚠️ THE TWO APPS SPELL THE MODEL DIFFERENTLY ON PURPOSE. PressCal's presets are
+ * the owner's shorthand ('d60'); this app's are profile ids ('skycut-d60'). The
+ * mapping lives on THIS side because this is the side that knows what a model
+ * means. A spelling with no row is REFUSED BY NAME — never resolved to the
+ * nearest machine: the camera-scan opcode differs across this family (TB25 on
+ * the D60, TB26 on the D24), nothing in it ever answers back, and a wrong opcode
+ * is therefore not an error but silence. */
+const PRESSCAL_MODEL_PRESET: Record<string, string> = {
+  d60: 'skycut-d60',
+  d24: 'skycut-d24',
+  /* ⚠️ NO d48 ROW, AND THAT IS THE CORRECT STATE. PressCal offers a D48 preset
+     for its own geometry — the owner can quote a job on one — but nobody has
+     measured a D48's command set, so there is no profile to resolve it to. It is
+     refused by name until somebody does. */
+}
+
+/** The machine a cut file names, as a validated record — or the reason it is not one. */
+type MachineFromFile =
+  | { ok: true; machine: SkycutMachineRecord }
+  /* 🔴 ABSENT IS ITS OWN ANSWER, NOT A REFUSAL. Every file written before
+     08/10/2026 names no machine, and so does any job with no cutter on it. The
+     caller falls back to the machine the operator picked; collapsing this into a
+     refusal would turn every old file on his disk into an error. */
+  | { ok: false; absent: true }
+  | { ok: false; absent: false; refusals: SkycutEngineRefusal[] }
+
+function machineFromFile(block: CutJobMachineJson | undefined): MachineFromFile {
+  if (!block) return { ok: false, absent: true }
+  const model = (block.model ?? '').trim()
+  if (model === '') return { ok: false, absent: false, refusals: [refuse('machineModelUnknown', '(none given)')] }
+  const presetId = PRESSCAL_MODEL_PRESET[model.toLowerCase()]
+  const preset = presetId
+    ? SKYCUT_MACHINE_PRESETS_WITH_TRANSPORT.find((p) => p.id === presetId)
+    : undefined
+  if (!preset) return { ok: false, absent: false, refusals: [refuse('machineModelUnknown', model)] }
+
+  /* The limits, width-wise only. 🔴 WHICH OF HIS FOUR BINDS THIS JOB is decided
+     in PressCal, which knows whether the job has camera marks; what reaches here
+     is the narrowest one that applies, and the narrowest of a set is still a
+     true upper bound for any job. A 0 means he left that box empty — "do not
+     check" — so zeros are dropped rather than minimised into a limit of nothing.
+     `h` stays null: material LENGTH is measured by nobody, by design. */
+  const widths = block.limitsMm
+    ? [block.limitsMm.opening, block.limitsMm.material, block.limitsMm.bladeTravel, block.limitsMm.cameraTravel]
+      .filter((v) => Number.isFinite(v) && v > 0)
+    : []
+  const maxMaterialMm = widths.length > 0 ? { w: Math.min(...widths), h: null } : null
+
+  /* Through `coerceRecord` like any stored card, so a file cannot reach the
+     transport a route that skips the validation a typed card goes through.
+     The id is synthetic and names where it came from, so a refusal about "that
+     machine card" points at the file rather than at a card he never made. */
+  const candidate = {
+    ...preset,
+    id: `file:${model}@${(block.host ?? '').trim()}:${block.port ?? preset.port}`,
+    label: (block.label ?? '').trim() || preset.label,
+    host: (block.host ?? '').trim(),
+    port: block.port ?? preset.port,
+    maxMaterialMm,
+  }
+  const r = coerceRecord(candidate)
+  if (!r.ok) return { ok: false, absent: false, refusals: r.refusals }
+  return { ok: true, machine: r.record }
+}
+
 /* An address good enough to hand to `net.createConnection`, and nothing more
    clever than that. Deliberately NOT a reachability test — that is `probe`, it
    costs a connection, and it is the operator's own separate action. */
@@ -580,23 +659,53 @@ export interface SkycutSendOptions {
    from what was shown — same file, same machine, same options, same code. */
 async function buildPlan(
   filePath: string,
-  machine: SkycutMachineRecord,
+  /* 🔴 `null` MEANS "TAKE THE MACHINE FROM THE FILE", which is the ordinary path
+     since 08/10/2026 — the owner sets the machine up in PressCal and it travels
+     with the job, so this app asks for nothing.
+
+     A NON-NULL RECORD WINS OVER THE FILE, deliberately, and it is the safety
+     valve: the renderer passes one when the operator picked a machine by hand,
+     and — the case that matters — when it could not check that this file belongs
+     to the job in front of him. A file is allowed to say which machine it is
+     for; it is not allowed to aim this app at an address nobody verified. */
+  machine: SkycutMachineRecord | null,
   options: SkycutSendOptions,
 ): Promise<
   | { ok: true; planned: SkycutPlannedJob; chunks: SkycutChunk[] }
   | { ok: false; refusals: SkycutEngineRefusal[]; notes: SkycutNote[] }
 > {
-  /* NOT a reason to refuse a plan — see `sendBlockers`. Collected here so the
-     one place that knows about addresses is still `validateAddress`. */
-  const sendBlockers = validateAddress(machine)
-
+  /* ⚠️ THE FILE IS READ BEFORE THE MACHINE IS KNOWN NOW, which is the opposite
+     of the old order and is forced by the change: the file is what names the
+     machine. Nothing is sent anywhere in between — this is a read and a parse. */
   const read = await readCutJobFile(filePath)
   if (!read.ok) return { ok: false, refusals: read.refusals, notes: [] }
 
   const parsed = parseCutFile(read.raw)
   if (!parsed.ok) return { ok: false, refusals: parsed.refusals, notes: [] }
 
-  const planned = planSkycutJob(parsed.file, machine, {
+  const fileNotes: SkycutNote[] = []
+  let use: SkycutMachineRecord
+  if (machine) {
+    use = machine
+  } else {
+    const fromFile = machineFromFile(parsed.file.machine)
+    if (!fromFile.ok) {
+      /* Absent is the old-file case and is NOT an error — but with no card passed
+         in there is genuinely nothing to send to, so it is reported as the note
+         it is and the caller is expected to offer a machine. */
+      if (fromFile.absent) {
+        return { ok: false, refusals: [refuse('machineNotFound', '(the file names none)')], notes: [{ code: 'noMachineInFile' }] }
+      }
+      return { ok: false, refusals: fromFile.refusals, notes: [] }
+    }
+    use = fromFile.machine
+  }
+
+  /* NOT a reason to refuse a plan — see `sendBlockers`. Collected here so the
+     one place that knows about addresses is still `validateAddress`. */
+  const sendBlockers = validateAddress(use)
+
+  const planned = planSkycutJob(parsed.file, use, {
     mode: options.mode,
     bladeConfirmed: options.bladeConfirmed,
   })
@@ -615,7 +724,7 @@ async function buildPlan(
   const chunkCount = stream.chunks.length
   /* The pauses, not the bytes, are what takes the time: a 450 ms gap after every
      chunk but the last. */
-  const estimatedSendSeconds = Math.round(((Math.max(0, chunkCount - 1) * machine.chunkPauseMs) / 1000) * 10) / 10
+  const estimatedSendSeconds = Math.round(((Math.max(0, chunkCount - 1) * use.chunkPauseMs) / 1000) * 10) / 10
 
   const sample =
     stream.commands.length <= 12
@@ -626,15 +735,19 @@ async function buildPlan(
     ok: true,
     chunks: stream.chunks,
     planned: {
-      machine,
+      /* The machine ACTUALLY used — from the file on the ordinary path. Reporting
+         the caller's `machine` here would name a card that may be null, and the
+         plan token below would then hash a different machine than the one the
+         stream was built for. */
+      machine: use,
       mode: options.mode,
       job: plan.job,
       description: [
         ...describeSkycutPlan(plan),
         `Stream: ${stream.byteLength} bytes in ${chunkCount} chunk${chunkCount === 1 ? '' : 's'}` +
-          ` of ${machine.chunkBytes}, ${machine.chunkPauseMs} ms apart`,
+          ` of ${use.chunkBytes}, ${use.chunkPauseMs} ms apart`,
         `Sending takes about ${estimatedSendSeconds}s of pacing alone`,
-        `Destination: ${machine.host || '(no address on this machine card)'}:${machine.port}`,
+        `Destination: ${use.host || '(no address)'}:${use.port}`,
       ],
       footprintMm: plan.footprintMm,
       sheetMm: plan.sheet,
@@ -648,8 +761,8 @@ async function buildPlan(
       markScan: plan.markScan,
       byteLength: stream.byteLength,
       chunkCount,
-      chunkBytes: machine.chunkBytes,
-      chunkPauseMs: machine.chunkPauseMs,
+      chunkBytes: use.chunkBytes,
+      chunkPauseMs: use.chunkPauseMs,
       estimatedSendSeconds,
       commandSample: sample,
       commandCount: stream.commands.length,
@@ -659,7 +772,7 @@ async function buildPlan(
       planToken: planToken({
         filePath,
         fileSig: read.sig,
-        machine,
+        machine: use,
         mode: options.mode,
         plan,
         byteLength: stream.byteLength,

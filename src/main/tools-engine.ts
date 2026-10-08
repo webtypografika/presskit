@@ -663,7 +663,13 @@ async function generatePrintChecklist(filePath: string): Promise<PrintChecklistI
     // Resolution check (for embedded images)
     items.push({
       id: 'res-check', label: 'Image Resolution', category: 'resolution',
-      status: 'info' as any || 'pass',
+      // 🔴 WAS `'info' as any || 'pass'` — and the `as any` was hiding that 'info'
+      // is not one of this list's statuses at all ('pass' | 'warning' | 'error' |
+      // 'na'). So this row has been shipping an invalid status. 'na' is the
+      // honest one and the only one that behaves right: PrintChecklist counts the
+      // total as `items.filter(i => i.status !== 'na')`, so a row that checked
+      // nothing stops being counted as a check that passed.
+      status: 'na',
       value: 'Check embedded images',
       detail: 'Check embedded images for ≥300 DPI',
     })
