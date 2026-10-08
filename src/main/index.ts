@@ -19,6 +19,7 @@ import { registerToolHandlers } from './tools-engine'
 import { registerLicenseHandlers, startLicensePoller, checkLicense } from './license-engine'
 import { initializeProfiles, registerProfileHandlers, createProfile, switchProfile, getActiveProfile, getActiveProfileId, listProfiles, updateProfile } from './profile-manager'
 import { registerCloudRootsHandlers, getCloudRoots, resolvePortablePath, toPortablePath, detectCloudRoots, autoMigratePaths } from './cloud-roots'
+import { registerSkycutHandlers } from './skycut-engine'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -1998,6 +1999,10 @@ function registerHandlers(): void {
   registerLicenseHandlers(ipcMain)
   registerProfileHandlers(ipcMain)
   registerCloudRootsHandlers(ipcMain)
+  /* The cutter. Every one of its entry points is an `ipcMain.handle`, so it is
+     reachable only from PressKit's own renderer — deliberately NOT from the
+     local HTTP server below, which has no authentication. */
+  registerSkycutHandlers(ipcMain)
 
   // User directories
   ipcMain.handle('system:userPaths', async () => {

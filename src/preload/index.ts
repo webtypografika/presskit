@@ -311,6 +311,32 @@ const api = {
     clearPicks: (dirPath: string) => ipcRenderer.invoke('tools:clearPicks', dirPath),
   },
 
+  /* The cutter. One-line `invoke` wrappers, nothing else — the machine cards,
+     the planning and the socket all live in the main process.
+     🔴 `send` demands the token that `planJob` returned, which is how "state the
+     footprint in millimetres before sending" is enforced rather than merely
+     intended. And `stopSending` only closes the socket: it cannot stop the
+     machine, which is stopped at the machine. */
+  skycut: {
+    listPresets: () => ipcRenderer.invoke('skycut:listPresets'),
+    listMachines: () => ipcRenderer.invoke('skycut:listMachines'),
+    saveMachine: (machine: unknown) => ipcRenderer.invoke('skycut:saveMachine', machine),
+    deleteMachine: (machineId: string) => ipcRenderer.invoke('skycut:deleteMachine', machineId),
+    setActiveMachine: (machineId: string) => ipcRenderer.invoke('skycut:setActiveMachine', machineId),
+    findCutFiles: (rootPath: string) => ipcRenderer.invoke('skycut:findCutFiles', rootPath),
+    planJob: (filePath: string, machineId: string, options: unknown) =>
+      ipcRenderer.invoke('skycut:planJob', filePath, machineId, options),
+    probe: (machineId: string) => ipcRenderer.invoke('skycut:probe', machineId),
+    send: (filePath: string, machineId: string, options: unknown, planToken: string) =>
+      ipcRenderer.invoke('skycut:send', filePath, machineId, options, planToken),
+    stopSending: (sendId: string) => ipcRenderer.invoke('skycut:stopSending', sendId),
+    activeSends: () => ipcRenderer.invoke('skycut:activeSends'),
+    onProgress: (callback: (p: unknown) => void) => {
+      ipcRenderer.on('skycut:progress', (_e, p) => callback(p))
+      return () => ipcRenderer.removeAllListeners('skycut:progress')
+    },
+  },
+
   // Auto-update
   update: {
     onStatus: (callback: (data: { status: string; version: string }) => void) => {

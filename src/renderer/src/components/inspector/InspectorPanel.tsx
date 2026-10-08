@@ -10,12 +10,13 @@ import { JobFolderTemplates } from '../tools/JobFolderTemplates'
 import { VersionHistory } from '../tools/VersionHistory'
 import { IccProfileViewer } from '../tools/IccProfileViewer'
 import { ColorPalette } from '../tools/ColorPalette'
+import { CuttingPlotter } from '../tools/CuttingPlotter'
 import type { InspectorTab } from '@/stores/app-store'
 import { ExtractTextPanel } from './ExtractTextPanel'
 import {
   Info, Scan, Link2, Wrench,
   ClipboardCheck, Droplet, Palette, Barcode,
-  FolderPlus, History, Monitor, FileText
+  FolderPlus, History, Monitor, FileText, Scissors
 } from 'lucide-react'
 
 const TABS: { id: InspectorTab; label: string; icon: React.ReactNode }[] = [
@@ -25,7 +26,7 @@ const TABS: { id: InspectorTab; label: string; icon: React.ReactNode }[] = [
   { id: 'presscal', label: 'PressCal', icon: <Link2 size={14} /> }
 ]
 
-type ToolSubTab = 'checklist' | 'spots' | 'barcode' | 'folders' | 'versions' | 'icc' | 'colors' | 'text'
+type ToolSubTab = 'checklist' | 'spots' | 'barcode' | 'folders' | 'versions' | 'icc' | 'colors' | 'text' | 'plotter'
 
 const TOOL_SUB_TABS: { id: ToolSubTab; label: string; icon: React.ReactNode; needsFile: boolean }[] = [
   { id: 'checklist', label: 'Print Ready', icon: <ClipboardCheck size={12} />, needsFile: true },
@@ -36,6 +37,10 @@ const TOOL_SUB_TABS: { id: ToolSubTab; label: string; icon: React.ReactNode; nee
   { id: 'versions', label: 'Versions', icon: <History size={12} />, needsFile: true },
   { id: 'barcode', label: 'Barcode', icon: <Barcode size={12} />, needsFile: false },
   { id: 'folders', label: 'Job Folders', icon: <FolderPlus size={12} />, needsFile: false },
+  /* The cutting plotter is folder-driven, not file-driven: it finds the job's
+     own *.cut.json by walking up for .presskit, so it must not be greyed out
+     when nothing is selected in the file list. */
+  { id: 'plotter', label: 'Cutting Plotter', icon: <Scissors size={12} />, needsFile: false },
 ]
 
 export function InspectorPanel() {
@@ -115,6 +120,7 @@ export function InspectorPanel() {
               {toolSubTab === 'versions' && <VersionHistory />}
               {toolSubTab === 'barcode' && <BarcodeGenerator />}
               {toolSubTab === 'folders' && <JobFolderTemplates />}
+              {toolSubTab === 'plotter' && <CuttingPlotter />}
             </div>
           </div>
         )}
