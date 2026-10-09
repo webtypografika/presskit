@@ -60,7 +60,7 @@ export function isOpenRoute(pathname: string | null, query: Record<string, unkno
  *  not a hole by itself — the lock applies to everything that is not `/health` — but it would
  *  become one the moment somebody adds a second open route. */
 const ACTIONABLE = [
-  'save', 'exportImposition', 'createFolder', 'pickFolder', 'refresh', 'list', 'path', 'pair',
+  'save', 'exportImposition', 'createFolder', 'pickFolder', 'refresh', 'list', 'path', 'pair', 'cut',
 ] as const
 
 /**

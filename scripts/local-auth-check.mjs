@@ -63,6 +63,9 @@ check('pickFolder is NOT open', isOpenRoute('/', { pickFolder: '1' }), false)
 check('exportImposition is NOT open', isOpenRoute('/', { exportImposition: '1' }), false)
 check('createFolder is NOT open', isOpenRoute('/', { createFolder: '1' }), false)
 check('roots is NOT open', isOpenRoute('/roots', {}), false)
+/* 🔴 AND THE ONE THAT MOVES A BLADE. This is the route the whole key exists for. */
+check('cut is NOT open', isOpenRoute('/', { cut: '1' }), false)
+check('cut stapled onto health is NOT open', isOpenRoute('/health', { cut: '1' }), false)
 
 console.log('\nBEFORE ANY PAIRING - open, exactly as every build before 09/10/2026')
 check('no key stored, none given', localAuth(null, undefined), { allow: true })

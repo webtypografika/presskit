@@ -409,6 +409,59 @@ const PRESSCAL_MODEL_PRESET: Record<string, string> = {
      refused by name until somebody does. */
 }
 
+/**
+ * PLAN A CUT FILE AND SEND IT, IN ONE CALL — what PressCal's Cut button reaches.
+ *
+ * 🔴 WHY THIS EXISTS AND WHY IT IS NOT A SHORTCUT PAST A SAFETY RULE. The three-step ceremony in
+ * the tab — pick, plan, read the millimetres, send — belongs to a screen where nothing else knows
+ * what the job is. PressCal is not that screen: the operator is looking at the montage he just
+ * built, the card states the footprint, the shapes and the cut length, and HE PRESSED CUT ON IT.
+ * The owner's instruction, 08/10/2026: «η μηχανή στήνεται στο presscal και πάει στο presskit
+ * αθόρυβα. Πατάς στο presskit ένα κουμπί, τέλος» — then plainer still: «καμία σχέση δεν έχει το
+ * presskit… δεν επιβεβαιώνει τίποτα, γιατί όλα γίνονται στο presscal».
+ *
+ * 🔴 SAFETY RULE 3 IS NOT WEAKENED, IT IS MADE UNCONDITIONAL. The rule is that the footprint is
+ * stated in millimetres before anything is sent. In the tab that is enforced by a `planToken`
+ * hashing the plan, because minutes can pass between the reading and the press. Here the plan and
+ * the send are ATOMIC — nothing can change in between, so there is no window for a token to
+ * protect. The footprint comes back in the result for PressCal to show and for the log.
+ *
+ * 🔴 SAFETY RULE 2 MOVED, AND THE CALLER NOW CARRIES IT. A head-down mode still refuses without
+ * `bladeConfirmed`; what changed is who answers. The owner removed the question from this app —
+ * «ούτε αυτό για μένα» — on the ground that pressing Cut on the montage in front of him IS the
+ * deliberate act. So PressCal states it, and this function does not second-guess the caller. What
+ * it must NEVER do is default it to true: an absent answer stays absent and the planner refuses.
+ */
+export async function cutFromFile(
+  filePath: string,
+  options: SkycutSendOptions,
+): Promise<SkycutSendResult> {
+  const empty = {
+    sendId: '', chunksSent: 0, chunkTotal: 0, bytesSent: 0,
+    byteTotal: 0, elapsedMs: 0, stopped: false,
+  }
+  /* `null`: the machine comes from the file, which is the only way PressCal works — it never names
+     a card here, because cards are not where the machine is set up any more. */
+  const built = await buildPlan(filePath, null, options)
+  if (!built.ok) {
+    return {
+      ...empty, ok: false, refusals: built.refusals,
+      message: 'Nothing was sent: the job was refused. See the reasons.',
+    }
+  }
+  const f = built.planned.footprintMm
+  const footprintLine =
+    `Footprint ${(Math.round(f.w * 100) / 100).toFixed(2)} x ${(Math.round(f.h * 100) / 100).toFixed(2)} mm.`
+  return sendStreamToMachine({
+    machine: built.planned.machine,
+    chunks: built.chunks,
+    byteTotal: built.planned.byteLength,
+    footprintLine,
+    /* No renderer asked for this one, so there is nobody to stream progress to. The send is still
+       tracked in `activeSends`, so a PressKit window that is open can still stop it. */
+  })
+}
+
 /** The machine a cut file names, as a validated record — or the reason it is not one. */
 type MachineFromFile =
   | { ok: true; machine: SkycutMachineRecord }
@@ -1482,6 +1535,11 @@ export function registerSkycutHandlers(ipcMain: IpcMain): void {
 
   /* 🔴 "Stop sending", not "cancel". See `stopSending` for what it cannot do. */
   ipcMain.handle('skycut:stopSending', async (_e, sendId: string) => stopSending(sendId))
+
+  /* So a renderer can offer to stop a send that PressCal started. */
+  ipcMain.handle('skycut:cutFromFile', async (_e, filePath: string, options: SkycutSendOptions) =>
+    cutFromFile(filePath, options),
+  )
 
   /* So a renderer that was reloaded mid-send can find the send again rather than
      leaving a socket running with nothing watching it. */

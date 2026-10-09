@@ -20,7 +20,7 @@ import { registerToolHandlers } from './tools-engine'
 import { registerLicenseHandlers, startLicensePoller, checkLicense } from './license-engine'
 import { initializeProfiles, registerProfileHandlers, createProfile, switchProfile, getActiveProfile, getActiveProfileId, listProfiles, updateProfile } from './profile-manager'
 import { registerCloudRootsHandlers, getCloudRoots, resolvePortablePath, toPortablePath, detectCloudRoots, autoMigratePaths } from './cloud-roots'
-import { registerSkycutHandlers } from './skycut-engine'
+import { registerSkycutHandlers , cutFromFile } from './skycut-engine'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -1904,6 +1904,62 @@ function startFileServer(): void {
     if (parsed.pathname === '/roots') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(getCloudRoots()))
+      return
+    }
+
+    /* ═══ POST /?cut=1 — PRESSCAL'S CUT BUTTON ════════════════════════════════
+     *
+     * Body: { "path": "<absolute path to a .cut.json>", "mode": "travelOnly" |
+     *         "penDown" | "cut", "bladeConfirmed"?: boolean }
+     *
+     * 🔴 THE OWNER'S OWN DESIGN, IN HIS WORDS: «το μόνο που θα κάνει είναι να πει
+     * στο presskit κοίτα είμαι εδώ, φόρτωσε αυτό το αρχείο και τρέξ' το στο δίκτυο
+     * να φτάσει στο μηχάνημα». PressCal names a file and a mode. Everything about
+     * HOW — the machine, the address, the axes, the opcode, the pacing — is worked
+     * out on this side, from the file and the preset table. PressCal never opens a
+     * socket to a device and could not if it tried: it is a web page.
+     *
+     * 🔴 THIS ROUTE IS THE WHOLE REASON THE KEY EXISTS. It is above the lock in
+     * the file but BELOW it in execution — the check runs before any route here —
+     * so an unpaired PressKit will serve it and a paired one will not serve
+     * anybody else. Until 09/10/2026 this server asked for nothing, and putting
+     * "start cutting" on a door like that would have let any web page on the
+     * machine move a loaded blade. That was not a theoretical worry: the owner
+     * asked about it directly, and the answer was that the danger is not PressCal
+     * but anything pretending to be it.
+     *
+     * ⚠️ IT DOES NOT ANSWER UNTIL THE SEND IS OVER. A cut of a few hundred
+     * millimetres is seconds; the pacing is ~450 ms per 1 KB chunk. PressCal shows
+     * its own "sending" state and gets the outcome — bytes, chunks, refusals,
+     * footprint — in the reply. */
+    if (req.method === 'POST' && parsed.query.cut) {
+      const chunks: Buffer[] = []
+      req.on('data', (c: Buffer) => chunks.push(c))
+      req.on('end', async () => {
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+          const filePath = typeof body.path === 'string' ? resolvePortablePath(body.path) : ''
+          if (!filePath) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: false, error: 'no path' }))
+            return
+          }
+          /* 🔴 THE MODE IS NOT DEFAULTED TO ANYTHING HERE. An unrecognised or
+             missing mode is refused by the protocol by name (`emitModeUnknown`),
+             and `skycutModeIsHeadDown` answers TRUE for one it does not know — so
+             a typo cannot produce a head-up stream that the screen calls safe.
+             Passing it straight through is what keeps that true. */
+          const result = await cutFromFile(filePath, {
+            mode: body.mode,
+            bladeConfirmed: body.bladeConfirmed === true ? true : undefined,
+          })
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(result))
+        } catch (e: any) {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: String(e?.message ?? e) }))
+        }
+      })
       return
     }
 

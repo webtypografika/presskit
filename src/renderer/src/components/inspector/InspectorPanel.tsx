@@ -10,13 +10,12 @@ import { JobFolderTemplates } from '../tools/JobFolderTemplates'
 import { VersionHistory } from '../tools/VersionHistory'
 import { IccProfileViewer } from '../tools/IccProfileViewer'
 import { ColorPalette } from '../tools/ColorPalette'
-import { CuttingPlotter } from '../tools/CuttingPlotter'
 import type { InspectorTab } from '@/stores/app-store'
 import { ExtractTextPanel } from './ExtractTextPanel'
 import {
   Info, Scan, Link2, Wrench,
   ClipboardCheck, Droplet, Palette, Barcode,
-  FolderPlus, History, Monitor, FileText, Scissors
+  FolderPlus, History, Monitor, FileText
 } from 'lucide-react'
 
 const TABS: { id: InspectorTab; label: string; icon: React.ReactNode }[] = [
@@ -26,7 +25,14 @@ const TABS: { id: InspectorTab; label: string; icon: React.ReactNode }[] = [
   { id: 'presscal', label: 'PressCal', icon: <Link2 size={14} /> }
 ]
 
-type ToolSubTab = 'checklist' | 'spots' | 'barcode' | 'folders' | 'versions' | 'icc' | 'colors' | 'text' | 'plotter'
+/* 🔴 NO 'plotter' HERE ANY MORE. The cutting plotter had a tab with a machine card, a job list
+   and three run modes, and the owner wanted none of it: «δεν μας νοιάζει ούτε τι μηχανήματα ούτε
+   λίστα με δουλειές ούτε τίποτα. Μόνο από presscal εντολές και ρυθμίσεις. Το presskit αναλαμβάνει
+   σιωπηλά.» The cut is set up, chosen and started in PressCal; this app receives a file and a mode
+   on POST /?cut=1 and does the work without a screen. The component is still in the tree
+   (components/tools/CuttingPlotter.tsx) because it is the only place a job can be inspected by
+   hand if something ever goes wrong — it is simply not reachable from the tools list. */
+type ToolSubTab = 'checklist' | 'spots' | 'barcode' | 'folders' | 'versions' | 'icc' | 'colors' | 'text'
 
 const TOOL_SUB_TABS: { id: ToolSubTab; label: string; icon: React.ReactNode; needsFile: boolean }[] = [
   { id: 'checklist', label: 'Print Ready', icon: <ClipboardCheck size={12} />, needsFile: true },
@@ -40,7 +46,6 @@ const TOOL_SUB_TABS: { id: ToolSubTab; label: string; icon: React.ReactNode; nee
   /* The cutting plotter is folder-driven, not file-driven: it finds the job's
      own *.cut.json by walking up for .presskit, so it must not be greyed out
      when nothing is selected in the file list. */
-  { id: 'plotter', label: 'Cutting Plotter', icon: <Scissors size={12} />, needsFile: false },
 ]
 
 export function InspectorPanel() {
@@ -120,7 +125,6 @@ export function InspectorPanel() {
               {toolSubTab === 'versions' && <VersionHistory />}
               {toolSubTab === 'barcode' && <BarcodeGenerator />}
               {toolSubTab === 'folders' && <JobFolderTemplates />}
-              {toolSubTab === 'plotter' && <CuttingPlotter />}
             </div>
           </div>
         )}
