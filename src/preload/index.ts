@@ -324,10 +324,14 @@ const api = {
     deleteMachine: (machineId: string) => ipcRenderer.invoke('skycut:deleteMachine', machineId),
     setActiveMachine: (machineId: string) => ipcRenderer.invoke('skycut:setActiveMachine', machineId),
     findCutFiles: (rootPath: string) => ipcRenderer.invoke('skycut:findCutFiles', rootPath),
-    planJob: (filePath: string, machineId: string, options: unknown) =>
+    /* 🔴 `machineId` IS NULLABLE, AND NULL IS THE ORDINARY CASE: it means "the
+       machine the cut file names". The owner sets the machine up in PressCal and
+       it travels with the job, so this app has no card to name. A non-null id is
+       the operator picking one by hand. */
+    planJob: (filePath: string, machineId: string | null, options: unknown) =>
       ipcRenderer.invoke('skycut:planJob', filePath, machineId, options),
     probe: (machineId: string) => ipcRenderer.invoke('skycut:probe', machineId),
-    send: (filePath: string, machineId: string, options: unknown, planToken: string) =>
+    send: (filePath: string, machineId: string | null, options: unknown, planToken: string) =>
       ipcRenderer.invoke('skycut:send', filePath, machineId, options, planToken),
     stopSending: (sendId: string) => ipcRenderer.invoke('skycut:stopSending', sendId),
     activeSends: () => ipcRenderer.invoke('skycut:activeSends'),

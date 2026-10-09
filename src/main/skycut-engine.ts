@@ -1352,14 +1352,23 @@ export function registerSkycutHandlers(ipcMain: IpcMain): void {
    */
   ipcMain.handle(
     'skycut:planJob',
-    async (_e, filePath: string, machineId: string, options: SkycutSendOptions): Promise<SkycutPlanJobResult> => {
-      const found = findMachine(machineId)
-      if (!found.ok) return { ok: false, refusals: found.refusals, notes: [] }
+    async (_e, filePath: string, machineId: string | null, options: SkycutSendOptions): Promise<SkycutPlanJobResult> => {
+      /* 🔴 NO MACHINE ID MEANS "THE ONE THE FILE NAMES", which is the ordinary
+         path since 08/10/2026: the machine is set up in PressCal and travels
+         with the job, so this app has no card to look up. An id that IS given
+         wins — that is the operator's own pick, and the fallback when the file's
+         machine cannot be trusted (see `buildPlan`). */
+      let card: SkycutMachineRecord | null = null
+      if (machineId) {
+        const found = findMachine(machineId)
+        if (!found.ok) return { ok: false, refusals: found.refusals, notes: [] }
+        card = found.machine
+      }
       /* A caller that named no mode gets the DRY RUN, named from the protocol's
          own constant rather than spelled out here. The tab's row-filling pass
          takes this path, and the fallback for a missing mode must be the one
          mode that cannot put the head down. */
-      const built = await buildPlan(filePath, found.machine, options ?? { mode: SKYCUT_DRY_RUN_MODE })
+      const built = await buildPlan(filePath, card, options ?? { mode: SKYCUT_DRY_RUN_MODE })
       if (!built.ok) return { ok: false, refusals: built.refusals, notes: built.notes }
       return { ok: true, planned: built.planned }
     },
@@ -1403,9 +1412,17 @@ export function registerSkycutHandlers(ipcMain: IpcMain): void {
         stopped: false,
       }
 
-      const found = findMachine(machineId)
-      if (!found.ok) {
-        return { ...empty, ok: false, refusals: found.refusals, message: 'No such machine card. Nothing was sent.' }
+      /* Same rule as `planJob`: no id means the machine the FILE names. The plan
+         token is what keeps this honest — it hashes the machine the stream was
+         built for, so a send cannot be made to one machine against a footprint
+         shown for another. */
+      let card: SkycutMachineRecord | null = null
+      if (machineId) {
+        const found = findMachine(machineId)
+        if (!found.ok) {
+          return { ...empty, ok: false, refusals: found.refusals, message: 'No such machine card. Nothing was sent.' }
+        }
+        card = found.machine
       }
 
       if (!isStr(token) || token === '') {
@@ -1419,7 +1436,7 @@ export function registerSkycutHandlers(ipcMain: IpcMain): void {
         }
       }
 
-      const built = await buildPlan(filePath, found.machine, options)
+      const built = await buildPlan(filePath, card, options)
       if (!built.ok) {
         return {
           ...empty,
@@ -1447,7 +1464,10 @@ export function registerSkycutHandlers(ipcMain: IpcMain): void {
         `Footprint ${(Math.round(f.w * 100) / 100).toFixed(2)} x ${(Math.round(f.h * 100) / 100).toFixed(2)} mm.`
 
       return sendStreamToMachine({
-        machine: found.machine,
+        /* The machine the PLAN was built for, not the card that was looked up — on
+           the ordinary path there is no card, and the plan token already pinned
+           this exact machine to this exact stream. */
+        machine: built.planned.machine,
         chunks: built.chunks,
         byteTotal: built.planned.byteLength,
         footprintLine,

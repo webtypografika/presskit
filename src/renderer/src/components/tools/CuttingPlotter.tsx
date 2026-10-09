@@ -239,9 +239,12 @@ interface SkycutApi {
   deleteMachine: (id: string) => Promise<{ ok: boolean; machines: MachineRecord[] }>
   setActiveMachine: (id: string) => Promise<{ ok: boolean; refusals: Refusal[] }>
   findCutFiles: (rootPath: string) => Promise<{ files: FoundFile[] }>
-  planJob: (filePath: string, machineId: string, options: { mode: EmitMode; bladeConfirmed?: boolean }) => Promise<PlanResult>
+  /* 🔴 `machineId` IS NULLABLE AND NULL IS THE ORDINARY CASE: it means "the machine
+     the cut file names". The machine is set up in PressCal and travels with the
+     job, so this app usually has no card to name. */
+  planJob: (filePath: string, machineId: string | null, options: { mode: EmitMode; bladeConfirmed?: boolean }) => Promise<PlanResult>
   probe: (machineId: string) => Promise<ProbeResult>
-  send: (filePath: string, machineId: string, options: { mode: EmitMode; bladeConfirmed?: boolean }, planToken: string) => Promise<SendResult>
+  send: (filePath: string, machineId: string | null, options: { mode: EmitMode; bladeConfirmed?: boolean }, planToken: string) => Promise<SendResult>
   stopSending: (sendId: string) => Promise<{ ok: boolean; refusals: Refusal[] }>
   activeSends: () => Promise<{ sendId: string; machineId: string; stopped: boolean }[]>
   onProgress: (cb: (p: Progress) => void) => () => void
@@ -736,13 +739,13 @@ export function CuttingPlotter(): React.ReactNode {
    * file that cannot be planned shows its refusal in its own row instead of
    * looking like an ordinary job. */
   useEffect(() => {
-    if (!files || !activeMachine) { setRows({}); return }
+    if (!files) { setRows({}); return }
     let cancelled = false
     void (async () => {
       const out: Record<string, PlanResult> = {}
       for (const f of files) {
         try {
-          out[f.path] = await api().planJob(f.path, activeMachine.id, { mode: DRY_RUN_MODE })
+          out[f.path] = await planWith(f.path, { mode: DRY_RUN_MODE })
         } catch (e) {
           out[f.path] = { ok: false, refusals: [{ code: 'cutFileUnreadable', detail: String(e) }], notes: [] }
         }
@@ -827,8 +830,50 @@ export function CuttingPlotter(): React.ReactNode {
   /* The acknowledgement counts only for the file it was given for. */
   const quoteAcked = quoteAck !== null && quoteAck === selected
 
+  /** TRUE only when the files in this folder genuinely cannot name their own machine.
+   *
+   *  Every row planned and every one of them failed for want of a machine — which
+   *  is a file written before the machine travelled with the job, or a model this
+   *  build has no profile for. A row that has not been planned yet answers "wait",
+   *  not "needs a card", so an empty `rows` is not enough. */
+  const needsAMachineCard = files !== null && files.length > 0
+    && files.every((f) => {
+      const r = rows[f.path]
+      return r !== undefined && !r.ok
+        && r.refusals.some((x) => x.code === 'machineNotFound' || x.code === 'machineModelUnknown')
+    })
+
+  /**
+   * 🔴 PLAN IT WITHOUT A MACHINE CARD — the file names the machine.
+   *
+   * The owner set the machine up once, in PressCal, and said what that means for
+   * this app: «η μηχανή στήνεται στο presscal και πάει στο presskit αθόρυβα…
+   * πατάς στο presskit ένα κουμπί, τέλος». So `null` goes down first and the
+   * cut file's own `machine` block answers which machine and where it is.
+   *
+   * ⚠️ THE FILE WINS, AND THE CARD IS ONLY THE FALLBACK — that order, not the
+   * other one. A card made before this change has no address on it (the address
+   * lives in PressCal now), so letting a stale card win would refuse the send
+   * with `hostMissing` while a perfectly good address sat in the file.
+   *
+   * The retry costs nothing: planning opens no socket and moves no head. It runs
+   * only for a file written before 08/10/2026, which names no machine at all.
+   */
+  const planWith = useCallback(async (
+    filePath: string,
+    options: { mode: EmitMode; bladeConfirmed?: boolean },
+  ): Promise<PlanResult> => {
+    const first = await api().planJob(filePath, null, options)
+    if (first.ok) return first
+    const namesNone = first.refusals.some(
+      (r) => r.code === 'machineNotFound' || r.code === 'machineModelUnknown',
+    )
+    if (namesNone && activeMachine) return api().planJob(filePath, activeMachine.id, options)
+    return first
+  }, [activeMachine])
+
   const arm = useCallback(async () => {
-    if (!selected || !activeMachine || headMismatch) return
+    if (!selected || headMismatch) return
     /* 🔴 The quote clash is a gate, not a notice. */
     if (quoteMismatch && !quoteAcked) return
     setArming(true)
@@ -837,7 +882,7 @@ export function CuttingPlotter(): React.ReactNode {
     setArmNotes([])
     setResult(null)
     try {
-      const r = await api().planJob(selected, activeMachine.id, {
+      const r = await planWith(selected, {
         mode,
         /* Only the operator's own answer, for THIS machine, on this call. `head`
            is already 'unanswered' if the answer was given for another machine,
@@ -853,14 +898,18 @@ export function CuttingPlotter(): React.ReactNode {
   }, [selected, activeMachine, mode, spec, head, headMismatch, quoteMismatch, quoteAcked])
 
   const doSend = useCallback(async () => {
-    if (!armed || !activeMachine || !selected) return
+    if (!armed || !selected) return
     setSending(true)
     setProgress(null)
     setResult(null)
     try {
+      /* The machine the PLAN was built for — its id, which on the ordinary path
+         is the synthetic one the engine made from the file. Passing the active
+         card here would send to a different machine than the footprint was shown
+         for, and the plan token would refuse it. */
       const r = await api().send(
         selected,
-        activeMachine.id,
+        armed.machine.id.startsWith('file:') ? null : armed.machine.id,
         { mode, bladeConfirmed: spec.headDown ? head === 'pen' || head === 'blade' : undefined },
         armed.planToken,
       )
@@ -1257,11 +1306,21 @@ export function CuttingPlotter(): React.ReactNode {
           </div>
         )}
 
-        {root && files !== null && files.length > 0 && !activeMachine && (
+        {/* 🔴 "PICK A MACHINE ABOVE" IS NOT SHOWN JUST BECAUSE NO CARD IS SELECTED
+            ANY MORE. Since 08/10/2026 the cut file names its own machine — the
+            owner sets it up in PressCal and it travels with the job — so a tab
+            with no card is the NORMAL state and saying "pick one" there would be
+            asking for the second setup he refused.
+
+            It appears only when the files themselves name no machine this build
+            can resolve, which is true of every file written before that date and
+            of a model nobody has measured. Derived from the rows rather than
+            from the card, because the rows are what actually failed. */}
+        {root && files !== null && files.length > 0 && !activeMachine && needsAMachineCard && (
           <div style={{ fontSize: 13, color: 'var(--th-text-primary)', lineHeight: 1.5 }}>
-            {files.length} cut file{files.length === 1 ? '' : 's'} found. Pick a machine above -
-            the footprint and the cut length are worked out at that machine&apos;s own step, so
-            there are no numbers to show until one is chosen.
+            {files.length} cut file{files.length === 1 ? '' : 's'} found, and {files.length === 1 ? 'it names' : 'none of them names'} a
+            machine this build knows. Newer files carry their machine from PressCal;
+            for these, pick one above.
           </div>
         )}
 

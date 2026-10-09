@@ -57,6 +57,14 @@ console.log('  job      %s · %s', f.job.quoteNumber ?? '(no quote)', f.job.titl
 console.log('  sheet    %s × %s mm', f.sheet.w, f.sheet.h)
 console.log('  loading  feed %s · side up %s · mirrored %s',
   f.loading.feedEdge, f.loading.sideUp, f.loading.mirrored)
+if (f.machine) {
+  const m = f.machine
+  const l = m.limitsMm
+  console.log('  machine  %s (%s) at %s:%s', m.label ?? '(no label)', m.model ?? '(no model)', m.host ?? '(no address)', m.port ?? '(default)')
+  if (l) console.log('  limits   opening %s / material %s / blade %s / camera %s mm', l.opening, l.material, l.bladeTravel, l.cameraTravel)
+} else {
+  console.log('  machine  (none in this file - an older file, or a job with no cutter)')
+}
 if (f.marks) {
   console.log('  marks    %s · scan %s × %s at %s,%s · arm %s · bar %s',
     f.marks.kind, f.marks.scanRect.w, f.marks.scanRect.h,
