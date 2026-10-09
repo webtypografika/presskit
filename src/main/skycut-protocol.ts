@@ -409,7 +409,26 @@ export const SKYCUT_MACHINE_PRESETS: SkycutMachine[] = [
     label: 'Skycut D60',
     model: 'D60',
     unitsPerMm: 40,
-    axisConvention: 'swapInvertFromSheet',
+    /* 🔴 CHANGED FROM THE RESEARCHED `swapInvertFromSheet` ON 09/10/2026, AND THE OLD VALUE WAS
+     * PROVEN WRONG RATHER THAN MERELY DOUBTED. Two independent reverse-engineering projects
+     * describe it, and on this machine it mirrors: the first real cut of an asymmetric shape came
+     * back as if it were the sheet's second side. `scripts/axis-handedness-check.mjs` then showed
+     * why — it has determinant −1.
+     *
+     * ⚠️ THE REPLACEMENT IS DEDUCED, NOT MEASURED, and that distinction is the point of this
+     * comment. Two observations on his own D60 triangulate to it:
+     *   · with `swapInvertFromSheet` the cut came out mirrored — and that convention differs from
+     *     this one by exactly one axis flip;
+     *   · with `swapTurnLeft` the cut came out rotated 180° — and `swapTurnLeft` differs from this
+     *     one by exactly 180°.
+     * Both point here. Nobody has yet drawn a heart with a pen and confirmed it.
+     *
+     * 🔴 WHY SHIP IT ANYWAY: the value it replaces is KNOWN to mirror on this machine, so this
+     * cannot be worse, and the owner should not have to carry a setting that is a fact about the
+     * machine rather than about his job — his own argument, and the right one: «αυτό δεν θα έπρεπε
+     * να είναι ρύθμιση για τον χρήστη». The per-job override stays until a pen run confirms it;
+     * then it goes, and this line is the answer. */
+    axisConvention: 'swapTurnRight',
     markScanOpcode: 'TB25',
     markScanArgs: 'heightWidth',
     chunkBytes: 1024,
@@ -425,6 +444,12 @@ export const SKYCUT_MACHINE_PRESETS: SkycutMachine[] = [
     label: 'Skycut D24',
     model: 'D24',
     unitsPerMm: 40,
+    /* ⚠️ LEFT ON THE RESEARCHED VALUE, WHICH MIRRORS — AND THAT IS A FLAG, NOT AN OVERSIGHT.
+     * The D60's was corrected on 09/10/2026 from two observations on that machine. Nobody has run
+     * a D24, so correcting this one the same way would be inventing a measurement. It comes from
+     * the same research that proved wrong next door, so the first D24 job should expect a mirror
+     * and the per-job override is how it is fixed in seconds. Replace this with the measured
+     * answer the day somebody cuts on one. */
     axisConvention: 'swapInvertFromSheet',
     /* Third-party reading, unverified on our hardware. Check it with a pen
        before it ever meets a blade. */
