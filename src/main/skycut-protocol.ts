@@ -1404,7 +1404,27 @@ export function planSkycutJob(
   /* The park position in millimetres: whichever sheet corner maps to machine
      (0,0) under this machine's convention. Derived from the transform rather than
      assumed, so a changed convention moves the park too. */
-  const parkMm = parkPositionMm(machine, sheet)
+  /* ═══ WHERE THE MACHINE'S ZERO IS ═══
+   *
+   * With camera marks the operator parks over the first mark and the scan sets the origin there,
+   * so every coordinate is measured from that mark and inverted against the MARK RECTANGLE.
+   * Without marks there is no scan, the head is parked at the sheet's own corner, and the sheet
+   * is the frame. One decision, made once, used by the park and by every point below it. */
+  const markOrigin = file.marks ? file.marks.scanRect : null
+  const originFrame = markOrigin ? { w: markOrigin.w, h: markOrigin.h } : sheet
+  const originRelative = (p: CutPointMm): CutPointMm =>
+    markOrigin ? { x: p.x - markOrigin.x, y: p.y - markOrigin.y } : p
+
+  /* ⚠️ THE PARK IS WORKED OUT IN THE MACHINE'S FRAME AND THEN PUT BACK INTO THE SHEET'S, because
+     everything below it — the ordering and every travel distance — is in sheet millimetres.
+     Leaving it in the mark frame would compare a mark-relative point against sheet-absolute ones
+     and order the contours by a distance that is nonsense. Distances themselves are unaffected by
+     the move: a translation preserves them, which is why only the park needs converting and the
+     travel sums do not. */
+  const parkInFrame = parkPositionMm(machine, originFrame)
+  const parkMm = markOrigin
+    ? { x: parkInFrame.x + markOrigin.x, y: parkInFrame.y + markOrigin.y }
+    : parkInFrame
   const order = orderByNearest(ends, parkMm)
 
   const contours: SkycutContourPlan[] = []
@@ -1421,7 +1441,28 @@ export function planSkycutJob(
     contours.push({
       group: f.group,
       index: f.index,
-      points: f.pts.map((p) => mmToMachine(p, machine, sheet)),
+      /* 🔴 MEASURED FROM THE FIRST MARK WHEN THERE ARE MARKS, NOT FROM THE
+         SHEET'S CORNER — and getting this wrong is what threw a sheet out of
+         the machine on 09/10/2026.
+
+         `describeSkycutPlan` has always told the operator to PARK THE HEAD OVER
+         THE FIRST MARK, because the scan command carries the rectangle's size
+         and never its position. So after the scan the machine's origin IS that
+         mark. The points, meanwhile, were going out measured from the sheet's
+         own corner — so every one of them carried the mark's offset as a lie,
+         and once the axes were swapped that lie became the width of the sheet.
+
+         ⚠️ AND THE FRAME CHANGES WITH THE ORIGIN. The inversions inside
+         `mmToMachine` subtract from the frame's own width and height, so a
+         mark-relative point must be inverted against the MARK RECTANGLE's
+         dimensions, not the sheet's. Passing the sheet there would fix the
+         origin and leave the mirror axis in the wrong place — a subtler version
+         of the same bug.
+
+         No marks means no scan, the operator parks at the sheet's own corner,
+         and the sheet frame is the right one — which is why this is a swap of
+         frames and not an unconditional subtraction. */
+      points: f.pts.map((p) => mmToMachine(originRelative(p), machine, originFrame)),
       cutLengthMm: mm3(f.lengthMm),
       travelInMm: mm3(travelInMm),
     })
