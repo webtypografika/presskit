@@ -241,7 +241,9 @@ const isStr = (v: unknown): v is string => typeof v === 'string'
    and a broken record is REPORTED, not skipped: a machine that silently
    disappears from the list is a machine somebody will re-add by hand with
    different numbers. */
-function coerceRecord(raw: unknown): { ok: true; record: SkycutMachineRecord } | { ok: false; refusals: SkycutEngineRefusal[] } {
+/** Exported for `scripts/axis-one-source-check.mjs`, which is the only thing keeping the rule
+ *  below true — there is no unit-test runner in this app. Not part of the IPC surface. */
+export function coerceRecord(raw: unknown): { ok: true; record: SkycutMachineRecord } | { ok: false; refusals: SkycutEngineRefusal[] } {
   if (!isObj(raw)) return { ok: false, refusals: [refuse('machineRecordMalformed', 'not an object')] }
 
   const bad: string[] = []
@@ -282,18 +284,53 @@ function coerceRecord(raw: unknown): { ok: true; record: SkycutMachineRecord } |
      Refused by NAME now, with the offending word and the accepted words in the
      detail, because "a machine card is unreadable" is not something an operator
      can act on and "axisConvention 'banana'" is. */
-  const axisConvention = raw.axisConvention
-  if (!isSkycutAxisConvention(axisConvention)) {
+  /* 🔴 WHICH WAY THE AXES RUN IS DECIDED BY THE MODEL'S ROW, AND BY NOTHING THAT ARRIVES.
+     THE RUN THIS COST, 09/10/2026. 2.3.46 shipped the corrected quarter turn on the D60's row.
+     It changed nothing, because a word was sitting on the other side of this function: the owner
+     had typed one into PressCal's machine card while we were hunting a mirror, PressCal wrote it
+     into the handover file, `machineFromFile` spread it OVER the preset, and the fix was invisible.
+     He installed, ran the test, and said «δεν γύρισε 180, πάλι το ίδιο». PressCal no longer sends
+     it — but a stored card does the same thing by another door, and there is one on this disk
+     right now: his active card carries `swapInvertFromSheet`, which has determinant −1 and MIRRORS.
+     Nothing reaches it today (`cutFromFile` passes no card, so the file's model decides), which is
+     precisely why it would have been found the hard way.
+     So: one source of truth, and it is the table. A record naming a model we have a row for gets
+     that row's convention, whatever it carried — the store has no schema, a card can be older than
+     the correction, hand-edited, or written by another build, and none of those know the machine
+     better than the row does.
+     ⚠️ IGNORED, NOT REFUSED, and the difference matters: his own active card disagrees, so refusing
+     a disagreement would refuse his cut. The disagreement is logged and the geometry is right.
+     ⚠️ AND AN UNKNOWN MODEL STILL GOES THROUGH THE OLD GATE. With no row there is nothing better to
+     trust, so the word is validated BY NAME exactly as before — never coerced to a default, since
+     every default this file ever had was one of the two that mirror. */
+  const modelRow = model === undefined
+    ? undefined
+    : SKYCUT_MACHINE_PRESETS_WITH_TRANSPORT.find(
+        (pr) => pr.id === PRESSCAL_MODEL_PRESET[model.trim().toLowerCase()],
+      )
+  let axisConvention: SkycutMachineRecord['axisConvention']
+  if (modelRow) {
+    axisConvention = modelRow.axisConvention
+    if (raw.axisConvention !== undefined && raw.axisConvention !== modelRow.axisConvention) {
+      console.warn(
+        '[skycut] the card for model ' + JSON.stringify(model) + ' carries axisConvention ' +
+          JSON.stringify(raw.axisConvention) + ' - ignored, the model row says ' +
+          JSON.stringify(modelRow.axisConvention),
+      )
+    }
+  } else if (!isSkycutAxisConvention(raw.axisConvention)) {
     return {
       ok: false,
       refusals: [
         refuse(
           'axisConventionUnknown',
-          `${JSON.stringify(axisConvention)} on card ${JSON.stringify(raw.label ?? raw.id ?? '')}` +
+          `${JSON.stringify(raw.axisConvention)} on card ${JSON.stringify(raw.label ?? raw.id ?? '')}` +
             ` - this build knows ${SKYCUT_AXIS_CONVENTIONS.join(', ')}`,
         ),
       ],
     }
+  } else {
+    axisConvention = raw.axisConvention
   }
   const markScanArgs = raw.markScanArgs
   if (!isSkycutMarkArgOrder(markScanArgs)) {
@@ -500,15 +537,13 @@ function machineFromFile(block: CutJobMachineJson | undefined): MachineFromFile 
      machine card" points at the file rather than at a card he never made. */
   const candidate = {
     ...preset,
-    /* 🔴 THE FILE'S AXIS CONVENTION WINS OVER THE PRESET'S, when it names one. The preset's is the
-       RESEARCHED value and it MIRRORS (determinant −1) — proved on his D60 on 09/10/2026, when the
-       first real cut of an asymmetric shape came out reversed. Nobody has measured which way his
-       machine actually runs, so the only honest source is the owner's own declaration on the
-       machine's card, and it arrives here. Absent leaves the preset's, which is the old behaviour
-       and not a safe one. */
-    ...(block.axisConvention && isSkycutAxisConvention(block.axisConvention)
-      ? { axisConvention: block.axisConvention }
-      : {}),
+    /* ⚠️ AND NOTHING ABOUT THE AXES COMES FROM THE FILE. It did for one day — 09/10/2026 — on the
+       argument that only the owner could say which way his own plotter ran, so his declaration
+       travelled with the job. It took one run to disprove: the word he had typed while we were
+       hunting a mirror outlived the hunt, rode along in the file, and overrode the corrected turn
+       2.3.46 had just shipped. «Δεν γύρισε 180, πάλι το ίδιο.» The file names the MODEL; the
+       model's row names the turn, and `coerceRecord` enforces that for every record, from a file
+       or from the store. One source of truth, by construction rather than by agreement. */
     id: `file:${model}@${(block.host ?? '').trim()}:${block.port ?? preset.port}`,
     label: (block.label ?? '').trim() || preset.label,
     host: (block.host ?? '').trim(),
