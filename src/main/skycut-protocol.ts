@@ -1540,17 +1540,37 @@ export function planSkycutJob(
   }
 }
 
-/* Which sheet corner is machine (0,0) under this convention. Found by asking the
-   transform rather than by assuming, so the two can never disagree. */
+/**
+ * Which corner of the frame is machine (0,0) under this convention.
+ *
+ * 🔴 IT NOW ACTUALLY ASKS THE TRANSFORM, which is what the comment here claimed for months while
+ * the body was a hand-written switch. The two drifted the moment two conventions were added on
+ * 09/10/2026: `swapTurnLeft` and `swapTurnRight` fell through to the `default` and were told the
+ * park was the bottom-left corner, which is true for neither of them. A hand-written answer to a
+ * question the transform can be asked is a second source of truth, and this file has already paid
+ * for one of those today.
+ *
+ * ⚠️ WHAT IT AFFECTS, SO THE SIZE OF THAT MISTAKE IS ON THE RECORD: the order the contours are cut
+ * in, the reported travel distance, and the run home at the end. NOT where anything is cut —
+ * every point carries its own absolute coordinates. So a wrong park wastes head movement and
+ * misreports the time; it does not put the knife in the wrong place.
+ *
+ * Every convention maps corners to corners, so trying the four and keeping the one that lands on
+ * (0,0) is exact rather than approximate.
+ */
 function parkPositionMm(machine: SkycutMachine, sheet: { w: number; h: number }): CutPointMm {
-  switch (machine.axisConvention) {
-    case 'swapInvertFromSheet':
-      return { x: sheet.w, y: sheet.h }
-    case 'swapOnly':
-    case 'direct':
-    default:
-      return { x: 0, y: 0 }
+  const corners: CutPointMm[] = [
+    { x: 0, y: 0 }, { x: sheet.w, y: 0 }, { x: 0, y: sheet.h }, { x: sheet.w, y: sheet.h },
+  ]
+  for (const c of corners) {
+    const m = mmToMachine(c, machine, sheet)
+    if (m.x === 0 && m.y === 0) return c
   }
+  /* Unreachable for every convention in the table — each is a rigid motion of the frame onto
+     itself, so one corner always lands on the origin. Kept so a future transform that is NOT
+     corner-to-corner degrades to the bottom-left rather than to `undefined`, and so this function
+     has no path that can throw in the middle of planning a job. */
+  return { x: 0, y: 0 }
 }
 
 // ─── The stream ─────────────────────────────────────────────────────────────

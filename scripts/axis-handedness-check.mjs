@@ -84,4 +84,28 @@ if (swappedAndUpright.length === 0) {
   console.log('\nFAILED: a machine whose axes run across the material has no correct setting.\n')
   process.exit(1)
 }
-console.log('\nOK: %d swapped convention(s) available that do not mirror.\n', swappedAndUpright.length)
+/* 🔴 AND WHERE THE MACHINE'S ZERO IS, FOR EACH — derived from the transform, which is exactly what
+   a hand-written switch got wrong the day the two new conventions were added: both fell through to
+   a default that said "bottom-left", which is true for neither. A park in the wrong corner does not
+   misplace a cut — every point carries its own absolute coordinates — but it orders the contours by
+   nonsense distances and misreports the travel and the time. */
+console.log('\n%s  %s', 'convention'.padEnd(22), 'machine (0,0) is this corner of the frame')
+console.log('%s  %s', '-'.repeat(22), '-'.repeat(42))
+let parkFailures = 0
+for (const axisConvention of SKYCUT_AXIS_CONVENTIONS) {
+  const machine = { axisConvention, unitsPerMm: 1 }
+  const corners = [{ x: 0, y: 0 }, { x: SHEET.w, y: 0 }, { x: 0, y: SHEET.h }, { x: SHEET.w, y: SHEET.h }]
+  const park = corners.find((c) => {
+    const m = mmToMachine(c, machine, SHEET)
+    return m.x === 0 && m.y === 0
+  })
+  if (!park) { parkFailures++; console.log('%s  NONE — not corner to corner', axisConvention.padEnd(22)); continue }
+  console.log('%s  %s-%s', axisConvention.padEnd(22), park.x === 0 ? 'left' : 'right', park.y === 0 ? 'bottom' : 'top')
+}
+if (parkFailures > 0) {
+  console.log('\nFAILED: a convention has no corner at the machine origin.\n')
+  process.exit(1)
+}
+
+console.log('\nOK: %d swapped convention(s) available that do not mirror, and every one has a park corner.\n',
+  swappedAndUpright.length)
