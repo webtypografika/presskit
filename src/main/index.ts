@@ -10,6 +10,7 @@ import { registerPresscalHandlers, postToPresscal } from './presscal-client'
 import { registerOcrLanguageHandlers } from './ocr-languages'
 import { registerErrorReportHandlers } from './error-report'
 import { registerSettingsHandlers, store } from './settings'
+import { localAuth, localPairAuth, isOpenRoute, LOCAL_KEY_HEADER, LOCAL_KEY_MIN_LENGTH } from './local-auth'
 import { registerBatchHandlers } from './batch-engine'
 import { registerConvertHandlers } from './convert-engine'
 import { registerColorHandlers } from './color-tools'
@@ -1789,6 +1790,21 @@ function startFileServer(): void {
     '.psd': 'application/octet-stream', '.eps': 'application/postscript',
   }
 
+  /** Where the shared key lives: PressKit's own config, per profile, like every
+   *  other setting. It is never shown on screen and never typed by anybody. */
+  const LOCAL_KEY = 'presscal.localKey'
+
+  /** The stored key, or null when this PressKit has never been paired.
+   *
+   *  ⚠️ A SHORT OR NON-STRING VALUE READS AS "NOT PAIRED" rather than as a key.
+   *  A truncated value in the config would otherwise become a lock nobody can
+   *  open — the server would demand a secret PressCal cannot produce, and every
+   *  save would fail with no way back short of editing a JSON file by hand. */
+  const localKey = (): string | null => {
+    const v = store.get(LOCAL_KEY)
+    return typeof v === 'string' && v.trim().length >= LOCAL_KEY_MIN_LENGTH ? v.trim() : null
+  }
+
   const server = http.createServer((req: any, res: any) => {
     // CORS headers for browser access
     res.setHeader('Access-Control-Allow-Origin', '*')
@@ -1799,14 +1815,89 @@ function startFileServer(): void {
 
     const parsed = urlMod.parse(req.url, true)
 
-    // Debug: log every request to temp file
-    try { fs.appendFileSync('C:\\Users\\info\\presskit-server.log', `${new Date().toISOString()} ${req.method} ${req.url}\n`) } catch (e: any) { try { fs.writeFileSync('C:\\Users\\info\\presskit-log-error.txt', String(e)) } catch {} }
+    // ⚠️ THE PER-REQUEST DEBUG LOG IS GONE. It appended to a HARDCODED
+    // `C:\Users\info\presskit-server.log` — one developer's own path, shipped, on
+    // every single request, with a second hardcoded file for the failure to write
+    // the first. On anybody else's machine both throws were swallowed; on his it
+    // grew without end (39 KB by 09/10/2026). If this is ever needed again it
+    // belongs under `app.getPath('logs')`, behind a switch, and capped.
 
     // Health check: GET /health → { ok: true }
+    //
+    // 🔴 OPEN WITHOUT A KEY, DELIBERATELY. PressCal has to be able to tell
+    // whether PressKit is running BEFORE it can pair with it, and this answers
+    // nothing but "something is listening". It reads no disk and names no path.
     if (parsed.pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ ok: true }))
+      res.end(JSON.stringify({ ok: true, paired: localKey() !== null }))
       return
+    }
+
+    /* ═══ PAIRING, AND THEN THE KEY IS REQUIRED ═══════════════════════════════
+     *
+     * 🔴 WHY THIS EXISTS. Everything below used to be reachable by ANY web page
+     * open in ANY browser on this machine: the server answers
+     * `Access-Control-Allow-Origin: *` and asked for nothing. It can write a file
+     * to an arbitrary absolute path. The owner's instruction was to let PressCal
+     * start a cut from its own button, and his own question answered itself:
+     * «δεν λέω να στείλει το presscal στο δίκτυο τίποτα… δεν μπορεί να γίνει,
+     * σωστά;» — the danger was never PressCal, it is anything PRETENDING to be
+     * PressCal at a door with no lock.
+     *
+     * 🔴 TRUST ON FIRST USE, AND WHY THAT IS THE HONEST CHOICE HERE. Any page can
+     * call this route, so whoever pairs FIRST wins — and after that, changing the
+     * key requires presenting the current one. In practice PressCal pairs on its
+     * first page load after the update, on the same machine, which is a window of
+     * seconds. It is not perfect and it is an enormous improvement on "no lock at
+     * all". The alternative — a code the owner reads off one screen and types
+     * into another — is the thing he refused, twice, in plain words.
+     *
+     * ⚠️ UNTIL A KEY IS STORED THE SERVER STAYS OPEN. That is not laziness: the
+     * deployed PressCal already uses this server for saving files and refreshing
+     * folders, so demanding a key before anything had one would break every one
+     * of those the moment this build installed. The open window closes on the
+     * first page load of a PressCal that knows how to pair. */
+    if (req.method === 'POST' && parsed.query.pair) {
+      const chunks: Buffer[] = []
+      req.on('data', (c: Buffer) => chunks.push(c))
+      req.on('end', () => {
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+          /* 🔴 THE DECISION IS `localPairAuth`'s, NOT THIS HANDLER'S. Every case it
+             has is exercised by scripts/local-auth-check.mjs; a copy of the rule
+             written out here would be a second rule that nothing checks. */
+          const d = localPairAuth(localKey(), body.key, req.headers[LOCAL_KEY_HEADER])
+          if (!d.allow) {
+            res.writeHead(d.status, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: false, error: d.reason }))
+            return
+          }
+          store.set(LOCAL_KEY, String(body.key).trim())
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
+        } catch (e: any) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: String(e?.message ?? e) }))
+        }
+      })
+      return
+    }
+
+    /* ─── THE LOCK ─────────────────────────────────────────────────────────────
+     *
+     * 🔴 ONE CHECK, ABOVE EVERY REMAINING ROUTE, so a route added later cannot
+     * forget to ask. The list of routes that answer WITHOUT a key is closed and
+     * lives in `isOpenRoute`; both decisions are exercised by
+     * scripts/local-auth-check.mjs, including the mistakes that would be easy to
+     * make here — a prefix passing, an array-valued header passing, a blank
+     * stored key reading as "no key needed". */
+    if (!isOpenRoute(parsed.pathname, parsed.query as Record<string, unknown>)) {
+      const d = localAuth(localKey(), req.headers[LOCAL_KEY_HEADER])
+      if (!d.allow) {
+        res.writeHead(d.status, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: d.reason }))
+        return
+      }
     }
 
     // Cloud roots: GET /roots → [{ placeholder, label, localPath }]
