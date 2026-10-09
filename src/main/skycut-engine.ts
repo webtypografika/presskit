@@ -500,6 +500,15 @@ function machineFromFile(block: CutJobMachineJson | undefined): MachineFromFile 
      machine card" points at the file rather than at a card he never made. */
   const candidate = {
     ...preset,
+    /* 🔴 THE FILE'S AXIS CONVENTION WINS OVER THE PRESET'S, when it names one. The preset's is the
+       RESEARCHED value and it MIRRORS (determinant −1) — proved on his D60 on 09/10/2026, when the
+       first real cut of an asymmetric shape came out reversed. Nobody has measured which way his
+       machine actually runs, so the only honest source is the owner's own declaration on the
+       machine's card, and it arrives here. Absent leaves the preset's, which is the old behaviour
+       and not a safe one. */
+    ...(block.axisConvention && isSkycutAxisConvention(block.axisConvention)
+      ? { axisConvention: block.axisConvention }
+      : {}),
     id: `file:${model}@${(block.host ?? '').trim()}:${block.port ?? preset.port}`,
     label: (block.label ?? '').trim() || preset.label,
     host: (block.host ?? '').trim(),

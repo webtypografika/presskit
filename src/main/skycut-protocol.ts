@@ -237,6 +237,24 @@ export interface CutJobMachineJson {
     bladeTravel: number
     cameraTravel: number
   }
+  /* WHICH WAY THE MACHINE'S AXES RUN, as one of SKYCUT_AXIS_CONVENTIONS.
+  
+     🔴 THIS IS THE ONE PIECE OF MACHINE LANGUAGE THAT TRAVELS, AND THE RULE ABOVE
+     IS REVISED RATHER THAN QUIETLY BROKEN. The block was documented as carrying
+     identity and address and never language, so that a file could not reprogram a
+     machine. The axis convention is the exception, for the same reason the address
+     is: it is a fact about HIS machine that only he can establish, nobody has
+     measured it, and the first real cut came out mirrored because the only place
+     to change it was a screen he had asked to be removed. A per-machine
+     declaration typed on his own card is not a file reprogramming a stranger's
+     plotter — it is the owner saying which way his own one runs.
+  
+     ⚠️ STILL NOT TRAVELLING, AND MUST NOT: units per millimetre, the scan opcode,
+     chunk sizes, pauses, speeds, and above all force. Those come from the model.
+  
+     Absent means the model's own default, which is the researched one — and the
+     researched one mirrors, so absent is not a safe answer, merely the old one. */
+  axisConvention?: string
 }
 
 export interface CutJobFile {
@@ -275,13 +293,42 @@ export interface CutJobFile {
  * symmetric shape, ruinous on an asymmetric one — and the machine never says a
  * word. Adding a fourth convention to this array is what makes it exist; the
  * type follows, so the switches below stop compiling until they handle it. */
+/* 🔴 TWO OF THESE MIRROR THE JOB AND NOBODY HAD SAID SO — measured on his D60 on
+ * 09/10/2026, when the first real cut of an asymmetric shape «άρχιζε να κόβει το
+ * κοπτικό λες και ήταν αντικριστό».
+ *
+ * The arithmetic, which was there all along:
+ *   swapInvertFromSheet  (x,y) → (H−y, W−x)   determinant −1  → A MIRROR
+ *   swapOnly             (x,y) → (y, x)       determinant −1  → A MIRROR
+ *   direct               (x,y) → (x, y)       determinant +1
+ * A determinant of −1 flips handedness. So the researched default mirrors, the
+ * only alternative that swapped the axes ALSO mirrored, and the only
+ * handedness-preserving option left did not swap them at all — which on a
+ * machine that wants its axes swapped comes out rotated instead. There was no
+ * setting that was both swapped and not mirrored, and that is why no amount of
+ * choosing could have fixed this.
+ *
+ * ⚠️ AND A SQUARE CANNOT SHOW IT. The one live test this project ever ran drew a
+ * square: the single shape invariant under every one of these. It passed, and it
+ * proved nothing about handedness. A heart does not.
+ *
+ * The two added below are the genuine quarter turns — swapped AND
+ * handedness-preserving — which is what a plotter whose axes run across the
+ * material actually needs. Nobody has measured which of them his machine wants;
+ * that is the owner's choice on the machine's own card, made once with a PEN. */
 export const SKYCUT_AXIS_CONVENTIONS = [
-  /* x_machine = sheetH − y ; y_machine = sheetW − x. The researched one. */
+  /* x_machine = sheetH − y ; y_machine = sheetW − x. The researched one.
+     🔴 A MIRROR (det −1). Kept because two independent projects describe it and
+     a machine may genuinely want it; no longer the thing a typo inherits. */
   'swapInvertFromSheet',
-  /* x_machine = y ; y_machine = x. Swapped, not inverted. */
+  /* x_machine = y ; y_machine = x. Swapped, not inverted. 🔴 ALSO A MIRROR. */
   'swapOnly',
   /* x_machine = x ; y_machine = y. For a machine that wants the sheet frame. */
   'direct',
+  /* x_machine = y ; y_machine = sheetW − x. A true quarter turn, det +1. */
+  'swapTurnLeft',
+  /* x_machine = sheetH − y ; y_machine = x. The other quarter turn, det +1. */
+  'swapTurnRight',
 ] as const
 
 export type SkycutAxisConvention = (typeof SKYCUT_AXIS_CONVENTIONS)[number]
@@ -667,7 +714,20 @@ export function parseCutFile(raw: unknown): ParseCutFileResult {
           }
         }
       }
+      /* Refused BY NAME, never coerced: a convention this build does not know would
+         otherwise fall through to the researched default, which MIRRORS — and a mirror
+         is invisible on a symmetric shape and ruins an asymmetric one. */
+      let axis: string | undefined
+      const axisRaw = strOrUndef(m.axisConvention, 'axisConvention')
+      if (axisRaw !== undefined) {
+        if (!isSkycutAxisConvention(axisRaw)) {
+          refusals.push({ code: 'machineBlockMalformed', detail: 'axisConvention ' + axisRaw })
+        } else {
+          axis = axisRaw
+        }
+      }
       machine = {
+        axisConvention: axis,
         model: strOrUndef(m.model, 'model'),
         label: strOrUndef(m.label, 'label'),
         host, port, limitsMm,
@@ -830,11 +890,19 @@ export function mmToMachine(
      needs a return; it is no longer the thing a typo inherits. */
   switch (machine.axisConvention) {
     case 'swapOnly':
+      /* det −1 — mirrors. See the note on SKYCUT_AXIS_CONVENTIONS. */
       return { x: Math.round(p.y * k), y: Math.round(p.x * k) }
     case 'direct':
       return { x: Math.round(p.x * k), y: Math.round(p.y * k) }
+    /* The two genuine quarter turns: swapped AND handedness-preserving, which is
+       what the mirrored first cut of 09/10/2026 showed was missing. */
+    case 'swapTurnLeft':
+      return { x: Math.round(p.y * k), y: Math.round((sheet.w - p.x) * k) }
+    case 'swapTurnRight':
+      return { x: Math.round((sheet.h - p.y) * k), y: Math.round(p.x * k) }
     case 'swapInvertFromSheet':
     default:
+      /* det −1 — mirrors. */
       return { x: Math.round((sheet.h - p.y) * k), y: Math.round((sheet.w - p.x) * k) }
   }
 }
