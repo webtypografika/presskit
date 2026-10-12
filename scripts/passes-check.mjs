@@ -105,18 +105,44 @@ else {
 }
 
 console.log('')
-console.log('the head comes back to the mark he parked on')
-const last = one.stream.stream.commands.filter((c) => c.startsWith('U')).pop()
-const scan = one.plan.markScan
-if (!scan) {
-  fail('his file has no mark scan, so this check proves nothing — use a file with camera marks')
+console.log('the head comes back to where the job started, not to an absolute corner')
+/* Parsed with string operations rather than a pattern: a backslash does not survive every way
+   this file gets written, and a pattern that matches nothing turns every check below into a
+   silent pass. */
+const point = (cmd) => {
+  const kind = cmd[0]
+  if (kind !== 'U' && kind !== 'D') return null
+  const comma = cmd.indexOf(','), semi = cmd.indexOf(';')
+  if (comma < 1 || semi < comma) return null
+  const x = Number(cmd.slice(1, comma)), y = Number(cmd.slice(comma + 1, semi))
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+  return { kind, x, y }
+}
+const moves = one.stream.stream.commands.map(point).filter(Boolean)
+const k = machine.unitsPerMm
+if (moves.length < 3) {
+  fail('no coordinates were parsed out of the stream at all - this check proved nothing')
 } else {
-  const home = mmToMachine({ x: 0, y: 0 }, machine, { w: scan.widthMm, h: scan.heightMm })
-  const want = `U${home.x},${home.y};`
-  if (last === want) pass(`the last move goes to the scan rectangle's own corner: ${want}`)
-  else fail(`the last move is ${last}, not the parked corner ${want}`)
-  if (want !== 'U0,0;') pass('and that is NOT machine 0,0 on this machine — the old line sent it to the far mark')
-  else console.log('  · on this convention the parked corner IS 0,0, so this file cannot tell the two apart')
+  const firstPt = moves[0], lastMove = moves[moves.length - 1], lastCut = moves[moves.length - 2]
+  const mm = (v) => (v / k).toFixed(1)
+  if (lastMove.kind === 'U' && lastMove.x === firstPt.x && lastMove.y === firstPt.y) {
+    pass(`the last move returns to the job's first point (${mm(firstPt.x)}, ${mm(firstPt.y)} mm)`)
+  } else {
+    fail(`the last move goes to ${mm(lastMove.x)}, ${mm(lastMove.y)} mm but the job started at `
+      + `${mm(firstPt.x)}, ${mm(firstPt.y)} mm - an absolute corner was tried twice on his machine `
+      + 'and drove the material off the rollers both times')
+  }
+  /* 🔴 AND THE MATERIAL MUST NOT BE DRIVEN PAST ANYTHING THE JOB REACHED. That overshoot is what
+     ejects the sheet: the first attempt overshot the last cut by 56 mm on this very file. */
+  const xs = moves.map((m) => m.x)
+  const minX = Math.min(...xs), maxX = Math.max(...xs)
+  if (lastMove.x <= maxX && lastMove.x >= minX) {
+    pass(`the material stops inside the job's own range (${mm(minX)}..${mm(maxX)} mm), `
+      + `${mm(Math.abs(lastMove.x - lastCut.x))} mm from the last cut`)
+  } else {
+    fail(`the material is driven to ${mm(lastMove.x)} mm, outside the ${mm(minX)}..${mm(maxX)} mm the `
+      + 'job used - this is exactly what pushes the sheet out of the rollers')
+  }
 }
 
 console.log(failed === 0

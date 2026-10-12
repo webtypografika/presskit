@@ -1766,19 +1766,33 @@ export function emitSkycutStream(plan: SkycutPlan): SkycutStreamResult {
     }
   }
 
-  /* 🔴 BACK TO THE MARK HE PARKED ON — his own request, 10/10/2026: «όταν εγώ βάζω το μαχαίρι πάνω
-     στο Γ, όταν τελειώνει η δουλειά θέλω να ξαναεπιστρέφει εκεί.»
-     With camera marks every coordinate in this stream is measured from the scan rectangle's own
-     corner — the same corner the operator is told to park over — so the way home is that corner
-     through the SAME transform as every cut point, never a raw `U0,0`. Those two are not the same
-     place: under a quarter turn the frame corner that lands on machine 0,0 is a DIFFERENT corner
-     of the rectangle, so the old line sent the head to the far mark and left it there.
-     ⚠️ Without marks there is no rectangle and the job is positioned from the machine's own
-     origin, so there 0,0 IS home and stays. */
-  const home = plan.markScan
-    ? mmToMachine({ x: 0, y: 0 }, m, { w: plan.markScan.widthMm, h: plan.markScan.heightMm })
-    : { x: 0, y: 0 }
-  commands.push(move(home))
+  /* 🔴 THE WAY HOME IS A POINT THE JOB ITSELF ALREADY STOOD ON — the first point of the first
+     contour — and that is the third answer to this question in one day, because the first two were
+     guesses about a machine that cannot be asked.
+
+     WHAT HE ASKED FOR, 12/10/2026: «να πηγαίνει εκεί που πρωτοστάθηκε, δηλαδή στο σημείο Γ, και να
+     βγάλει το υλικό τόσο όσο στο ελάχιστο των δοντιών… τα ροδάκια δεν θα πετάνε το υλικό αλλά το
+     έχουν φέρει μπροστά.»
+
+     WHAT THE TWO EARLIER ANSWERS DID, measured on his own 446 file (scan rectangle 294 x 479 mm,
+     material on machine X):
+       `U0,0`         - drove the material to one extreme of the axis
+       the mark corner - drove it to the OTHER extreme, 294 mm, i.e. 56 mm past the last cut
+     Both are absolute positions in a frame whose origin only the machine knows: `IN;` sets it from
+     wherever the head happens to be parked and the camera scan then adjusts it, and nothing comes
+     back to tell us where it ended up. Reasoning about that origin produced two wrong answers and
+     two ejected sheets.
+
+     THE FIRST POINT NEEDS NO SUCH KNOWLEDGE. It is a coordinate the blade has just visited, with
+     the sheet still gripped, so going back to it cannot be outside the material: it is exactly as
+     far forward as the job's own start, which is what 'as little as the teeth need' means. It is
+     also literally «εκεί που πρωτοστάθηκε» - where it first stood.
+
+     ⚠️ NOT THE BOUNDING BOX AND NOT THE MARK RECTANGLE. Both are computed places; a cut point is
+     a measured one. If a future reader wants the carriage parked aside as the manufacturer's own
+     sequence does (`U<endx>,0`), that moves the CARRIAGE only - never the material axis. */
+  const first = plan.contours.find((c) => c.points.length > 0)
+  commands.push(move(first ? first.points[0] : { x: 0, y: 0 }))
   commands.push('@;')
 
   /* The two guards, on the finished stream rather than on anybody's intention. */
@@ -1900,9 +1914,11 @@ export function describeSkycutPlan(plan: SkycutPlan): string[] {
         ` ${fmtMm(plan.markScan.originMm.y)} mm up from the edge that goes in first` +
         ' - the scan command carries the rectangle\'s size, never its position',
     )
-    /* His own request, 10/10/2026. Stated here as well as done in the stream, because the thing
-       he watches for is the head coming back to his hand. */
-    lines.push('When the job is finished the head comes back to that same mark')
+    /* His own request, 12/10/2026, in the form that survived measurement: the head goes back to
+       the job's own first point, which is forward enough for the rollers to still hold the sheet
+       and no further. An absolute corner was tried twice and drove the material off the rollers
+       both times — see the way home in `emitSkycutStream`. */
+    lines.push('When the job is finished the head goes back to where it started cutting')
   }
   lines.push(
     plan.estimatedSeconds === null
