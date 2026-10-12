@@ -1829,7 +1829,12 @@ function startFileServer(): void {
     // nothing but "something is listening". It reads no disk and names no path.
     if (parsed.pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ ok: true, paired: localKey() !== null }))
+      /* 🔴 A CAPABILITY, NOT A VERSION NUMBER. PressCal has to know whether this build
+         understands a field before it offers the control for it — an older build ignores an
+         unknown field in silence, and a job the operator asked to cut three times would be cut
+         once with nothing said. A flag per feature keeps PressCal out of the business of parsing
+         version strings and comparing them, which is a second place to be wrong. */
+      res.end(JSON.stringify({ ok: true, paired: localKey() !== null, passes: true }))
       return
     }
 
@@ -1952,6 +1957,10 @@ function startFileServer(): void {
           const result = await cutFromFile(filePath, {
             mode: body.mode,
             bladeConfirmed: body.bladeConfirmed === true ? true : undefined,
+            /* Straight through, like the mode: `passesOutOfRange` is refused by name in the
+               protocol, so a number this build will not run is said out loud rather than quietly
+               becoming one pass. */
+            passes: body.passes,
           })
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify(result))

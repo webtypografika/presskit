@@ -543,6 +543,10 @@ export type SkycutRefusalCode =
      rather than anybody's intention, so an edit that broke the dry run is
      refused at the boundary instead of reaching a machine. */
   | 'headDownCommandInHeadUpStream'
+  /* 🔴 A pass count outside 1..SKYCUT_MAX_PASSES. Refused BY NAME rather than clamped: a job
+     silently cut once when the operator asked for three is a job he will check for a cut that
+     is not there, and this machine never reports anything back to contradict him. */
+  | 'passesOutOfRange'
   /* A mode string this build does not carry in `SKYCUT_EMIT_MODES`. Refused,
      never treated as the nearest thing: a mode nobody declared has no stated
      answer to "does the head come down". */
@@ -581,6 +585,10 @@ export type SkycutNoteCode =
   /* A single command came out longer than the chunk size, so it travels in a
      chunk of its own. */
   | 'commandLongerThanChunk'
+  /* The run asked for more than one pass but the head stays up, so it was run once. Repeating a
+     dry run draws the same line on top of itself and teaches nothing — but the operator asked
+     for something he did not get, so he is told. */
+  | 'passesIgnoredHeadUp'
 
 export interface SkycutNote {
   code: SkycutNoteCode
@@ -1141,6 +1149,19 @@ export function skycutModeIsHeadDown(mode: unknown): boolean {
   return SKYCUT_EMIT_MODES[mode].headDown
 }
 
+/* 🔴 HOW MANY TIMES THE SAME PATH IS CUT, AND WHY THERE IS A CEILING.
+ * The owner's own case, 10/10/2026: a laminated job «δεν καταφέρνει να το κάνει σωστά» in one
+ * pass. A second pass finishes what the first started — the blade runs in the groove it already
+ * opened, so it deflects less sideways and reaches depth.
+ * ⚠️ NOTHING ELSE CHANGES WITH IT. Not the force (there is none in this module, by his standing
+ * instruction «την πίεση την έχω ρυθμίσει εγώ»), and not the speed: this machine NEVER ANSWERS,
+ * so the speed it currently holds cannot be read, and writing one would overwrite what he dialled
+ * in with no way to put it back. A pass is the same bytes again, and nothing more.
+ * The ceiling is three because each pass is another full run of the blade over the job: a typo of
+ * 30 would be half an hour of a loaded knife on one sheet, with no way to ask the machine to stop
+ * other than at the machine. */
+export const SKYCUT_MAX_PASSES = 3
+
 export interface SkycutPlanOptions {
   mode: SkycutEmitMode
   /* Safety rule 2: the operator has LOOKED AT THE HEAD and said what is fitted.
@@ -1153,6 +1174,18 @@ export interface SkycutPlanOptions {
      never one carried over from a DIFFERENT MACHINE. The tab binds the answer to
      the machine it was given for; see `CuttingPlotter.tsx`. */
   bladeConfirmed?: boolean
+  /* 1 when absent — stated in ONE place (`passesFromOptions`) so no caller invents its own
+     default. See SKYCUT_MAX_PASSES for what a pass is and what it deliberately is not. */
+  passes?: number
+}
+
+/** The pass count a run asked for, or the reason it cannot be run.
+ *  Absent means one — the only default in the system, and it is the harmless one. */
+function passesFromOptions(passes: unknown): { ok: true; passes: number } | { ok: false } {
+  if (passes === undefined || passes === null) return { ok: true, passes: 1 }
+  if (typeof passes !== 'number' || !Number.isInteger(passes)) return { ok: false }
+  if (passes < 1 || passes > SKYCUT_MAX_PASSES) return { ok: false }
+  return { ok: true, passes }
 }
 
 export interface SkycutContourPlan {
@@ -1177,6 +1210,8 @@ export interface SkycutPlan {
   footprintMm: CutRectMm
   contours: SkycutContourPlan[]
   contourCount: number
+  /* How many times each contour is cut. 1 on a dry run, always. */
+  passes: number
   /* Head-down distance: what the blade actually cuts. This is the number the
      owner intends to charge by. */
   cutLengthMm: number
@@ -1335,6 +1370,18 @@ export function planSkycutJob(
   } else if (SKYCUT_EMIT_MODES[options.mode].needsHeadAnswer && options.bladeConfirmed !== true) {
     refusals.push({ code: 'bladeNotConfirmed', detail: options.mode })
   }
+
+  /* 🔴 THE PASS COUNT, READ WHERE THE MODE IS READ, because the two answer one question together:
+     how many times the blade goes over this job. A dry run is always ONE — repeating a head-up
+     run draws nothing twice — and the operator is told, because he asked for something he did
+     not get. See SKYCUT_MAX_PASSES for why nothing else changes with a pass. */
+  const passesRead = passesFromOptions(options.passes)
+  if (!passesRead.ok) {
+    refusals.push({ code: 'passesOutOfRange', detail: `${String(options.passes)} (1..${SKYCUT_MAX_PASSES})` })
+  }
+  const askedPasses = passesRead.ok ? passesRead.passes : 1
+  const passes = skycutModeIsHeadDown(options.mode) ? askedPasses : 1
+  if (passes !== askedPasses) notes.push({ code: 'passesIgnoredHeadUp', detail: String(askedPasses) })
 
   if (machine.provenance === 'thirdParty') notes.push({ code: 'profileThirdParty', detail: machine.model })
   if (machine.axisConvention === 'swapInvertFromSheet') notes.push({ code: 'axisConventionUnverified' })
@@ -1536,8 +1583,13 @@ export function planSkycutJob(
      from `VS` would read exactly like a measured one on screen. */
   let estimatedSeconds: number | null = null
   if (machine.cutSpeedMmPerSec !== null && machine.travelSpeedMmPerSec !== null) {
+    /* ⚠️ THE CUT LENGTH IS MULTIPLIED HERE AND NOWHERE ELSE. `cutLengthMm` on the plan stays the
+       geometry's own length, single pass, because PressCal measured the same geometry and the two
+       figures are cross-checked against each other (`totalsDisagree`). Doubling the stored length
+       would make every two-pass job look like a disagreement. Time is the only thing a pass
+       changes on paper. */
     estimatedSeconds =
-      Math.round(cutLengthMm / machine.cutSpeedMmPerSec + travelMm / machine.travelSpeedMmPerSec)
+      Math.round((cutLengthMm * passes) / machine.cutSpeedMmPerSec + travelMm / machine.travelSpeedMmPerSec)
   } else {
     notes.push({ code: 'noMeasuredSpeed' })
   }
@@ -1553,9 +1605,10 @@ export function planSkycutJob(
       footprintMm,
       contours,
       contourCount: contours.length,
+      passes,
       cutLengthMm: mm3(cutLengthMm),
       travelMm: mm3(travelMm),
-      lifts: contours.length,
+      lifts: contours.length * passes,
       pointCount,
       markScan,
       toleranceMm: tolMm,
@@ -1692,15 +1745,40 @@ export function emitSkycutStream(plan: SkycutPlan): SkycutStreamResult {
   if (m.speedVs !== null) commands.push(`VS${m.speedVs};`)
 
   const headDown = SKYCUT_EMIT_MODES[plan.mode].headDown
+  /* 🔴 EVERY PASS IS THE SAME BYTES AGAIN — same path, same order, same direction, and no setting
+     touched in between. The second pass helps because the blade drops into the groove the first
+     one opened, not because anything was turned up. Re-stated here because this is the loop a
+     future reader would be tempted to 'improve' by cutting faster on the way back.
+     Clamped again rather than trusted: this function is exported, so a hand-built plan can reach
+     it, and a head-up mode must never repeat (nothing is drawn) nor exceed the ceiling. */
+  const passes = skycutModeIsHeadDown(plan.mode)
+    ? Math.min(Math.max(Math.trunc(plan.passes ?? 1), 1), SKYCUT_MAX_PASSES)
+    : 1
   for (const c of plan.contours) {
     if (c.points.length === 0) continue
-    commands.push(move(c.points[0]))
-    for (let i = 1; i < c.points.length; i++) {
-      commands.push(headDown ? carve(c.points[i]) : move(c.points[i]))
+    for (let pass = 0; pass < passes; pass++) {
+      /* Head UP to the start every time. On a closed contour the last point is the first, so this
+         is a move of nothing; on an open one it is the only way back without cutting a line to it. */
+      commands.push(move(c.points[0]))
+      for (let i = 1; i < c.points.length; i++) {
+        commands.push(headDown ? carve(c.points[i]) : move(c.points[i]))
+      }
     }
   }
 
-  commands.push('U0,0;')
+  /* 🔴 BACK TO THE MARK HE PARKED ON — his own request, 10/10/2026: «όταν εγώ βάζω το μαχαίρι πάνω
+     στο Γ, όταν τελειώνει η δουλειά θέλω να ξαναεπιστρέφει εκεί.»
+     With camera marks every coordinate in this stream is measured from the scan rectangle's own
+     corner — the same corner the operator is told to park over — so the way home is that corner
+     through the SAME transform as every cut point, never a raw `U0,0`. Those two are not the same
+     place: under a quarter turn the frame corner that lands on machine 0,0 is a DIFFERENT corner
+     of the rectangle, so the old line sent the head to the far mark and left it there.
+     ⚠️ Without marks there is no rectangle and the job is positioned from the machine's own
+     origin, so there 0,0 IS home and stays. */
+  const home = plan.markScan
+    ? mmToMachine({ x: 0, y: 0 }, m, { w: plan.markScan.widthMm, h: plan.markScan.heightMm })
+    : { x: 0, y: 0 }
+  commands.push(move(home))
   commands.push('@;')
 
   /* The two guards, on the finished stream rather than on anybody's intention. */
@@ -1797,6 +1875,14 @@ export function describeSkycutPlan(plan: SkycutPlan): string[] {
       (plan.loading.mirrored ? ', mirrored' : ''),
   )
   lines.push(`Contours: ${plan.contourCount}   Lifts: ${plan.lifts}   Points: ${plan.pointCount}`)
+  /* Only when there is something to say. A line reading 'Passes: 1' on every job is noise, and
+     noise is what a reader stops checking. */
+  if (plan.passes > 1) {
+    lines.push(
+      `Passes: ${plan.passes} - the same path ${plan.passes} times over, with nothing changed` +
+        ' between them: not the force, not the speed',
+    )
+  }
   lines.push(`Blade down: ${fmtMm(plan.cutLengthMm)} mm   Head travel: ${fmtMm(plan.travelMm)} mm`)
   /* 🔴 THE SCAN RECTANGLE'S POSITION, STATED RATHER THAN DROPPED. The command
      carries only the two spans, so the position cannot be sent — the machine
@@ -1814,6 +1900,9 @@ export function describeSkycutPlan(plan: SkycutPlan): string[] {
         ` ${fmtMm(plan.markScan.originMm.y)} mm up from the edge that goes in first` +
         ' - the scan command carries the rectangle\'s size, never its position',
     )
+    /* His own request, 10/10/2026. Stated here as well as done in the stream, because the thing
+       he watches for is the head coming back to his hand. */
+    lines.push('When the job is finished the head comes back to that same mark')
   }
   lines.push(
     plan.estimatedSeconds === null

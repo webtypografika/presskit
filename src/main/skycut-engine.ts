@@ -750,6 +750,10 @@ export interface SkycutSendOptions {
   /* Safety rule 2. Arrives with every call or the plan is refused; never stored,
      never remembered, never defaulted. */
   bladeConfirmed?: boolean
+  /* How many times the blade goes over the same path, 1..SKYCUT_MAX_PASSES. Absent is one.
+     Passed through UNVALIDATED on purpose: the protocol refuses a count it will not run, by name,
+     and a second opinion here is a second place to disagree. */
+  passes?: number
 }
 
 /* Shared by `planJob` and `send`, so the send cannot possibly plan differently
@@ -805,6 +809,7 @@ async function buildPlan(
   const planned = planSkycutJob(parsed.file, use, {
     mode: options.mode,
     bladeConfirmed: options.bladeConfirmed,
+    passes: options.passes,
   })
   if (!planned.ok) {
     return { ok: false, refusals: planned.refusals, notes: planned.notes }
