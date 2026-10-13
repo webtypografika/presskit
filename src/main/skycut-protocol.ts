@@ -1475,13 +1475,24 @@ export function planSkycutJob(
   const ends = flat.map((f) => ({ start: f.pts[0], end: f.pts[f.pts.length - 1] }))
   /* The park position in millimetres: whichever sheet corner maps to machine
      (0,0) under this machine's convention. Derived from the transform rather than
-     assumed, so a changed convention moves the park too. */
   /* ═══ WHERE THE MACHINE'S ZERO IS ═══
    *
-   * With camera marks the operator parks over the first mark and the scan sets the origin there,
-   * so every coordinate is measured from that mark and inverted against the MARK RECTANGLE.
-   * Without marks there is no scan, the head is parked at the sheet's own corner, and the sheet
-   * is the frame. One decision, made once, used by the park and by every point below it. */
+   * With camera marks every coordinate is measured from the scan rectangle's corner and then put
+   * through the machine's own convention; without marks there is no scan, the head is parked at
+   * the sheet's own corner, and the sheet is the frame. One decision, made once, used by the park
+   * and by every point below it.
+   *
+   * 🔴 AND MACHINE (0,0) IS NOT THE MARK HE PARKS ON — this comment said it was, for three days,
+   * while the arithmetic said otherwise, and the gap is 294 mm on his own job. Compose the two
+   * steps for the D60 (a quarter turn right, frame 479 x 294) and they give:
+   *     machine X = 325 - sheet y        machine Y = sheet x - 4
+   * so the mark at sheet (4, 31) — his «Γ» — lands on machine (294, 0), and machine (0,0) lands on
+   * the OPPOSITE end of the mark rectangle, 5 mm from the trailing edge of the sheet. The turn
+   * plus the offset that keeps coordinates positive moves the zero to the far corner.
+   * That is why both «πήγαινε στο 0,0» and «πήγαινε στη γωνία των σημαδιών» threw a sheet: they
+   * are the rectangle's two ENDS, with 5 mm of paper beyond one and 31 mm beyond the other, while
+   * the vendor's own OPOS manual asks for 40 mm after the last mark. A comment that claims what
+   * the code does not do is how three releases went out aiming at the wrong corner. */
   const markOrigin = file.marks ? file.marks.scanRect : null
   const originFrame = markOrigin ? { w: markOrigin.w, h: markOrigin.h } : sheet
   const originRelative = (p: CutPointMm): CutPointMm =>
@@ -1789,8 +1800,15 @@ export function emitSkycutStream(plan: SkycutPlan): SkycutStreamResult {
      material movement he still sees at the end is provably not ours — which is the question he
      asked himself: «μήπως είναι ρύθμιση του μηχανήματος και όχι εντολών δικών μας;» */
   const lastCut = [...plan.contours].reverse().find((c) => c.points.length > 0)
-  const endX = lastCut ? lastCut.points[lastCut.points.length - 1].x : 0
-  commands.push(move({ x: endX, y: 0 }))
+  /* ⚠️ AND NOTHING AT ALL WHEN THERE IS NOTHING TO PARK AFTER. The fallback here used to be
+     `U0,0` — the exact ending measured to drive his sheet into the rollers — reached when a plan
+     carries no points. Today that cannot happen (a file with no contours is refused long before
+     this), but a dead branch holding the one command we know is harmful is a trap with a fuse in
+     it. A stream that cut nothing has no reason to move anything. */
+  if (lastCut) {
+    const endX = lastCut.points[lastCut.points.length - 1].x
+    commands.push(move({ x: endX, y: 0 }))
+  }
   commands.push('@;')
 
   /* The two guards, on the finished stream rather than on anybody's intention. */
