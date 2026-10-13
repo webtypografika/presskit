@@ -105,7 +105,7 @@ else {
 }
 
 console.log('')
-console.log('the head comes back to where the job started, not to an absolute corner')
+console.log('the job ends without moving the sheet')
 /* Parsed with string operations rather than a pattern: a backslash does not survive every way
    this file gets written, and a pattern that matches nothing turns every check below into a
    silent pass. */
@@ -123,29 +123,26 @@ const k = machine.unitsPerMm
 if (moves.length < 3) {
   fail('no coordinates were parsed out of the stream at all - this check proved nothing')
 } else {
-  const firstPt = moves[0], lastMove = moves[moves.length - 1], lastCut = moves[moves.length - 2]
+  const lastMove = moves[moves.length - 1], lastCut = moves[moves.length - 2]
   const mm = (v) => (v / k).toFixed(1)
-  if (lastMove.kind === 'U' && lastMove.x === firstPt.x && lastMove.y === firstPt.y) {
-    pass(`the last move returns to the job's first point (${mm(firstPt.x)}, ${mm(firstPt.y)} mm)`)
+  /* 🔴 THE ONE THAT MATTERS. Three endings in a row moved the material and he watched all three
+     do it; the material coordinate must not change at all on the last command. */
+  if (lastMove.x === lastCut.x) {
+    pass(`the material does not move at the end (stays at ${mm(lastMove.x)} mm)`)
   } else {
-    fail(`the last move goes to ${mm(lastMove.x)}, ${mm(lastMove.y)} mm but the job started at `
-      + `${mm(firstPt.x)}, ${mm(firstPt.y)} mm - an absolute corner was tried twice on his machine `
-      + 'and drove the material off the rollers both times')
+    fail(`the last command moves the material from ${mm(lastCut.x)} to ${mm(lastMove.x)} mm - `
+      + 'this is the movement he sees as the rollers running after the job')
   }
-  /* 🔴 AND THE MATERIAL MUST NOT BE DRIVEN PAST ANYTHING THE JOB REACHED. That overshoot is what
-     ejects the sheet: the first attempt overshot the last cut by 56 mm on this very file. */
-  const xs = moves.map((m) => m.x)
-  const minX = Math.min(...xs), maxX = Math.max(...xs)
-  if (lastMove.x <= maxX && lastMove.x >= minX) {
-    pass(`the material stops inside the job's own range (${mm(minX)}..${mm(maxX)} mm), `
-      + `${mm(Math.abs(lastMove.x - lastCut.x))} mm from the last cut`)
+  if (lastMove.kind === 'U') pass('and it does it with the head up')
+  else fail('the last command is a CUT, not a move')
+  if (lastMove.y === 0) {
+    pass('the carriage parks at zero, the side the first mark sits on')
   } else {
-    fail(`the material is driven to ${mm(lastMove.x)} mm, outside the ${mm(minX)}..${mm(maxX)} mm the `
-      + 'job used - this is exactly what pushes the sheet out of the rollers')
+    fail(`the carriage parks at ${mm(lastMove.y)} mm instead of 0`)
   }
 }
 
 console.log(failed === 0
-  ? '\nALL CHECKS PASSED — a pass is the same bytes again, and the head comes home.\n'
+  ? '\nALL CHECKS PASSED — a pass is the same bytes again, and the sheet does not move at the end.\n'
   : `\n${failed} CHECK(S) FAILED.\n`)
 process.exit(failed === 0 ? 0 : 1)

@@ -1766,33 +1766,31 @@ export function emitSkycutStream(plan: SkycutPlan): SkycutStreamResult {
     }
   }
 
-  /* 🔴 THE WAY HOME IS A POINT THE JOB ITSELF ALREADY STOOD ON — the first point of the first
-     contour — and that is the third answer to this question in one day, because the first two were
-     guesses about a machine that cannot be asked.
+  /* 🔴 THE JOB ENDS WITHOUT MOVING THE SHEET ONE MILLIMETRE. The carriage comes across to Y=0 and
+     the material axis is left exactly where the last cut left it.
 
-     WHAT HE ASKED FOR, 12/10/2026: «να πηγαίνει εκεί που πρωτοστάθηκε, δηλαδή στο σημείο Γ, και να
-     βγάλει το υλικό τόσο όσο στο ελάχιστο των δοντιών… τα ροδάκια δεν θα πετάνε το υλικό αλλά το
-     έχουν φέρει μπροστά.»
+     FOURTH ANSWER IN THREE DAYS, and the first three were all absolute positions in a frame only
+     the machine knows. Each one moved the material, and he watched each one do it:
+       U0,0                   «σπρώχνει το υλικό τόσο που φεύγει από τα ροδάκια»
+       the scan corner (294)  «συνεχίζει να σπρώχνει το υλικό όλο έξω»
+       the job's first point  «τα ροδάκια τρέχουν όσο η κεφαλή πάει δεξιά»
+     That last report is the one that settles it: the rollers run WHILE the head is still moving,
+     so the movement is ours, not the machine's own end-of-job behaviour. The only ending that
+     cannot move a sheet is one that does not change the material coordinate at all.
 
-     WHAT THE TWO EARLIER ANSWERS DID, measured on his own 446 file (scan rectangle 294 x 479 mm,
-     material on machine X):
-       `U0,0`         - drove the material to one extreme of the axis
-       the mark corner - drove it to the OTHER extreme, 294 mm, i.e. 56 mm past the last cut
-     Both are absolute positions in a frame whose origin only the machine knows: `IN;` sets it from
-     wherever the head happens to be parked and the camera scan then adjusts it, and nothing comes
-     back to tell us where it ended up. Reasoning about that origin produced two wrong answers and
-     two ejected sheets.
+     AND IT IS THE DOCUMENTED PARK FOR THIS DIALECT, not an invention: the reference sequence in
+     `docs/plans/CUTTER_PROTOCOLS_RESEARCH.md` is `U<endx>,0` immediately before the deselect —
+     the X where the plot ended, and the carriage brought to zero. We had been sending an absolute
+     corner instead and calling it a park.
 
-     THE FIRST POINT NEEDS NO SUCH KNOWLEDGE. It is a coordinate the blade has just visited, with
-     the sheet still gripped, so going back to it cannot be outside the material: it is exactly as
-     far forward as the job's own start, which is what 'as little as the teeth need' means. It is
-     also literally «εκεί που πρωτοστάθηκε» - where it first stood.
-
-     ⚠️ NOT THE BOUNDING BOX AND NOT THE MARK RECTANGLE. Both are computed places; a cut point is
-     a measured one. If a future reader wants the carriage parked aside as the manufacturer's own
-     sequence does (`U<endx>,0`), that moves the CARRIAGE only - never the material axis. */
-  const first = plan.contours.find((c) => c.points.length > 0)
-  commands.push(move(first ? first.points[0] : { x: 0, y: 0 }))
+     ⚠️ WHAT THIS DELIBERATELY GIVES UP: the head does not return to the mark he parks on. It
+     cannot, until somebody knows where that mark is in the machine's own frame, and three guesses
+     have cost three sheets. Y=0 is at least the SIDE the first mark sits on. After this ships, any
+     material movement he still sees at the end is provably not ours — which is the question he
+     asked himself: «μήπως είναι ρύθμιση του μηχανήματος και όχι εντολών δικών μας;» */
+  const lastCut = [...plan.contours].reverse().find((c) => c.points.length > 0)
+  const endX = lastCut ? lastCut.points[lastCut.points.length - 1].x : 0
+  commands.push(move({ x: endX, y: 0 }))
   commands.push('@;')
 
   /* The two guards, on the finished stream rather than on anybody's intention. */
