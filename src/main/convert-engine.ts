@@ -5,8 +5,16 @@ import { existsSync, readdirSync } from 'fs'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { isRawExtension, extractRawPreview } from './raw-preview'
+import { ensureJfifDensity } from './jpeg-jfif'
 
 const execFileAsync = promisify(execFile)
+
+/** Every JPEG sharp hands back goes through here: libvips drops the JFIF header when it
+ *  writes EXIF, and a RIP that reads only JFIF (VersaWorks) then opens the file at its own
+ *  720 dpi — a 50×70 cm poster became 208×294 mm (19/10/2026). See jpeg-jfif.ts. */
+function finishOutput(buf: Buffer, options: ConvertOptions): Buffer {
+  return options.format === 'jpg' ? ensureJfifDensity(buf, options.dpi || 300) : buf
+}
 
 // Disable sharp's file cache on Windows to avoid EPERM on delete/rename
 import('sharp').then(m => m.default.cache(false)).catch(() => {})
@@ -131,7 +139,7 @@ async function cropToTrimBox(
       break
   }
 
-  const buf = await pipeline.toBuffer()
+  const buf = finishOutput(await pipeline.toBuffer(), options)
   await writeFile(imagePath, buf)
 }
 
@@ -167,7 +175,7 @@ async function resizeImage(imagePath: string, options: ConvertOptions): Promise<
       break
   }
 
-  const buf = await pipeline.toBuffer()
+  const buf = finishOutput(await pipeline.toBuffer(), options)
   await writeFile(imagePath, buf)
 }
 
@@ -454,7 +462,7 @@ async function convertImage(inputPath: string, outputPath: string, options: Conv
       break
   }
 
-  const outputBuffer = await pipeline.toBuffer()
+  const outputBuffer = finishOutput(await pipeline.toBuffer(), options)
   await writeFile(outputPath, outputBuffer)
 
   // Verify output colorspace
@@ -516,7 +524,7 @@ async function convertRaw(inputPath: string, outputPath: string, options: Conver
       break
   }
 
-  const outputBuffer = await pipeline.toBuffer()
+  const outputBuffer = finishOutput(await pipeline.toBuffer(), options)
   await writeFile(outputPath, outputBuffer)
 
   return {
@@ -581,7 +589,7 @@ async function convertPsd(inputPath: string, outputPath: string, options: Conver
       break
   }
 
-  const outputBuffer = await pipeline.toBuffer()
+  const outputBuffer = finishOutput(await pipeline.toBuffer(), options)
   await writeFile(outputPath, outputBuffer)
 
   return {
