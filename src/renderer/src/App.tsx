@@ -38,6 +38,18 @@ async function getCachedCustomers(): Promise<PresscalCustomer[]> {
   }
 }
 
+// The quote a path belongs to — `qt-2026-0325` from the first component named like
+// `[QT-2026-0325] …` — or null when the path is not inside a quote folder. Used so that a deep
+// link from PressCal lands in the tab already open on that quote (its root, any subfolder, or
+// the same quote under `_01 Archive` after it moved) instead of opening one more tab (George,
+// 19/10/2026: «πλημμυρίζει από tabs»). The quote NUMBER, not the folder path, on purpose: when a
+// quote is archived its folder moves, and the tab still pointing at the old place is exactly
+// the one that should be taken to the new one.
+function quoteKeyOf(path: string): string | null {
+  const m = path.match(/\[(QT)[- ](\d{4})[- ](\d{4})\]/i)
+  return m ? `${m[1]}-${m[2]}-${m[3]}`.toLowerCase() : null
+}
+
 // Return the customer whose folderPath is the longest prefix match of
 // `path`. Longest-match handles nested customer folders correctly.
 function findCustomerByPath(customers: PresscalCustomer[], path: string): PresscalCustomer | null {
@@ -271,14 +283,23 @@ export default function App() {
     return cleanup
   }, [selectFile])
 
-  // Listen for folder navigation from PressCal — reuse existing tab if same path
+  // Listen for folder navigation from PressCal — reuse a tab that is already on this path,
+  // or anywhere inside the same quote folder; open a new one only when none is.
   useEffect(() => {
     const cleanup = window.api.deepLink.onNavigateToFolder(({ path, email, quoteId }: any) => {
-      const normalized = path.replace(/[\\/]+$/, '').toLowerCase()
+      const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+      const target = norm(path)
+      const targetQuote = quoteKeyOf(path)
       const { tabs } = useAppStore.getState()
-      const existing = tabs.find(t => t.currentPath.replace(/[\\/]+$/, '').toLowerCase() === normalized)
+      // Exact path first; then any tab sitting on the same quote — its root, a subfolder, the
+      // archived copy — which is then navigated to the requested path. Every button in PressCal
+      // that opens a folder arrives here, so this is the one place that keeps the tab bar from
+      // growing by one on every click.
+      const existing = tabs.find(t => norm(t.currentPath) === target)
+        ?? (targetQuote ? tabs.find(t => quoteKeyOf(t.currentPath) === targetQuote) : undefined)
       if (existing) {
         useAppStore.getState().setActiveTab(existing.id)
+        if (norm(existing.currentPath) !== target) useAppStore.getState().navigateTo(path)
       } else {
         useAppStore.getState().addTab(path)
       }
