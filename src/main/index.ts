@@ -21,6 +21,7 @@ import { registerLicenseHandlers, startLicensePoller, checkLicense } from './lic
 import { initializeProfiles, registerProfileHandlers, createProfile, switchProfile, getActiveProfile, getActiveProfileId, listProfiles, updateProfile } from './profile-manager'
 import { registerCloudRootsHandlers, getCloudRoots, resolvePortablePath, toPortablePath, detectCloudRoots, autoMigratePaths } from './cloud-roots'
 import { registerSkycutHandlers , cutFromFile } from './skycut-engine'
+import { moveFolderMerging } from './folder-merge'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -921,8 +922,8 @@ async function handleProtocolUrl(url: string): Promise<void> {
       }
 
       const { existsSync: fsExists } = await import('fs')
-      const { rename: fsRename, mkdir: fsMkdir, readdir: rdDir2, copyFile: fsCopyFile, rm: fsRm, access: fsAccess2 } = await import('fs/promises')
-      const { join: pathJoin, dirname: pathDirname, basename: pathBasename } = await import('path')
+      const { mkdir: fsMkdir, readdir: rdDir2, access: fsAccess2 } = await import('fs/promises')
+      const { dirname: pathDirname, basename: pathBasename } = await import('path')
 
       // Resolve portable path placeholders (<DROPBOX> etc.) and normalize
       folderPath = resolveDL(folderPath).replace(/\//g, '\\').split('\\').map(s => s.trim()).join('\\')
@@ -965,54 +966,19 @@ async function handleProtocolUrl(url: string): Promise<void> {
         // Ensure target parent exists
         await fsMkdir(pathDirname(restorePath), { recursive: true })
 
-        // Idempotent: if already restored, just navigate
-        if (fsExists(restorePath)) {
-          console.log(`[RESTORE] Already at target, navigating: ${restorePath}`)
-          mainWindow?.webContents.send('navigate-to-folder', { path: restorePath, quoteId })
-        } else {
-          // Try rename first, fallback to copy+delete
-          let renamed = false
-          try {
-            await fsRename(folderPath, restorePath)
-            renamed = true
-          } catch (renameErr) {
-            console.warn('[RESTORE] Rename failed, falling back to copy+delete:', renameErr)
-          }
-
-          if (!renamed) {
-            const copyDir = async (s: string, d: string) => {
-              await fsMkdir(d, { recursive: true })
-              const entries = await rdDir2(s, { withFileTypes: true })
-              for (const entry of entries) {
-                const sp = pathJoin(s, entry.name)
-                const dp = pathJoin(d, entry.name)
-                if (entry.isDirectory()) await copyDir(sp, dp)
-                else await fsCopyFile(sp, dp)
-              }
-            }
-            await copyDir(folderPath, restorePath)
-
-            for (let i = 0; i < 3; i++) {
-              try {
-                await fsRm(folderPath, { recursive: true, force: true })
-                break
-              } catch (rmErr) {
-                if (i === 2) {
-                  console.warn('[RESTORE] Copy succeeded but delete of archive failed:', rmErr)
-                  showError('Restore',
-                    `The folder was copied but the archived copy could not be deleted.\n\n` +
-                    `Close anything that may have files open and delete manually:\n${folderPath}`)
-                }
-                await new Promise(r => setTimeout(r, 500))
-              }
-            }
-          }
-
-          console.log(`[RESTORE] Moved: ${pathBasename(folderPath)} → ${restorePath}${renamed ? '' : ' (via copy+delete)'}`)
-          mainWindow?.webContents.send('navigate-to-folder', { path: restorePath, quoteId })
+        // MERGED, never skipped (folder-merge.ts): a live folder that already exists — half of a folder
+        // an earlier archive could not move whole — used to make this branch declare the job restored
+        // and move nothing (QT-2026-0447, 27/10/2026).
+        const report = await moveFolderMerging(folderPath, restorePath)
+        console.log(`[RESTORE] ${pathBasename(folderPath)} → ${restorePath}`, JSON.stringify(report))
+        if (report.failed.length) {
+          showError('Restore',
+            `Some files could not be moved (open in another program?) and are still in the archive:\n${report.failed.slice(0, 5).join('\n')}`)
         }
+        mainWindow?.webContents.send('navigate-to-folder', { path: restorePath, quoteId })
 
-        // Confirm restore with PressCal (non-blocking)
+        // Confirm restore with PressCal (non-blocking). `newFolderPath` is the field PressCal reads —
+        // up to 2.3.51 this sent `restoredPath` and every confirm was refused.
         if (quoteId) {
           const presscalUrl = (store.get('presscal.url') as string)?.replace(/\/$/, '')
           const apiKey = store.get('presscal.apiKey') as string
@@ -1020,7 +986,7 @@ async function handleProtocolUrl(url: string): Promise<void> {
             fetch(`${presscalUrl}/api/filehelper/quotes/${quoteId}/confirm-restore`, {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ restoredPath: restorePath }),
+              body: JSON.stringify({ newFolderPath: toPortablePath(restorePath) }),
             }).catch(err => console.warn('[RESTORE] confirm-restore failed (non-critical):', err.message))
           }
         }
@@ -1217,6 +1183,11 @@ async function processPendingArchives() {
       destPath: string
       number?: string
     }> = data.items || data || []
+    // Live quotes whose folder is still in `_01 Archive` (PressCal 27/10/2026): brought back here,
+    // so a restore whose deep link never arrived still happens.
+    const restores: Array<{ quoteId: string; sourcePath: string; destPath: string; number?: string }> =
+      Array.isArray(data.restores) ? data.restores : []
+    if (restores.length) await processPendingRestores(presscalUrl, apiKey, restores)
 
     if (!archives || archives.length === 0) return
     console.log(`[ARCHIVE-POLL] Found ${archives.length} pending archives`)
@@ -1233,8 +1204,9 @@ async function processPendingArchives() {
         continue
       }
 
-      // Normalize path
-      folderPath = folderPath.replace(/\//g, '\\').split('\\').map(s => s.trim()).join('\\')
+      // Resolve the portable placeholder (<DROPBOX>…) first — unresolved, the folder «did not exist»,
+      // and the branch below confirmed an archive that never moved. Then normalize.
+      folderPath = resolvePortablePath(folderPath).replace(/\//g, '\\').split('\\').map(s => s.trim()).join('\\')
 
       // Segment-by-segment resolution (NFC/NFD and encoding mismatches)
       if (!existsSync(folderPath)) {
@@ -1278,7 +1250,7 @@ async function processPendingArchives() {
       // Compute target path from API destPath or derive from source
       let targetPath = entry.destPath
       if (targetPath) {
-        targetPath = targetPath.replace(/\//g, '\\').split('\\').map(s => s.trim()).join('\\')
+        targetPath = resolvePortablePath(targetPath).replace(/\//g, '\\').split('\\').map(s => s.trim()).join('\\')
       } else {
         targetPath = pJoin(dirname(folderPath), '_01 Archive', folderName)
       }
@@ -1302,39 +1274,15 @@ async function processPendingArchives() {
       try {
         await mkdir(archiveDir, { recursive: true })
 
-        if (existsSync(targetPath)) {
-          console.log(`[ARCHIVE-POLL] Already in archive: ${targetPath}`)
-        } else {
-          // Try rename, fallback to copy+delete
-          let renamed = false
-          try {
-            await rename(folderPath, targetPath)
-            renamed = true
-          } catch {
-            // Copy + delete fallback
-            const copyDir = async (s: string, d: string) => {
-              await mkdir(d, { recursive: true })
-              const entries = await readdir(s, { withFileTypes: true })
-              for (const e of entries) {
-                const sp = pJoin(s, e.name), dp = pJoin(d, e.name)
-                if (e.isDirectory()) await copyDir(sp, dp)
-                else await copyFile(sp, dp)
-              }
-            }
-            const srcStat = await stat(folderPath)
-            if (srcStat.isDirectory()) {
-              await copyDir(folderPath, targetPath)
-              try { await rm(folderPath, { recursive: true, force: true }) } catch {}
-            }
-          }
-          console.log(`[ARCHIVE-POLL] Archived: ${folderName}${renamed ? '' : ' (copy+delete)'}`)
-        }
+        // Merged into an archive copy that already exists, never skipped (folder-merge.ts).
+        const report = await moveFolderMerging(folderPath, targetPath)
+        console.log(`[ARCHIVE-POLL] Archived: ${folderName}`, JSON.stringify(report))
 
-        // Confirm archive with PressCal
+        // Confirm archive with PressCal — in the portable form the quote stores.
         await fetch(`${presscalUrl}/api/filehelper/quotes/${encodeURIComponent(quoteId)}/confirm-archive`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ newFolderPath: targetPath }),
+          body: JSON.stringify({ newFolderPath: toPortablePath(targetPath) }),
         })
         console.log(`[ARCHIVE-POLL] Confirmed: ${quoteId}`)
       } catch (err) {
@@ -1344,6 +1292,35 @@ async function processPendingArchives() {
   } catch (err) {
     // Silently fail — network errors, PressCal offline, etc.
     // Will retry on next poll cycle
+  }
+}
+
+/** Live quotes whose folder is still in `_01 Archive`: merged back to the live path, then confirmed. */
+async function processPendingRestores(
+  presscalUrl: string, apiKey: string,
+  restores: Array<{ quoteId: string; sourcePath: string; destPath: string; number?: string }>,
+) {
+  const { existsSync } = await import('fs')
+  for (const entry of restores) {
+    try {
+      const src = resolvePortablePath(entry.sourcePath).replace(/\//g, '\\')
+      const dest = resolvePortablePath(entry.destPath).replace(/\//g, '\\')
+      if (existsSync(src)) {
+        const report = await moveFolderMerging(src, dest)
+        console.log(`[RESTORE-POLL] ${entry.number ?? entry.quoteId}: ${src} → ${dest}`, JSON.stringify(report))
+        if (report.failed.length) continue // locked files: try again on the next poll
+      } else if (!existsSync(dest)) {
+        console.warn(`[RESTORE-POLL] Neither the archived nor the live folder exists: ${src}`)
+        continue
+      }
+      await fetch(`${presscalUrl}/api/filehelper/quotes/${encodeURIComponent(entry.quoteId)}/confirm-restore`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newFolderPath: entry.destPath }),
+      })
+    } catch (err) {
+      console.error(`[RESTORE-POLL] Failed for ${entry.number ?? entry.quoteId}:`, err)
+    }
   }
 }
 
