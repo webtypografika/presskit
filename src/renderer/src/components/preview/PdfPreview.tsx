@@ -10,6 +10,15 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 
 export function PdfPreview({ data, fullscreen }: { data: string; fullscreen?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  // 🔍 THE DETAIL CANVAS (George 27/10/2026: «το zoom είναι κακό… θέλω τη μέγιστη ανάλυση»). The page
+  // canvas below is drawn once, at the size that fits the pane, and zoom only scaled that picture up —
+  // blurry by 200%, mush by 1000%. This canvas covers just the part of the page that is on screen and
+  // is redrawn from the PDF itself, at the screen's own pixels, every time zoom or pan settles: sharp at
+  // any zoom, and never bigger than the pane, so memory does not grow with the zoom.
+  const detailRef = useRef<HTMLCanvasElement>(null)
+  const detailTaskRef = useRef<any>(null)
+  const fitRef = useRef<{ scale: number; dispW: number; dispH: number } | null>(null)
+  const [detailKey, setDetailKey] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const pdfRef = useRef<any>(null)
   const renderingRef = useRef(false)
@@ -135,6 +144,7 @@ export function PdfPreview({ data, fullscreen }: { data: string; fullscreen?: bo
       // Set canvas display size (CSS pixels)
       canvas.style.width = `${Math.floor(displayViewport.width)}px`
       canvas.style.height = `${Math.floor(displayViewport.height)}px`
+      fitRef.current = { scale: fitScale, dispW: Math.floor(displayViewport.width), dispH: Math.floor(displayViewport.height) }
 
       const ctx = canvas.getContext('2d')!
 
@@ -197,6 +207,48 @@ export function PdfPreview({ data, fullscreen }: { data: string; fullscreen?: bo
       if (resizeTimer) clearTimeout(resizeTimer)
     }
   }, [renderPage])
+
+  // The key of what is on screen now; the detail canvas shows only when it was drawn for exactly this.
+  const viewKey = `${page}|${zoom.toFixed(3)}|${Math.round(position.x)}|${Math.round(position.y)}`
+
+  useEffect(() => {
+    if (zoom <= 1.01 || dragging) return // at fit size the page canvas is already sharp
+    const timer = setTimeout(async () => {
+      const pdf = pdfRef.current, container = containerRef.current, detail = detailRef.current, fit = fitRef.current
+      if (!pdf || !container || !detail || !fit) return
+      try { detailTaskRef.current?.cancel() } catch { /* finished already */ }
+      const cw = container.clientWidth, ch = container.clientHeight
+      // Where the page lies in the pane at this zoom/pan — the page canvas is centred, then moved and
+      // scaled about its centre by the CSS transform.
+      const W = fit.dispW * zoom, H = fit.dispH * zoom
+      const x0 = cw / 2 + position.x - W / 2, y0 = ch / 2 + position.y - H / 2
+      const vx = Math.max(0, x0), vy = Math.max(0, y0)
+      const vw = Math.min(cw, x0 + W) - vx, vh = Math.min(ch, y0 + H) - vy
+      if (vw <= 1 || vh <= 1) return
+      const dpr = window.devicePixelRatio || 1
+      const pg = await pdf.getPage(page)
+      const viewport = pg.getViewport({ scale: fit.scale * zoom * dpr })
+      detail.width = Math.ceil(vw * dpr)
+      detail.height = Math.ceil(vh * dpr)
+      Object.assign(detail.style, { left: `${vx}px`, top: `${vy}px`, width: `${vw}px`, height: `${vh}px` })
+      const ctx = detail.getContext('2d')!
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, detail.width, detail.height)
+      const task = pg.render({
+        canvasContext: ctx,
+        viewport,
+        // Only the visible window: shift the page so that its visible corner lands on the canvas origin.
+        transform: [1, 0, 0, 1, -(vx - x0) * dpr, -(vy - y0) * dpr],
+      })
+      detailTaskRef.current = task
+      try {
+        await task.promise
+        setDetailKey(viewKey)
+      } catch { /* cancelled by a newer view */ }
+    }, 150)
+    return () => clearTimeout(timer)
+  }, [viewKey, dragging]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const toolbarCls = fullscreen
     ? 'h-7 flex items-center justify-center gap-2 flex-shrink-0'
@@ -275,7 +327,7 @@ export function PdfPreview({ data, fullscreen }: { data: string; fullscreen?: bo
       {/* Canvas container — fills entire area */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-hidden flex items-center justify-center cursor-grab active:cursor-grabbing"
+        className="relative flex-1 overflow-hidden flex items-center justify-center cursor-grab active:cursor-grabbing"
         style={{ background: fullscreen ? 'transparent' : '#525659' }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -289,6 +341,14 @@ export function PdfPreview({ data, fullscreen }: { data: string; fullscreen?: bo
             transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
             transformOrigin: 'center center',
             transition: dragging ? 'none' : 'transform 0.1s ease-out'
+          }}
+        />
+        <canvas
+          ref={detailRef}
+          style={{
+            position: 'absolute',
+            pointerEvents: 'none',
+            visibility: zoom > 1.01 && !dragging && detailKey === viewKey ? 'visible' : 'hidden',
           }}
         />
       </div>
